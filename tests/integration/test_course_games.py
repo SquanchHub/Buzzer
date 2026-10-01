@@ -492,3 +492,47 @@ def test_room_records_the_games_course(api: Api):
     assert r.status_code == 201
     info = api.req("GET", f"/game/rooms/{r.json()['room_code']}").json()
     assert info["course_id"] == course_id
+
+
+# ---------------------------------------------------------------------------
+# Admin game grant requires HOST on the game's course (§6.1.6)
+# ---------------------------------------------------------------------------
+
+
+def test_grant_game_access_without_course_host_is_409(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    user_id, _ = api.user()
+
+    r = api.grant_game(user_id, game["id"])
+    assert r.status_code == 409
+    assert "HOST access to this game's course" in r.json()["message"]
+
+    # PLAYER on the course is not enough either.
+    api.grant_course(user_id, course_id, role="PLAYER")
+    assert api.grant_game(user_id, game["id"]).status_code == 409
+
+    # HOST on a different course is not enough either.
+    api.grant_course(user_id, api.course())
+    assert api.grant_game(user_id, game["id"]).status_code == 409
+
+    api.grant_course(user_id, course_id)
+    assert api.grant_game(user_id, game["id"]).status_code == 204
+    # Granting twice stays idempotent.
+    assert api.grant_game(user_id, game["id"]).status_code == 204
+
+
+def test_grant_unassigned_game_is_409(api: Api, legacy_game: int):
+    course_id = api.course()
+    user_id, _ = api.user()
+    api.grant_course(user_id, course_id)
+    assert api.grant_game(user_id, legacy_game).status_code == 409
+
+
+def test_grant_game_access_to_admin_needs_no_course(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    admin = next(u for u in api.req("GET", "/admin/users").json() if u["role"] == "ADMIN")
+    r = api.grant_game(admin["id"], game["id"])
+    assert r.status_code == 204
+    api.req("DELETE", f"/admin/users/{admin['id']}/game-access/{game['id']}")

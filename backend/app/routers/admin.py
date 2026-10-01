@@ -778,6 +778,23 @@ async def grant_game_access(
     if not game:
         raise NotFoundError(f"Game {body.game_id} not found")
 
+    # A grant is only effective with HOST on the game's course (see
+    # game_service.assert_host_can_use_game), so refuse grants that would be dead.
+    if user.role != "ADMIN":
+        hosts_course = (
+            await db.execute(
+                select(UserCourseAccess).where(
+                    UserCourseAccess.user_id == user_id,
+                    UserCourseAccess.course_id == game.course_id,
+                    UserCourseAccess.role == "HOST",
+                )
+            )
+        ).scalar_one_or_none()
+        if game.course_id is None or not hosts_course:
+            raise ConflictError(
+                "User must have HOST access to this game's course first"
+            )
+
     result = await db.execute(
         select(UserGameAccess).where(
             UserGameAccess.user_id == user_id,
