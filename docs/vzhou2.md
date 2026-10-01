@@ -9,3 +9,4 @@
 ### Branch: `docs/t3-context-vincent`
 
 - **2026-09-30, 21:10–21:40** — Created this branch from `origin/main` (now including Arjun's merged READMEs), set up this session log, wrote and verified T3 context READMEs for `backend/app/{models,schemas,common}` and `frontend/admin/src/{pages,components,lib}`, and rolled them up into `backend/app/`, `backend/` and `frontend/admin/src/` READMEs.
+- **2026-09-30, 21:38–21:42** — Completed the remaining T3 roll-up READMEs (`frontend/host/src/`, `frontend/player/src/`, `frontend/`) from Arjun's child READMEs, noting that his error-message fix is now on `main`.
