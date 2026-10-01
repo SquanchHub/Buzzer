@@ -1,6 +1,7 @@
 # T4 — UI Restructuring: host capabilities, course-specific games, admin-first admin app
 
-Status: **agreed design, pre-implementation.** Owners: Vincent Zhou (phases 1 and 3), Arjun
+Status: **agreed design, pre-implementation; revised after goldfish test** (cross-course roster
+rule, D6/D8 semantics, named schemas, per-phase tests). Owners: Vincent Zhou (phases 1 and 3), Arjun
 Kaneriya (phase 2). Read with the context hierarchy: `backend/app/README.md`,
 `frontend/README.md`, and the per-directory READMEs they link.
 
@@ -95,13 +96,22 @@ Historical sessions are not rewritten.
 - **Questions with recorded answers cannot be deleted** (409 "Question has recorded answers").
   Today this is a DB FK failure surfaced as a 500 (`models/README.md`). Deleting scores instead
   would silently rewrite completed sessions' totals.
-- **Game deletion — admin:** always allowed; deletes all its sessions and scores (existing
-  behaviour) **and now also clears each session's Redis state** (`state_service.delete_room_state`).
+- **Game deletion — everyone, admins included:** refused (409 "This game has a live session") while
+  the game has any live session (D7 definition). An admin who needs the game gone deletes the live
+  session first through the existing `DELETE /api/game/sessions/{id}`, then the game. Game
+  deletion therefore never pulls a running room out from under connected sockets. (Deleting a live
+  *session* also doesn't notify its sockets; that gap predates T4, see §7.)
+- **Game deletion — admin, otherwise:** deletes all its sessions and scores (existing behaviour)
+  **and now also clears each session's Redis state** (`state_service.delete_room_state`).
   Today the MySQL rows go but `room:{code}` stays in Redis as `LOBBY` for up to 90 minutes and
   counts toward `MAX_ROOMS`; `session:{id}:*` never expires (`backend/app/README.md` gotchas, and
   T5's "both datastores" warning).
-- **Game deletion — host:** refused (409) if the game has any session hosted by someone else, or
-  any live session. Otherwise as admin.
+- **Game deletion — host (non-ADMIN), additionally:** refused (409) if any of the game's sessions
+  has `host_user_id` not equal to the actor, **including `host_user_id IS NULL`**. A session with
+  no recorded host is not the actor's data. Implement the query as
+  `host_user_id IS NULL OR host_user_id != :actor`, because a bare SQL `!=` skips NULLs. Otherwise
+  as admin. A successful host delete permanently removes the student scores of the actor's own
+  sessions of that game (§7); the host UI confirms with the session count first (§6.3).
 
 ### D7. No edits to a game's questions while it is live
 
@@ -118,6 +128,22 @@ multiple-choice question with one option or mismatched `answer_points`, which br
 Hosts make this far more likely. `content_service.update_question` merges the patch onto the
 stored question and validates the **merged** result with `QuestionCreate` (422 on failure).
 This tightens admin behaviour too once phase 3 switches the admin router over.
+
+- **Merge scope:** exactly `QuestionCreate`'s seven fields: `type`, `grading_type`, `prompt`,
+  `config`, `answer_data`, `time_limit_seconds`, `points_value`. Build the base dict from those
+  columns of the stored row, never from the ORM object wholesale (`QuestionCreate` is
+  `extra="forbid"`, and `id`/`game_id`/`order_index` would be rejected). Overlay only the fields
+  present in the request (`patch.model_dump(exclude_unset=True)`).
+- **Explicit nulls are 422.** A field sent as `null` is rejected, not treated as "keep" or
+  "clear". Checked before the merge, reported against that field.
+- **Error type:** the service raises a new `RequestBodyInvalidError(errors: list[dict])` from
+  `common/exceptions.py`, never a FastAPI exception. It is rendered by its own handler as the
+  established 422 body `{"error": "VALIDATION_ERROR", "detail": [ {loc, msg, type, …}, … ]}`,
+  with `detail` taken from the caught `pydantic.ValidationError.errors()` and passed through
+  `jsonable_encoder`, as the existing `RequestValidationError` handler does. The three frontends'
+  `errorMessage()` already turn that shape into `field: msg; …`. (`common/exceptions.py` has no
+  such type today; only `BuzzerError` and its 401/403/404/409 subclasses exist. `BuzzerError`'s
+  `{"error","message"}` body can't carry the per-field array, hence the separate class.)
 
 ### D9. Session downloads
 
@@ -245,7 +271,9 @@ phases 1 and 3. Full restructuring is phase 3.
 #### 6.2.1 Shared dependencies — `backend/app/common/dependencies.py`
 
 Thin FastAPI dependencies wrapping the `game_service` asserts, reading the id from the path:
-- `require_course_host(course_id)` → `require_user` + `assert_host_can_use_course`.
+- `require_course_host(course_id)` → `require_user`; **404 if the course doesn't exist, for
+  everyone including admins**; then `assert_host_can_use_course` (403). This confirms course ids
+  exist to any signed-in user; accepted, as courses are not secret.
 - `require_game_access(game_id)` → `require_user` + `assert_host_can_use_game`.
 - `require_session_host(session_id)` → `require_user`; 404 if the session doesn't exist; 403
   unless ADMIN or `session.host_user_id == user.id`. Replaces the four inlined copies in
@@ -253,6 +281,9 @@ Thin FastAPI dependencies wrapping the `game_service` asserts, reading the id fr
 
 Each returns the `User`. (`common` already imports from `services`; `game_service` imports only
 `common.exceptions`, so no import cycle.)
+
+Also in `common/exceptions.py`: `RequestBodyInvalidError` and its handler, registered in
+`register_exception_handlers` (D8).
 
 #### 6.2.2 `backend/app/services/content_service.py` (new)
 
@@ -267,11 +298,11 @@ Interface (the contract phase 3 depends on; `actor` is the authenticated `User`)
 |---|---|
 | `create_game(db, actor, meta: GameMeta, course_id)` | 404 unknown course. Creates the game; if `actor` is not ADMIN, also inserts `user_game_access(actor, game)` (D1 auto-grant). Returns `Game`. |
 | `update_game(db, actor, game_id, patch)` | Applies title/description/max_players. `course_id` handled only when present (admin schema only): 404 unknown course, 409 if live (D5). |
-| `delete_game(db, redis, actor, game_id)` | D6. Host (non-ADMIN): 409 if any session has `host_user_id != actor.id` or any session is live. Then for every session: delete scores, delete session, and `state_service.delete_room_state(redis, room_code, session_id)`; then delete the game. Redis cleanup runs after the MySQL deletes have flushed. |
+| `delete_game(db, redis, actor, game_id)` | D6. Everyone: 409 if `has_live_session`. Host (non-ADMIN): also 409 if any session has `host_user_id IS NULL OR host_user_id != actor.id`. Then for every session: delete scores, delete session, and `state_service.delete_room_state(redis, room_code, session_id)`; then delete the game. Redis cleanup runs after the MySQL deletes have flushed. |
 | `has_live_session(db, redis, game_id) -> bool` | D7 definition (MySQL LOBBY/IN_PROGRESS **and** `room:{code}` exists). |
 | `list_questions(db, game_id)` | Ordered by `order_index`. |
 | `create_question(db, redis, game_id, body: QuestionCreate)` | 409 if live. Sanitise prompt, append at `max(order_index)+1`. |
-| `update_question(db, redis, game_id, question_id, patch: QuestionUpdate)` | 404 if not in game; 409 if live; merge patch onto stored fields, validate merged dict with `QuestionCreate` (422 via `RequestValidationError`-equivalent on failure, D8); sanitise prompt. |
+| `update_question(db, redis, game_id, question_id, patch: QuestionUpdate)` | 404 if not in game; 409 if live; 422 on any explicit `null`; merge the set fields onto the stored question's seven `QuestionCreate` fields and validate with `QuestionCreate` (`RequestBodyInvalidError` → 422 `VALIDATION_ERROR` on failure, D8); sanitise prompt. |
 | `delete_question(db, redis, game_id, question_id)` | 404; 409 if live; 409 if any `session_scores` row references it (D6). Then delete and re-pack remaining `order_index` to 0..n-1. |
 | `reorder_questions(db, redis, game_id, order: list[int])` | 409 if live; existing "must be exactly this game's ids" 409. |
 | `export_game(db, game_id) -> (filename, bytes)` | Existing bundle format, no `course_id`. |
@@ -287,10 +318,10 @@ every check (existing bypass), so the admin can use the host app fully.
 
 | Method & path | Dependency | Calls |
 |---|---|---|
-| `GET /host/courses/{course_id}/roster` | `require_course_host` | list `CourseRoster` rows (same shape as admin `RosterEntryResponse`) |
-| `POST /host/courses/{course_id}/roster/import` | `require_course_host` | `roster_service.process_roster_rows` (JSON rows from the client-side CSV wizard; deactivates netids not in the upload) |
-| `PATCH /host/courses/{course_id}/roster/{roster_id}` | `require_course_host` | same semantics as admin `patch_roster_entry` (is_active, netid, full_name, email) |
-| `GET /host/courses/{course_id}/games` | `require_course_host` | games in the course **the caller can access** (D1; admin: all in course) |
+| `GET /host/courses/{course_id}/roster` | `require_course_host` | list `CourseRoster` rows → `list[RosterEntryResponse]` (existing schema) |
+| `POST /host/courses/{course_id}/roster/import` | `require_course_host` | body `RosterImportPayload` (existing: `rows: list[RosterRowIn]`); `roster_service.process_roster_rows` (deactivates netids not in the upload) → `RosterUploadResult` (existing) |
+| `PATCH /host/courses/{course_id}/roster/{roster_id}` | `require_course_host` | body `RosterEntryPatch` (existing; is_active, netid, full_name, email) → `RosterEntryResponse`. **404 unless the row's `course_id` equals the path's `course_id`** (query on both, as admin `patch_roster_entry` already does). Same rule as questions-in-game; without it a HOST of course A could edit course B's roster by id. |
+| `GET /host/courses/{course_id}/games` | `require_course_host` | games in the course **the caller can access** (D1; admin: all in course) → `list[HostGameItem]` (new, `schemas/admin.py`: `GameResponse` fields + `session_count: int`, all of the game's sessions in any status, needed by the §6.3 delete confirm) |
 | `POST /host/games` | `require_user`, then `assert_host_can_use_course(body.course_id)` | `content_service.create_game` (body: `GameCreate`) |
 | `POST /host/games/import` (multipart `file`, `course_id`) | `require_user` + `assert_host_can_use_course` | `content_service.import_game` |
 | `GET /host/games/{game_id}` | `require_game_access` | game (`GameResponse`) |
@@ -307,8 +338,9 @@ mirrored. Course list for hosts is the existing `GET /game/my-courses`.
 #### 6.2.4 `backend/app/routers/game.py` additions
 
 - `GET /game/my-sessions` (`require_user`): sessions with `host_user_id == user.id` and
-  `status == COMPLETED`, newest first: `session_id, room_code, game_title, course_name,
-  course_semester, completed_at, player_count` (distinct `session_scores.user_id`).
+  `status == COMPLETED`, newest first → `list[MySessionItem]` (new, `schemas/game.py`):
+  `session_id, room_code, game_title, course_name, course_semester, completed_at, player_count`
+  (distinct `session_scores.user_id`).
 - `GET /game/sessions/{session_id}/report` (`require_session_host`): 409 unless COMPLETED;
   `report_service.build_session_report` as an HTML attachment.
 - `GET /game/sessions/{session_id}/export`: switch to `require_session_host`; add the COMPLETED
@@ -326,7 +358,7 @@ bar (Home · Sessions · Sign out) on the non-game pages:
 | Route | Page | Content |
 |---|---|---|
 | `/home` | `HomePage.tsx` (edited) | Existing room creation; the game dropdown now lists only games whose `course_id` equals the selected course (unassigned games hidden). Each course card links to `/courses/:courseId`. |
-| `/courses/:courseId` | `CoursePage.tsx` (new) | Games of this course (`GET /host/courses/:id/games`): create, import JSON, edit (→ editor), export, delete (shows the 409 message). Link to roster. |
+| `/courses/:courseId` | `CoursePage.tsx` (new) | Games of this course (`GET /host/courses/:id/games`): create, import JSON, edit (→ editor), export, delete. Delete confirms first, naming the session count from `HostGameItem.session_count` (e.g. "Delete 'Quiz 3'? This permanently deletes its 4 sessions and all their scores."); a 409 is shown inline. Link to roster. |
 | `/courses/:courseId/roster` | `RosterPage.tsx` (new, ported) | Port of the admin roster page and CSV column-mapping wizard, pointed at `/host/courses/:id/roster*`. |
 | `/games/:gameId/edit` | `QuestionEditorPage.tsx` (new, ported) | Port of the admin editor, pointed at `/host/games/:id/*`; game metadata editable (no course field). Shows the live-session 409 as an inline message, not a page takeover. |
 | `/sessions` | `SessionsPage.tsx` (new) | `GET /game/my-sessions`; per row **Download summary (HTML)** → `/game/sessions/:id/report`, **Download scores (CSV)** → `/game/sessions/:id/export`. |
@@ -337,15 +369,30 @@ Update host `src/README.md`, `pages/README.md`, `lib/README.md`.
 
 ### 6.4 Tests implied (T5; written by the phase owner, against the live stack)
 
-Success and denial for each rule: host CRUD on own-course game; host denied on a game whose course
-they don't HOST even with a grant (D1); revoking course HOST revokes game access; auto-grant on
-create/import; `create_room` 409 for course mismatch and unassigned game (also as admin); admin
-grant-game-access 409 without course HOST; question mutation 409 while live and allowed after the
-room is deleted; answered-question delete 409; host game delete 409 with another host's session;
-admin game delete clears `room:{code}` in Redis; update re-validation 422; downloads 403 for a
-non-host, 409 before COMPLETED, 200 with correct CSV columns / HTML for the host; importing an
-unmodified `sample_games/*.json` with `course_id` succeeds; host roster import deactivates missing
-netids and a non-HOST gets 403.
+Success and denial for each rule. Each test ships in the MR of the phase tagged.
+
+| Phase | Test |
+|---|---|
+| 1 | Host denied on a game whose course they don't HOST, even with a grant (D1) |
+| 1 | Revoking course HOST revokes game access |
+| 1 | `create_room` 409 for course mismatch and for an unassigned game (also as admin) |
+| 1 | Admin grant-game-access 409 without course HOST |
+| 1 | Importing an unmodified `sample_games/*.json` with `course_id` succeeds (admin import) |
+| 2 | Host CRUD on an own-course game |
+| 2 | Auto-grant on host create and host import |
+| 2 | Host create/import with an unknown `course_id` → **403, not 404**: `assert_host_can_use_course` runs before `content_service`'s 404 and a non-admin is not HOST of a nonexistent course |
+| 2 | Path-based course endpoints (`/host/courses/{id}/…`) → 404 for a nonexistent course, for a host and for an admin |
+| 2 | Question mutation 409 while live, allowed after the room is deleted |
+| 2 | Answered-question delete 409 |
+| 2 | Update re-validation 422 with the `VALIDATION_ERROR` body; explicit `null` field 422 |
+| 2 | Host game delete 409 with another host's session, and with a NULL-host session |
+| 2 | Game delete 409 while a session is live |
+| 2 | Game delete clears `room:{code}` and `session:{id}:*` in Redis. Exercised through the **host** delete path, which runs the shared `content_service.delete_game` |
+| 2 | Downloads (HTML report and CSV): 403 for a non-host, 409 before COMPLETED, 200 with correct CSV columns / HTML for the host |
+| 2 | Host roster import deactivates missing netids; a non-HOST gets 403 |
+| 2 | Host roster PATCH with a `roster_id` from another course → 404 |
+| 3 | Admin game delete clears Redis and is 409 while live (admin path now on `content_service`) |
+| 3 | Admin question update re-validation 422 (admin path now on `content_service`) |
 
 ### 6.5 Phase 3 — admin switch + admin-first app (Vincent)
 
@@ -382,6 +429,16 @@ Frontend (`frontend/admin/src/`):
   the flush). Accepted — window is milliseconds and the outcome is the pre-T4 status quo.
 - Moving a game's course (admin) leaves completed sessions in the old course (D4/D5), so a game's
   sessions may span courses historically.
+- **Host game deletion destroys score history.** A host deleting their own game also deletes
+  every session of it they ran, with all student scores (D6). Those scores may be the only record
+  of in-class participation. Mitigation: the confirm dialog names the session count (§6.3) and
+  hosts can download each session's CSV first from `/sessions`. No soft-delete or archive in T4.
+- **Deleting a live session doesn't notify its sockets (predates T4).** `DELETE /api/game/sessions/{id}`
+  (`routers/game.py`) clears Redis and MySQL but emits nothing, so a connected host and players
+  are left on a dead room until their next action errors. D6 sends admins through this endpoint
+  before deleting a live game, so it is now on a documented path. Not changed in T4. The fix
+  would be a `game_abandoned` emit to `room_code`, which needs a router→gateway call that the
+  layering currently avoids.
 - The HTML session report the host now downloads (`services/report_service.py`) renders no chart
   and no correct answer for `multi_select` questions, and keeps its own copies of the answer-reveal
   and Levenshtein logic separate from `game_service`/`gateway` (`services/README.md`). Documented,
