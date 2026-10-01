@@ -30,7 +30,12 @@ its dicts by hand.
   - Field bounds: `prompt` 1–2000 chars, `time_limit_seconds` 2–300, `points_value` 0–100000.
   Also reused by `admin.import_game` to validate every question in an imported JSON bundle.
 - **`QuestionUpdate`** — all fields optional, same `type` regex, **no structural validation**.
-- **`GameCreate`** — also reused to validate the `game` block of an import bundle.
+- **`GameMeta`** — a game's own fields (`title`, `description`, `max_players`); validates the
+  `game` block of an import bundle, which never carries a course.
+- **`GameCreate(GameMeta)`** — adds a required positive `course_id`.
+- **`GameUpdate`** — all optional; `course_id` (admin move) must be positive, and an explicit
+  `null` is a 422 rather than "unassign". `GameResponse` and `MyGameItem` expose `course_id`
+  (`None` = unassigned legacy game).
 - **`LoginRequest`** (`auth.py`) — requires `username`+`password` or a dev-only `netid`.
 - **`RoomCreateRequest`** (`game.py`) — positive `game_id` and `course_id`.
 - **`ScoreResult`** (`game.py`) — `{points_awarded, is_correct}`, returned by
