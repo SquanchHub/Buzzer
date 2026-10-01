@@ -1,0 +1,67 @@
+# frontend/player/src/
+
+Source of the Player app — a mobile-first React 18 + TypeScript + Tailwind single-page app that
+students open on their phones. A player enters a room code (or scans the host's QR), picks an
+identity (guest, NetID SSO, or local account), then answers questions live over Socket.io and sees
+their own results and recap. Each subdirectory has its own README; this file covers how they fit
+and the top-level files.
+
+## Subdirectories
+
+| Directory | Role | README highlights |
+|---|---|---|
+| `pages/` | `JoinPage`, `NamePage`, `LoginPage` (OAuth2 return) and `game/` — `GameLayout` (socket + context) with Lobby, Question, Feedback, Results and GameOver child pages. | Per-type answer UIs live inline in `QuestionPage`; the prompt is **not** shown to players; any `error` event strands the player on an error screen. |
+| `components/` | `ui/` primitives with phone-sized touch targets: `Button`, `Card`, `Input`, `TimerBar` (no `initialSeconds`). | Mostly unused by game screens, which hand-style their buttons; differs from host/admin copies. |
+| `lib/` | `api` client (`get`/`post`), `cn`, and `isTokenExpired` (client-side JWT `exp` check). | No refresh flow; shared `localStorage.token` with host/admin. |
+| `types/` *(no README)* | `game.ts` — payload types the player receives (`QuestionPayload`, `AnswerResultPayload`, `PlayerResultsPayload`, `PlayerGameOverPayload`, `PlayerAnswerReveal`, …) and the `PlayerPhase` union. | Hand-maintained; `SyncStatePayload` omits fields the backend sends (`currentQuestion`, `hasAnswered`, `yourScore`). |
+
+## Top-level files
+
+| File | Purpose |
+|---|---|
+| `main.tsx` | Mounts `<App />` in `StrictMode` into `#root` and imports `index.css`. |
+| `App.tsx` | `BrowserRouter` (basename `/player/` in production). Routes: `/join`, `/login`, `/name/:code`, `/game/:code/{lobby,question,feedback,results,gameover}`; `*` → `/join`. No route guard — `GameLayout` checks token expiry itself. |
+| `index.css` | Tailwind directives, hardcoded dark `body` background (`#0f172a`), and `-webkit-tap-highlight-color: transparent` for mobile. |
+
+## How it fits together
+
+- **Joining (REST):** `JoinPage` pings `/api/game/rooms/:code/ping` → `NamePage` obtains a token
+  (`/api/auth/guest`, `/api/auth/login`, or the NetID SSO round-trip via `LoginPage`) and stores it
+  in `localStorage.token`.
+- **Live game (Socket.io):** `GameLayout` connects, emits `join_room` as PLAYER, and routes on
+  server events. `QuestionPage` sends `submit_answer` with a type-specific `answer_data`
+  (`{selectedIndex}`, `{selectedValue}`, `{text}`, `{selectedIndices}`) that must match the backend's
+  scoring in `game_service.calculate_score`. After `game_over` the socket is disconnected.
+- **Privacy:** results and game-over payloads are sent only to this player's `user:{id}` room, so a
+  player sees their own score and rank but no one else's.
+
+## Depends on
+
+- Build config one level up in `frontend/player/`: `vite.config.ts` (dev port 5174, proxies `/api`
+  and `/socket.io`, `base: '/player/'` in production), `tailwind.config.ts`, `package.json`
+  (react, react-router-dom, socket.io-client, lucide-react, clsx, tailwind-merge).
+- Backend `/api/auth/*`, `/api/game/rooms/*` and the Socket.io protocol in `backend/app/websocket/`.
+
+## Depended on by
+
+- `frontend/player/index.html`; `npm run build` outputs `frontend/player/dist/`, served by nginx at
+  `/player/` (and `/` redirects there).
+- The host app's QR code / join link (`/player/join?code=<ROOM>`).
+- CI runs `tsc --noEmit` on this app for every merge request.
+
+## Gotchas collected from the child READMEs
+
+- **Error messages now readable:** the `detail`-only parsing described in `lib/README.md` was fixed
+  on `main` (`fix/frontend-error-messages`).
+- **Shared token** with host/admin on the nginx origin: joining as a guest replaces a signed-in
+  host's token, and "Play Again" signs the host out in the same browser.
+- **Fragile game flow:** ordinary races ("Question is locked") end the game UI; reloads on results,
+  locked questions or game over don't recover; the lobby player count is stale; the host-disconnected
+  banner sticks until the next question.
+- **"Correct!" uses `points > 0`**, so partial credit shows as correct while the backend's
+  `is_correct` requires full points.
+- **Players never see the prompt** — relevant to T8 prompt images and to new question types that
+  need context on the phone (e.g. a canvas question).
+- **Late joiners' timer bar starts full** (no `initialSeconds` on the player `TimerBar`).
+- **Hardcoded palette** including the eight option colors in `QuestionPage` (T9); must stay
+  thumb-friendly in both themes.
