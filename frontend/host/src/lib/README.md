@@ -18,7 +18,9 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
   - Every request sends `Content-Type: application/json` and, if `localStorage.token` is set,
     `Authorization: Bearer <token>`. The token is read fresh on each call.
   - Success: the body is parsed as JSON; an empty body resolves to `{}` cast to `T` (e.g. 204s).
-  - Failure: throws `Error(body.detail ?? "HTTP <status>")`.
+  - Failure: throws `Error(errorMessage(body, status))`, which picks the first of `message`
+    (app errors), string `detail` (`HTTPException`), the 422 `detail` array joined as
+    `field: msg; …`, the `error` code, or `HTTP <status>`.
   - `T` is only a compile-time cast; responses are not validated at runtime.
 - `cn(...inputs: ClassValue[])` — used by every component in `frontend/host/src/components/ui/`.
 
@@ -40,13 +42,11 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
 
 ## Gotchas found while reading
 
-- **Server error messages are almost never shown.** `api.ts` reads `body.detail`, but
-  `backend/app/common/exceptions.py` returns `{"error": code, "message": text}` for every
-  `BuzzerError` (`NotFoundError`, `ConflictError`, …) and for unhandled 500s. For example,
-  "Invalid credentials" on login or "Maximum of N concurrent rooms reached" on Create Room
-  reach the host as a bare `HTTP 401` / `HTTP 409`. Request validation errors (422) do send
-  `detail`, but as an array, so the message becomes `[object Object]`. `LoginPage`'s direct
-  `exchange-temp` fetch has the same `detail` assumption.
+- **Error parsing was fixed, but not everywhere.** `api.ts` originally read only `body.detail`,
+  so `{"error", "message"}` bodies from `backend/app/common/exceptions.py` (e.g. "Invalid
+  credentials", "Maximum of N concurrent rooms reached") reached the host as bare `HTTP 401` /
+  `HTTP 409`. `fix/frontend-error-messages` added `errorMessage()` to all three clients.
+  `LoginPage`'s direct `exchange-temp` fetch bypasses `api` and still reads only `detail`.
 - **No token refresh or 401 handling.** Access tokens expire after 2h (`auth_service.py`), and
   nothing in the host app calls `/api/auth/refresh` or clears the token on 401. An expired
   token still passes `App.tsx`'s `RequireAuth` (which only checks that it exists), so pages load

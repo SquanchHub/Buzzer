@@ -12,8 +12,8 @@ and four child pages render each game phase. Routes are declared in `frontend/ho
 | `HomePage.tsx` | `/home` | Lists the host's courses, games and active sessions; creates a room (`POST /game/rooms`), rejoins or deletes an active session. |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
-| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; auto-advances 1.5s after the answer phase ends. |
-| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select) or word cloud (fill-in-the-blank) with correct answers highlighted; 10s auto-advance countdown. |
+| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. |
+| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select) or word cloud (fill-in-the-blank) with correct answers highlighted; 10s countdown to the next question when auto-advance is on. |
 | `game/GameOverPage.tsx` | `…/gameover` | Anonymous score histogram, average/high score, per-question breakdown cards. |
 
 ## Key entry points
