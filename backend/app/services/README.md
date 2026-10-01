@@ -61,6 +61,12 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - **export_service** — `build_session_csv(db, session_id)`, `build_canvas_csv(db, session_id, ...)`;
   both return `(filename, bytes)`.
 - **report_service** — `build_session_report(db, session_id)` → `(filename, html_bytes)`.
+  Hotspot questions render as an inline SVG (`_render_hotspot`): viewBox in units of the image's
+  longer side, rings under ACCURACY, every tap as a dot coloured by band, and a band legend
+  ("N taps" under COMPLETENESS; "Target data invalid" when the stored target is bad). Band logic
+  is imported from `game_service`, not copied. The image comes from `_hotspot_image_data_uri`,
+  **a stage A stub that always returns `None`** (draws "Image unavailable") until T8's C5 lands
+  (`docs/plans/t7-hotspot.md` §9 stage C).
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.
@@ -92,4 +98,5 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - `state_service.restore_from_mysql` and `remove_player` are not called anywhere in `backend/`.
   Despite its docstring, `restore_from_mysql` only returns data; it writes nothing to Redis.
 - `report_service` has no `multi_select` handling (no chart, no answer reveal), and keeps its
-  own copies of `_answer_reveal` and Levenshtein, separate from `game_service`/`gateway`.
+  own copies of `_answer_reveal` and Levenshtein, separate from `game_service`/`gateway`
+  (its hotspot branch is the exception: it calls `game_service.hotspot_reveal`).
