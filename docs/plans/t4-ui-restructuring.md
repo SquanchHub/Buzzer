@@ -1,7 +1,8 @@
 # T4 — UI Restructuring: host capabilities, course-specific games, admin-first admin app
 
-Status: **agreed design, pre-implementation; revised after goldfish test** (cross-course roster
-rule, D6/D8 semantics, named schemas, per-phase tests). Owners: Vincent Zhou (phases 1 and 3), Arjun
+Status: **agreed design, revised after goldfish test** (cross-course roster rule, D6/D8
+semantics, named schemas, per-phase tests). **Phase 1 implemented** (branch
+`feat/t4-ui-restructuring`); see §6.1.9 for the details it settled. Owners: Vincent Zhou (phases 1 and 3), Arjun
 Kaneriya (phase 2). Read with the context hierarchy: `backend/app/README.md`,
 `frontend/README.md`, and the per-directory READMEs they link.
 
@@ -265,6 +266,20 @@ unassigned; the host app shows unassigned games as not runnable).
 `frontend/admin/src/pages/GamesPage.tsx`: a required course `<select>` on Create and on Import JSON
 (sent as the `course_id` form field). Without this the admin app cannot create games between
 phases 1 and 3. Full restructuring is phase 3.
+
+#### 6.1.9 Phase 1 as implemented (details the plan left open)
+
+- **`GameUpdate.course_id`:** omitted = keep; a positive id = move; an explicit `null` is a 422
+  (unassigning a game is not supported, matching D8's "explicit nulls are 422").
+- **`create_room` order:** the course-match 409s run right after the two access asserts and
+  *before* the `MAX_ROOMS` count, so a mismatched request is never reported as "too many rooms".
+- **Live check (D7) in phase 1:** a private `_has_live_session(db, redis, game_id)` in
+  `routers/admin.py`, used only by the admin course move. Phase 2 moves it to
+  `content_service.has_live_session` unchanged.
+- **Tests:** `tests/integration/test_course_games.py` (every phase-1 row of §6.4, plus the
+  §6.1.6 404/409/422 cases and every `sample_games/*.json`). Unassigned games can't be created
+  through the API any more, so the `legacy_game` fixture inserts one with `docker compose exec
+  mysql`; the "Redis key expired" D7 case deletes `room:{code}` with `docker compose exec redis`.
 
 ### 6.2 Phase 2 — backend (Arjun)
 
