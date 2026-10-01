@@ -112,6 +112,16 @@ async def create_room(
     await assert_host_can_use_course(db, host, course_id)
     await assert_host_can_use_game(db, host, game_id)
 
+    # Invariant (admins included): a session is played in its game's course, so
+    # the unchanged roster check in authorise_player admits that course's players.
+    game = await db.get(Game, game_id)
+    if game.course_id is None:
+        raise ConflictError(
+            "This game is not assigned to a course; an admin must assign one first"
+        )
+    if game.course_id != course_id:
+        raise ConflictError("This game belongs to a different course")
+
     # Enforce global room limit — count only LOBBY/IN_PROGRESS rooms.
     # COMPLETED/ABANDONED rooms may linger in Redis briefly for reconnection
     # but do not consume a concurrent-room slot.
@@ -130,7 +140,6 @@ async def create_room(
     if room_count >= max_rooms:
         raise ConflictError(f"Maximum of {max_rooms} concurrent rooms reached")
 
-    await db.get(Game, game_id)
     room_code = await generate_room_code(redis)
 
     session = GameSession(

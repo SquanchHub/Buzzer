@@ -447,3 +447,48 @@ def test_create_room_for_unknown_game_is_404_for_admin(api: Api):
     course_id = api.course()
     r = api.room(course_id, 99999999)
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Room course must equal the game's course — admins included (D4)
+# ---------------------------------------------------------------------------
+
+
+def test_create_room_in_other_course_is_409_for_admin(api: Api):
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    r = api.room(course_b, game["id"])
+    assert r.status_code == 409
+    assert "different course" in r.json()["message"]
+
+
+def test_create_room_in_other_hosted_course_is_409_for_host(api: Api):
+    """Host of both courses with a grant: access passes, the invariant still fails."""
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    user_id, token = api.user()
+    api.grant_course(user_id, course_a)
+    api.grant_course(user_id, course_b)
+    api.grant_game(user_id, game["id"])
+    r = api.room(course_b, game["id"], token)
+    assert r.status_code == 409
+    assert "different course" in r.json()["message"]
+
+
+def test_create_room_for_unassigned_game_is_409_for_admin(api: Api, legacy_game: int):
+    course_id = api.course()
+    r = api.room(course_id, legacy_game)
+    assert r.status_code == 409
+    assert "not assigned to a course" in r.json()["message"]
+
+
+def test_room_records_the_games_course(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    api.question(game["id"])
+    r = api.room(course_id, game["id"])
+    assert r.status_code == 201
+    info = api.req("GET", f"/game/rooms/{r.json()['room_code']}").json()
+    assert info["course_id"] == course_id
