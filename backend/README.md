@@ -37,5 +37,6 @@ its container image, the Alembic config, and a key-generation helper. All applic
 
 - `passlib` 1.7 is incompatible with `bcrypt>=4`, hence the pin in `requirements.txt`.
 - Changing `requirements.txt` or the `Dockerfile` needs `docker compose up --build`.
-- If JWT keys are missing or malformed the app silently generates ephemeral keys
-  (`services/auth_service.py`), so every token dies on restart.
+- If JWT keys are missing or malformed the app falls back to ephemeral in-memory keys
+  (`services/auth_service.py`) with only a `jwt_keys_not_configured` log warning, so every token
+  dies on restart.
