@@ -67,3 +67,8 @@ logging configuration, and the rate limiter. This is where any new role or permi
   `APP_ENV=development`, so the login/guest limits can't be exercised against the local stack.
 - **`HTTPException` responses don't use the app error shape** — they return `{"detail": …}`, so
   client error parsing has to handle both `message` and `detail`.
+- **422 bodies echo the rejected input, which can contain NaN/Infinity.** Python's JSON parser
+  accepts `NaN` and `Infinity` in request bodies, but `JSONResponse` refuses to render them. The
+  validation handler therefore replaces non-finite floats in `detail` with strings (`"nan"`,
+  `"inf"`, `"-inf"`); without that, a body rejected *for* containing NaN came back as a 500. Any
+  new handler that echoes request data needs the same treatment.
