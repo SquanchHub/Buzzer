@@ -14,26 +14,30 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 | `LoginPage.tsx` | `/login` | OAuth2 return landing: exchanges the temp token, then returns to `/name/:code` using `sessionStorage.joinRoomCode`. |
 | `game/GameLayout.tsx` | `/game/:code` | Checks token expiry, opens the socket, joins as PLAYER, handles server events, exposes state via context, routes between child pages, shows a "host disconnected" banner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Room code, spinner, "N players in room". |
-| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit. Timer bar. Answer time measured from mount. |
+| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit, hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit). Timer bar. Answer time measured from mount. |
 | `game/FeedbackPage.tsx` | `…/feedback` | Static "Answer locked in!" screen shown after `answer_received`. |
-| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded, the player's answer, points earned, running total, rank. |
-| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer). "Play Again" clears the token. |
+| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings. |
+| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings). "Play Again" clears the token. |
 
 ## Key entry points
 
 - Each file's default export is a page component, imported only by `App.tsx`.
 - `useGame()` (from `game/GameLayout.tsx`) provides `phase`, `gameStatus`, `roomCode`,
   `playerCount`, `hostDisconnected`, `currentQuestion`, `questionLocked`, `lastAnswerData`,
-  `answerResult`, `questionResults`, `gameOver`, and `emitAnswer(questionId, answerData, ms)`.
+  `answerResult`, `questionResults`, `gameOver`, `questionImage`, and `emitAnswer(questionId, answerData, ms)`.
+- `questionImage` — the current hotspot question's image (`{questionId, status, url?}`), fetched
+  by `GameLayout` the moment `new_question` arrives (`docs/plans/t7-hotspot.md` H11), shared by
+  `QuestionPage` and `ResultsPage`, revoked when the next question replaces it or on unmount.
 - `answer_data` shapes sent by `QuestionPage`: `{selectedIndex}`, `{selectedValue}`, `{text}`,
-  `{selectedIndices}`. They must match `game_service.calculate_score` on the backend.
+  `{selectedIndices}`, `{x, y}` (hotspot). They must match `game_service.calculate_score` on the backend.
 - Socket events handled: `sync_state`, `player_joined`, `new_question`, `question_locked`,
   `question_unlocked`, `answer_received`, `question_results`, `game_over` (then disconnects),
   `host_disconnected`, `game_abandoned`, `error`. Emitted: `join_room` (every connect), `submit_answer`.
 
 ## Depends on
 
-- `frontend/player/src/lib/` — `api`, `isTokenExpired`.
+- `frontend/player/src/lib/` — `api`, `isTokenExpired`, `loadImageUrl`.
+- `frontend/player/src/components/HotspotCanvas.tsx` — hotspot canvas and `useImageUrl`.
 - `frontend/player/src/components/ui/` — `Button`, `Card*`, `Input`, `TimerBar`.
 - `frontend/player/src/types/game.ts` — payload types. npm: `react-router-dom`, `socket.io-client`.
 - Backend `/api/auth/*`, `/api/game/rooms/*` and the Socket.io protocol (`backend/app/websocket/`).
@@ -44,6 +48,13 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 - `frontend/player/src/App.tsx` only. The host's QR code links to `/player/join?code=…`.
 
 ## Gotchas found while reading
+
+- **The socket reconnects on every page change.** `GameLayout`'s socket effect depends on
+  `[code, navigate]`, and with `BrowserRouter` `navigate` changes identity on each navigation, so
+  the effect tears down and reopens the socket (16 connections for one player in a 4-question
+  game, measured); each reconnect re-sends `join_room`. Anything placed in that effect's cleanup
+  runs on every navigation — which is why the hotspot image is released in a separate
+  unmount-only effect. Pre-existing; not fixed by T7.
 
 - **Any `error` event ends the game UI.** `GameLayout` swaps in a full-screen error with only
   "Back to Join", and clears it only on socket reconnect. A normal race, such as submitting just

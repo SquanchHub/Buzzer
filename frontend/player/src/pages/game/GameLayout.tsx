@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { isTokenExpired } from '../../lib/utils';
+import { loadImageUrl } from '../../lib/images';
+import type { HotspotImage } from '../../components/HotspotCanvas';
 import { io, Socket } from 'socket.io-client';
 import type {
   AnswerResultPayload,
@@ -28,6 +30,8 @@ interface GameContextValue {
   answerResult: AnswerResultPayload | null;
   questionResults: PlayerResultsPayload | null;
   gameOver: PlayerGameOverPayload | null;
+  // Hotspot: the current question's image, prefetched when new_question arrives (H11).
+  questionImage: (HotspotImage & { questionId: number }) | null;
   emitAnswer: (questionId: number, answerData: Record<string, unknown>, answerTimeMs: number) => void;
 }
 
@@ -60,6 +64,9 @@ export default function GameLayout() {
   const [answerResult, setAnswerResult] = useState<AnswerResultPayload | null>(null);
   const [questionResults, setQuestionResults] = useState<PlayerResultsPayload | null>(null);
   const [gameOver, setGameOver] = useState<PlayerGameOverPayload | null>(null);
+  const [questionImage, setQuestionImage] = useState<GameContextValue['questionImage']>(null);
+  // Which question's image is loaded/loading, and its object URL (to revoke).
+  const imageRef = useRef<{ questionId: number; url: string | null } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -113,6 +120,33 @@ export default function GameLayout() {
     });
 
     sock.on('new_question', (data: QuestionPayload) => {
+      // Hotspot image prefetch: start loading before navigating so the fetch overlaps
+      // with the player reading the prompt. A re-sent new_question for the same
+      // question (reconnect) keeps the image already loaded.
+      if (imageRef.current?.questionId !== data.questionId) {
+        releaseImage();
+        setQuestionImage(null);
+        const imageId = data.config.imageId;
+        if (data.type === 'hotspot' && typeof imageId === 'number') {
+          const qid = data.questionId;
+          imageRef.current = { questionId: qid, url: null };
+          setQuestionImage({ questionId: qid, status: 'loading' });
+          loadImageUrl(imageId)
+            .then((url) => {
+              if (imageRef.current?.questionId !== qid) {
+                URL.revokeObjectURL(url); // a newer question replaced this one
+                return;
+              }
+              imageRef.current.url = url;
+              setQuestionImage({ questionId: qid, status: 'ready', url });
+            })
+            .catch(() => {
+              if (imageRef.current?.questionId === qid) {
+                setQuestionImage({ questionId: qid, status: 'error' });
+              }
+            });
+        }
+      }
       setCurrentQuestion(data);
       setQuestionLocked(false);
       setLastAnswerData(null);
@@ -172,6 +206,16 @@ export default function GameLayout() {
     };
   }, [code, navigate]);
 
+  // Release the hotspot image only when the layout unmounts. Not in the socket
+  // effect's cleanup: `navigate` changes on every route change, so that effect
+  // re-runs on each navigation, and the image must survive question → results.
+  useEffect(() => releaseImage, []);
+
+  function releaseImage() {
+    if (imageRef.current?.url) URL.revokeObjectURL(imageRef.current.url);
+    imageRef.current = null;
+  }
+
   function emitAnswer(questionId: number, answerData: Record<string, unknown>, answerTimeMs: number) {
     setLastAnswerData(answerData);
     socketRef.current?.emit('submit_answer', { question_id: questionId, answer_data: answerData, answer_time_ms: answerTimeMs });
@@ -192,7 +236,7 @@ export default function GameLayout() {
 
   return (
     <GameContext.Provider
-      value={{ phase, gameStatus, roomCode: code, playerCount, hostDisconnected, currentQuestion, questionLocked, lastAnswerData, answerResult, questionResults, gameOver, emitAnswer }}
+      value={{ phase, gameStatus, roomCode: code, playerCount, hostDisconnected, currentQuestion, questionLocked, lastAnswerData, answerResult, questionResults, gameOver, questionImage, emitAnswer }}
     >
       {hostDisconnected && phase !== 'gameover' && (
         <div className="fixed top-0 inset-x-0 bg-yellow-600/90 text-yellow-100 text-center py-2 text-sm z-50">

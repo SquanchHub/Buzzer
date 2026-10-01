@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
+import { HotspotCanvas, useImageUrl } from '../../components/HotspotCanvas';
 import type { PlayerAnswerReveal, QuestionSummaryItem } from '../../types/game';
 
 function describePlayerAnswer(
-  playerAnswer: { selectedIndex?: number; selectedValue?: boolean; text?: string; selectedIndices?: number[] } | null,
+  playerAnswer: QuestionSummaryItem['playerAnswer'],
   type: string,
   options: string[] | undefined,
 ): string {
@@ -28,7 +29,36 @@ function describePlayerAnswer(
     if (options) return indices.map(i => `${String.fromCharCode(65 + i)} — ${options[i]}`).join(', ');
     return indices.map(i => String.fromCharCode(65 + i)).join(', ');
   }
+  if (type === 'hotspot') {
+    const { x, y } = playerAnswer;
+    return typeof x === 'number' && typeof y === 'number' ? `Tapped (${x.toFixed(2)}, ${y.toFixed(2)})` : '—';
+  }
   return '—';
+}
+
+/** Small recap canvas: own tap + target rings, no band label (§7.7). */
+function HotspotRecap({ item }: { item: QuestionSummaryItem }) {
+  const image = useImageUrl(item.config.imageId);
+  const r = item.answerReveal;
+  const rings =
+    r.type === 'hotspot' &&
+    r.x !== undefined && r.y !== undefined && r.innerRadius !== undefined && r.outerRadius !== undefined
+      ? { x: r.x, y: r.y, innerRadius: r.innerRadius, outerRadius: r.outerRadius }
+      : null;
+  const a = item.playerAnswer;
+  const marker = a && typeof a.x === 'number' && typeof a.y === 'number' ? { x: a.x, y: a.y } : null;
+  return (
+    <div className="mb-3">
+      <HotspotCanvas
+        aspectRatio={item.config.aspectRatio ?? 1}
+        image={image}
+        label={`Your tap and the target for: ${item.prompt}`}
+        marker={marker}
+        rings={rings}
+        maxHeightVh={30}
+      />
+    </div>
+  );
 }
 
 function describeCorrectAnswer(
@@ -75,6 +105,7 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
     <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
       <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Q{index + 1}</p>
       <p className="text-slate-100 text-sm font-medium leading-snug mb-3">{item.prompt}</p>
+      {item.type === 'hotspot' && <HotspotRecap item={item} />}
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">

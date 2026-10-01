@@ -168,9 +168,14 @@ export function HotspotCanvas({
       ctx.fillStyle = '#94a3b8';
       ctx.font = '600 16px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const text = image.status === 'error' ? 'Image unavailable' : 'Loading image…';
-      ctx.fillText(text, L.imgX + L.imgW / 2, L.imgY + L.imgH / 2);
+      if (image.status === 'error') {
+        // Bottom edge, so rings and taps drawn over the blank box don't cover it.
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Image unavailable', L.imgX + L.imgW / 2, L.imgY + L.imgH - 10);
+      } else {
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Loading image…', L.imgX + L.imgW / 2, L.imgY + L.imgH / 2);
+      }
     }
 
     const longer = Math.max(L.imgW, L.imgH);

@@ -1,6 +1,8 @@
 import { useRef, useState, useCallback } from 'react';
 import { useGame } from './GameLayout';
 import { TimerBar } from '../../components/ui/TimerBar';
+import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
+import type { HotspotPoint } from '../../types/game';
 
 const OPTION_COLORS = [
   'bg-red-600 hover:bg-red-500 border-red-500',
@@ -18,11 +20,12 @@ function optionLabel(i: number): string {
 }
 
 export default function QuestionPage() {
-  const { currentQuestion, questionLocked, emitAnswer } = useGame();
+  const { currentQuestion, questionLocked, emitAnswer, questionImage } = useGame();
   const startTimeRef = useRef(Date.now());
   const [submitted, setSubmitted] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [hotspotPoint, setHotspotPoint] = useState<HotspotPoint | null>(null);
 
   const toggleIndex = useCallback((i: number) => {
     if (submitted || questionLocked) return;
@@ -204,6 +207,61 @@ export default function QuestionPage() {
         )}
         {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
         {!submitted && questionLocked && lockedMsg}
+      </div>
+    );
+  }
+
+  if (currentQuestion.type === 'hotspot') {
+    // docs/plans/t7-hotspot.md §7.7, H6: tap to place, tap again to move, then Submit.
+    const image: HotspotImage =
+      questionImage && questionImage.questionId === currentQuestion.questionId
+        ? questionImage
+        : { status: 'loading' };
+    const canAnswer = !submitted && !questionLocked && image.status === 'ready';
+    const submitTap = () => {
+      if (!hotspotPoint) return;
+      const { x, y } = hotspotPoint;
+      // Any server `error` event replaces the whole game UI, so never send a bad tap.
+      if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) return;
+      submit({ x, y });
+    };
+    return (
+      <div className="py-6 px-4 flex flex-col gap-3">
+        <div className="pb-2">
+          {questionLabel}
+          <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+        </div>
+        <p className="text-slate-100 text-lg font-semibold text-center leading-snug">{currentQuestion.prompt}</p>
+        <HotspotCanvas
+          aspectRatio={currentQuestion.config.aspectRatio ?? 1}
+          image={image}
+          label={currentQuestion.prompt}
+          interactive={canAnswer}
+          onPick={setHotspotPoint}
+          marker={hotspotPoint}
+        />
+        {image.status === 'error' ? (
+          <p className="text-center text-red-400 text-sm mt-2">Image unavailable — this question can't be answered.</p>
+        ) : !submitted && !questionLocked ? (
+          <>
+            <p className="text-center text-slate-400 text-sm">
+              {image.status === 'loading'
+                ? 'Loading image…'
+                : hotspotPoint
+                  ? 'Tap again to move your marker'
+                  : 'Tap the image to place your marker'}
+            </p>
+            <button
+              disabled={!hotspotPoint || !canAnswer}
+              onClick={submitTap}
+              className="w-full rounded-2xl py-5 text-white font-black text-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Submit
+            </button>
+          </>
+        ) : null}
+        {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
+        {!submitted && questionLocked && image.status !== 'error' && lockedMsg}
       </div>
     );
   }
