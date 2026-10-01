@@ -17,7 +17,9 @@ Socket.io connection is opened in `frontend/player/src/pages/game/GameLayout.tsx
   - `path` is relative to `/api`. Each call reads `localStorage.token` fresh and, if present,
     sends `Authorization: Bearer <token>`.
   - Success: the body is parsed as JSON; an empty body resolves to `{}` cast to `T`.
-  - Failure: throws `Error(body.detail ?? "HTTP <status>")`.
+  - Failure: throws `Error(errorMessage(body, status))`, which picks the first of `message`
+    (app errors), string `detail` (`HTTPException`), the 422 `detail` array joined as
+    `field: msg; …`, the `error` code, or `HTTP <status>`.
   - `T` is a compile-time cast only; responses are not validated at runtime.
   - There is no `delete` (the host copy has one); the player app never needs it.
 - `isTokenExpired(token: string | null): boolean` — `true` if the token is missing, can't be
@@ -42,12 +44,11 @@ Socket.io connection is opened in `frontend/player/src/pages/game/GameLayout.tsx
 
 ## Gotchas found while reading
 
-- **Server error messages are almost never shown.** The backend sends error messages as
-  `{"error", "message"}` (`backend/app/common/exceptions.py`), but `api.ts` reads `detail`.
-  Players see `HTTP 409` instead of "This email is already associated with an account…"
-  (`auth_service.create_guest_user`), `HTTP 401` instead of "Invalid credentials", and `HTTP 404`
-  instead of "Room not found or has expired". Validation 422s do carry `detail`, but as an array,
-  so the message becomes `[object Object]`. This is the same bug as the host `lib/api.ts`.
+- **Error parsing was fixed, but not everywhere.** `api.ts` originally read only `body.detail`,
+  hiding the backend's `{"error", "message"}` bodies (`backend/app/common/exceptions.py`) behind
+  `HTTP 409`/`HTTP 401`; `fix/frontend-error-messages` added `errorMessage()` here and in the host
+  and admin clients. `LoginPage.tsx`'s direct `exchange-temp` fetch bypasses `api` and still reads
+  only `detail`, so OAuth2 failures there fall back to "Sign-in failed".
 - **Host, player and admin share one token.** All three apps read and write the same
   `localStorage` key `token`. In production they are served under `/host/`, `/player/` and
   `/admin/` on one origin (the OAuth2 redirects in `routers/auth.py` build `FRONTEND_URL` +
