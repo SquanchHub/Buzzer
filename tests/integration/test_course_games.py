@@ -536,3 +536,106 @@ def test_grant_game_access_to_admin_needs_no_course(api: Api):
     r = api.grant_game(admin["id"], game["id"])
     assert r.status_code == 204
     api.req("DELETE", f"/admin/users/{admin['id']}/game-access/{game['id']}")
+
+
+# ---------------------------------------------------------------------------
+# Admin moves a game between courses (D5, §6.1.6)
+# ---------------------------------------------------------------------------
+
+
+def test_admin_moves_game_to_another_course(api: Api):
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": course_b})
+    assert r.status_code == 200, r.text
+    assert r.json()["course_id"] == course_b
+
+
+def test_admin_assigns_course_to_unassigned_game(api: Api, legacy_game: int):
+    course_id = api.course()
+    r = api.req("PUT", f"/admin/games/{legacy_game}", json={"course_id": course_id})
+    assert r.status_code == 200, r.text
+    assert r.json()["course_id"] == course_id
+    # Now runnable in that course.
+    assert api.room(course_id, legacy_game).status_code == 201
+
+
+def test_update_game_without_course_keeps_course(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"title": "Renamed"})
+    assert r.status_code == 200
+    assert r.json()["title"] == "Renamed"
+    assert r.json()["course_id"] == course_id
+
+
+def test_move_game_to_unknown_course_is_404(api: Api):
+    game = api.game(api.course())
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": 99999999})
+    assert r.status_code == 404
+
+
+def test_move_game_with_explicit_null_course_is_422(api: Api):
+    """Unassigning is not a supported operation: null is rejected, not 'clear'."""
+    game = api.game(api.course())
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": None})
+    assert r.status_code == 422
+
+
+def test_move_game_is_409_while_live_and_allowed_after(api: Api):
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    r = api.room(course_a, game["id"])
+    assert r.status_code == 201
+    session_id = r.json()["session_id"]
+
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": course_b})
+    assert r.status_code == 409
+    assert "live session" in r.json()["message"]
+    # Same course and other fields are fine while live.
+    r = api.req(
+        "PUT",
+        f"/admin/games/{game['id']}",
+        json={"course_id": course_a, "title": "Still live"},
+    )
+    assert r.status_code == 200, r.text
+
+    api.delete_session(session_id)
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": course_b})
+    assert r.status_code == 200, r.text
+
+
+def test_lobby_session_whose_redis_room_expired_is_not_live(api: Api):
+    """D7: MySQL still says LOBBY, but the room key is gone → not live."""
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    r = api.room(course_a, game["id"])
+    assert r.status_code == 201
+    room_code = r.json()["room_code"]
+
+    assert _redis("DEL", f"room:{room_code}") == "1"
+
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": course_b})
+    assert r.status_code == 200, r.text
+
+
+def test_completed_session_does_not_block_move(api: Api):
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    r = api.room(course_a, game["id"])
+    session_id = r.json()["session_id"]
+    _mysql(f"UPDATE game_sessions SET status='COMPLETED' WHERE id='{session_id}';")
+
+    r = api.req("PUT", f"/admin/games/{game['id']}", json={"course_id": course_b})
+    assert r.status_code == 200, r.text
+    # Historical sessions keep the course they were played in.
+    out = _mysql(f"SELECT course_id FROM game_sessions WHERE id='{session_id}';")
+    assert int(out.strip()) == course_a
+
+
+def test_update_unknown_game_is_404(api: Api):
+    r = api.req("PUT", "/admin/games/99999999", json={"course_id": api.course()})
+    assert r.status_code == 404

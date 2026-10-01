@@ -43,10 +43,12 @@ from ..schemas.admin import (
     UserUpdate,
     UserWithAccessResponse,
 )
+from ..redis_client import get_redis
 from ..services.auth_service import hash_password
 from ..services.export_service import build_canvas_csv, build_session_csv
 from ..services.report_service import build_session_report
 from ..services.roster_service import process_roster_csv, process_roster_rows
+from ..services.state_service import get_room_state
 
 _SUPPORTED_IMPORT_VERSION = 1
 
@@ -205,6 +207,24 @@ async def patch_roster_entry(
 # ---------------------------------------------------------------------------
 
 
+async def _has_live_session(db: AsyncSession, redis, game_id: int) -> bool:
+    """A session is live if MySQL says LOBBY/IN_PROGRESS *and* its room key is
+    still in Redis. MySQL alone isn't enough: a room that is never started stays
+    LOBBY forever after its Redis TTL lapses, which would lock the game for good."""
+    room_codes = (
+        await db.execute(
+            select(GameSession.room_code).where(
+                GameSession.game_id == game_id,
+                GameSession.status.in_(["LOBBY", "IN_PROGRESS"]),
+            )
+        )
+    ).scalars()
+    for code in room_codes:
+        if await get_room_state(redis, code) is not None:
+            return True
+    return False
+
+
 @router.get("/games", response_model=list[GameResponse])
 async def list_games(
     _: Annotated[User, Depends(require_admin)],
@@ -254,10 +274,19 @@ async def update_game(
     body: GameUpdate,
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis=Depends(get_redis),
 ) -> Game:
     game = await db.get(Game, game_id)
     if not game:
         raise NotFoundError(f"Game {game_id} not found")
+    if body.course_id is not None and body.course_id != game.course_id:
+        if not await db.get(Course, body.course_id):
+            raise NotFoundError(f"Course {body.course_id} not found")
+        # Completed sessions keep the course they were played in; only a live
+        # room would end up running in a course that no longer owns the game.
+        if await _has_live_session(db, redis, game_id):
+            raise ConflictError("This game has a live session")
+        game.course_id = body.course_id
     if body.title is not None:
         game.title = body.title
     if body.description is not None:
