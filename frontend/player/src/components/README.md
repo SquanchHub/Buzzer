@@ -1,9 +1,10 @@
 # frontend/player/src/components/
 
-Small presentational building blocks for the Player (phone) app. Everything lives in `ui/`;
-there are no game-specific components here. The answer buttons, the fill-in-the-blank input
-and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`. None of these
-components touch the network, sockets, or global state.
+Presentational building blocks for the Player (phone) app: generic primitives in `ui/`, plus
+one game-specific component, `HotspotCanvas.tsx`. The answer buttons, the fill-in-the-blank input
+and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`. None of the
+`ui/` components touch the network, sockets, or global state; `HotspotCanvas.tsx`'s
+`useImageUrl` hook fetches an image via `lib/images.ts`.
 
 ## Files
 
@@ -13,6 +14,7 @@ components touch the network, sockets, or global state.
 | `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — rounded, padded panel wrappers around `<div>`. |
 | `ui/input.tsx` | `Input` — a styled `<input>` with phone-sized padding and `text-base`. |
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
+| `HotspotCanvas.tsx` | `HotspotCanvas` — the hotspot question's `<canvas>` (`docs/plans/t7-hotspot.md` §7.6–7.7), interactive (tap to place a point) or display (rings + own tap); `useImageUrl(imageId)` for display canvases that load their own image. |
 
 ## Key entry points
 
@@ -24,6 +26,16 @@ components touch the network, sockets, or global state.
   - `paused` freezes it; when unpaused it resumes from the frozen value.
   - Props are **read once, at mount** (empty dependency list), so `QuestionPage` remounts it
     with `key={currentQuestion.questionId}` for each question.
+
+- `HotspotCanvas({ aspectRatio, image, label, interactive?, onPick?, marker?, rings?, maxHeightVh? })`
+  - Full container width; height from `aspectRatio`, capped at `maxHeightVh` (default 60).
+    The image is **letterboxed** by `aspectRatio`, so layout is fixed before it loads; taps
+    in the letterbox are ignored. Backing store is CSS size × `devicePixelRatio`.
+  - Points are fractions of the image (0..1, origin top-left). Ring radii are fractions of the
+    image's **longer side**, drawn as true circles — what the server scores.
+  - `image` is `{status: 'loading' | 'ready' (url) | 'error'}`; `'error'` draws
+    "Image unavailable" (rings and marker still draw). `interactive` sets `touch-action: none`.
+  - Colours come from CSS variables `--hotspot-inner|outer|miss|neutral` (fallbacks until T9).
 
 ## Depends on
 
