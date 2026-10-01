@@ -1,5 +1,28 @@
 const BASE = '/api';
 
+/**
+ * Pick a readable message out of an error response body. The backend sends
+ * {error, message} for app errors, {detail: string} for HTTPException, and
+ * {detail: [{loc, msg}, ...]} for request validation errors.
+ */
+function errorMessage(body: unknown, status: number): string {
+  const b = (body ?? {}) as { message?: unknown; detail?: unknown; error?: unknown };
+  if (typeof b.message === 'string' && b.message) return b.message;
+  if (typeof b.detail === 'string' && b.detail) return b.detail;
+  if (Array.isArray(b.detail) && b.detail.length > 0) {
+    return b.detail
+      .map((item) => {
+        const { loc, msg } = (item ?? {}) as { loc?: unknown; msg?: unknown };
+        const text = typeof msg === 'string' ? msg : 'Invalid value';
+        const field = Array.isArray(loc) ? loc.filter(p => p !== 'body').pop() : undefined;
+        return field !== undefined ? `${field}: ${text}` : text;
+      })
+      .join('; ');
+  }
+  if (typeof b.error === 'string' && b.error) return b.error;
+  return `HTTP ${status}`;
+}
+
 async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('token');
   const res = await fetch(`${BASE}${path}`, {
@@ -12,7 +35,7 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+    throw new Error(errorMessage(err, res.status));
   }
   const text = await res.text();
   return text ? (JSON.parse(text) as T) : ({} as T);
