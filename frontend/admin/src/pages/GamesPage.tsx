@@ -11,17 +11,30 @@ interface Game {
   title: string;
   description: string;
   max_players: number;
+  course_id: number | null;
   created_at: string;
 }
 
+interface Course {
+  id: number;
+  name: string;
+  semester: string;
+}
+
+const selectClass =
+  'w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent';
+
 export default function GamesPage() {
   const [games, setGames] = useState<Game[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('150');
+  const [courseId, setCourseId] = useState('');
+  const [importCourseId, setImportCourseId] = useState('');
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [editingGame, setEditingGame] = useState<Game | null>(null);
@@ -34,8 +47,12 @@ export default function GamesPage() {
 
   async function load() {
     try {
-      const data = await api.get<Game[]>('/admin/games');
+      const [data, courseData] = await Promise.all([
+        api.get<Game[]>('/admin/games'),
+        api.get<Course[]>('/admin/courses'),
+      ]);
       setGames(data);
+      setCourses(courseData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load games');
     } finally {
@@ -54,8 +71,9 @@ export default function GamesPage() {
         title,
         description,
         max_players: Number(maxPlayers),
+        course_id: Number(courseId),
       });
-      setTitle(''); setDescription(''); setMaxPlayers('150');
+      setTitle(''); setDescription(''); setMaxPlayers('150'); setCourseId('');
       setShowForm(false);
       await load();
     } catch (err) {
@@ -100,6 +118,7 @@ export default function GamesPage() {
     try {
       const form = new FormData();
       form.append('file', file);
+      form.append('course_id', importCourseId);
       const result = await api.postForm<{ game_id: number }>('/admin/games/import', form);
       await load();
       navigate(`/games/${result.game_id}/questions`);
@@ -109,6 +128,12 @@ export default function GamesPage() {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
     }
+  }
+
+  function courseLabel(id: number | null): string {
+    if (id === null) return 'Unassigned';
+    const c = courses.find((x) => x.id === id);
+    return c ? `${c.name} (${c.semester})` : `Course ${id}`;
   }
 
   async function deleteGame(id: number) {
@@ -126,8 +151,20 @@ export default function GamesPage() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-100">Games</h2>
         <div className="flex gap-2">
+          <select
+            aria-label="Course to import into"
+            value={importCourseId}
+            onChange={(e) => setImportCourseId(e.target.value)}
+            className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">Import into course{'\u2026'}</option>
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>{c.name} ({c.semester})</option>
+            ))}
+          </select>
           <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={importing}>
+          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={importing || !importCourseId}
+            title={importCourseId ? undefined : 'Choose a course to import into first'}>
             <Upload size={14} className="mr-1" />
             {importing ? 'Importing\u2026' : 'Import JSON'}
           </Button>
@@ -145,6 +182,21 @@ export default function GamesPage() {
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-3">
               <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <div>
+                <label htmlFor="create-course" className="block text-xs text-slate-400 mb-1">Course</label>
+                <select
+                  id="create-course"
+                  value={courseId}
+                  onChange={(e) => setCourseId(e.target.value)}
+                  className={selectClass}
+                  required
+                >
+                  <option value="">Choose a course{'\u2026'}</option>
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.semester})</option>
+                  ))}
+                </select>
+              </div>
               <textarea
                 placeholder="Description (optional)"
                 value={description}
@@ -214,7 +266,9 @@ export default function GamesPage() {
               <div>
                 <p className="font-semibold text-slate-100">{g.title}</p>
                 {g.description && <p className="text-slate-400 text-sm mt-0.5 line-clamp-1">{g.description}</p>}
-                <p className="text-slate-500 text-xs mt-0.5">Max {g.max_players} players</p>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {courseLabel(g.course_id)} · Max {g.max_players} players
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button
