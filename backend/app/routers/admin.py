@@ -7,7 +7,7 @@ from typing import Annotated
 
 import bleach
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,7 @@ from ..schemas.admin import (
     CourseUpdate,
     GameAccessGrant,
     GameCreate,
+    GameMeta,
     GameResponse,
     GameUpdate,
     QuestionCreate,
@@ -219,8 +220,13 @@ async def create_game(
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Game:
+    if not await db.get(Course, body.course_id):
+        raise NotFoundError(f"Course {body.course_id} not found")
     game = Game(
-        title=body.title, description=body.description, max_players=body.max_players
+        title=body.title,
+        description=body.description,
+        max_players=body.max_players,
+        course_id=body.course_id,
     )
     db.add(game)
     await db.flush()
@@ -484,9 +490,12 @@ async def export_game(
 @router.post("/games/import", status_code=201)
 async def import_game(
     file: Annotated[UploadFile, File(description="buzzer/game JSON bundle")],
+    course_id: Annotated[int, Form(gt=0, description="Course to attach the game to")],
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    if not await db.get(Course, course_id):
+        raise NotFoundError(f"Course {course_id} not found")
     raw = await file.read()
     try:
         bundle = json.loads(raw)
@@ -504,7 +513,7 @@ async def import_game(
 
     game_data = bundle.get("game", {})
     try:
-        game_meta = GameCreate(**game_data)
+        game_meta = GameMeta(**game_data)
     except Exception as exc:
         raise HTTPException(
             status_code=422, detail=f"Invalid game metadata: {exc}"
@@ -524,6 +533,7 @@ async def import_game(
         title=game_meta.title,
         description=game_meta.description,
         max_players=game_meta.max_players,
+        course_id=course_id,
     )
     db.add(game)
     await db.flush()
