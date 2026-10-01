@@ -69,6 +69,13 @@ non-dev mode `AsyncRedisManager` routes emits across instances, but these dicts 
 
 ## Gotchas found while reading
 
+- **Open finding — `host_advance` double-advance race (own branch planned).** At
+  `QUESTION → RESULTS` the handler emits `question_results` *before* it writes
+  `question_phase = "RESULTS"` to Redis. A second `host_advance` arriving in that window (~10 ms,
+  reproduced with a scripted host) still sees `QUESTION`: results are shown twice, no next
+  question is sent, and the game never reaches `game_over`. Real hosts are protected by the
+  results screen's countdown; scripted clients must wait briefly after `question_results` before
+  advancing again.
 - A player who disconnects stays in `session:{id}:players`, so `totalPlayers` and
   `all_players_answered` still count them; the early "all answered" signal never fires.
 - No frontend or script emits `rejoin_room`; clients re-send `join_room` on every reconnect.
