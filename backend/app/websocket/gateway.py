@@ -1152,6 +1152,13 @@ async def on_submit_answer(sid: str, data: dict) -> None:
         result = await game_service.record_answer(
             db, redis, session_id, user_id, question, answer_data, answer_time_ms
         )
+        # Commit before any emit, so a host that advances the moment it hears about
+        # this answer sees the row in MySQL (totalAnswered, yourPoints). _db() commits
+        # again on exit, which is then a no-op.
+        # WARNING: anything added between this commit and the emits below runs
+        # outside this transaction — its DB writes are only committed when _db()
+        # exits, after clients have already been notified.
+        await db.commit()
 
         player_data = await state.get_player(redis, session_id, user_id)
         total_score = (
