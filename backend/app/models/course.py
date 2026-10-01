@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..database import Base
 
 if TYPE_CHECKING:
+    from .game import Game
     from .session import GameSession
     from .user import User
 
@@ -40,6 +41,8 @@ class Course(Base):
     sessions: Mapped[list[GameSession]] = relationship(
         "GameSession", back_populates="course"
     )
+    # No ORM cascade: games.course_id is ON DELETE RESTRICT.
+    games: Mapped[list[Game]] = relationship("Game", back_populates="course")
 
 
 class CourseRoster(Base):
