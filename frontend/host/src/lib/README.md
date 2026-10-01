@@ -10,6 +10,7 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
 |---|---|
 | `api.ts` | `api.get` / `api.post` / `api.delete` — `fetch` wrappers that prefix `/api`, send JSON, attach the bearer token, and throw on non-2xx. |
 | `utils.ts` | `cn(...classes)` — combines `clsx` (conditional classes) with `tailwind-merge` (later Tailwind classes override earlier conflicting ones). |
+| `images.ts` | `loadImageUrl(imageId)` — fetches `/api/images/{id}` with the bearer token into an object URL (caller revokes it); throws `ImageUnavailableError` on network error, non-2xx or a non-image body. Copy of the player's `lib/images.ts`. |
 
 ## Key entry points
 
