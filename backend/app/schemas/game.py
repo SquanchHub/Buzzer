@@ -82,6 +82,7 @@ class MyGameItem(BaseModel):
     title: str
     description: str
     max_players: int
+    course_id: int | None  # None = unassigned legacy game (admins only)
 
 
 # ---------------------------------------------------------------------------

@@ -23,12 +23,15 @@ model here does nothing to the database until a matching migration is written an
 - **`courses`** — `name`, `semester`. **`course_rosters`** — `(course_id, netid)` unique,
   `full_name`, `email`, `is_active` (deactivated rather than deleted on re-upload).
 - **`user_course_access`** — composite PK `(user_id, course_id)`, `role` is `HOST | PLAYER`.
-- **`games`** — `title`, `description`, `max_players`. **No link to a course.**
+- **`games`** — `title`, `description`, `max_players`, `course_id` (nullable FK → `courses`,
+  `ON DELETE RESTRICT`, indexed; migration 004). Every game created through the API has a course;
+  NULL means an unassigned legacy game that only admins can see or run.
 - **`questions`** — `game_id`, `type` (free `String(50)`), `grading_type`
   (`ACCURACY | COMPLETENESS`), `prompt`, `config` (JSON, sent to clients),
   `answer_data` (JSON, server-only), `time_limit_seconds`, `points_value` (float), `order_index`.
-- **`user_game_access`** — composite PK `(user_id, game_id)`; this is how a non-admin host is
-  allowed to run a game today.
+- **`user_game_access`** — composite PK `(user_id, game_id)`. A non-admin host can use a game
+  only with this grant **and** a `HOST` row in `user_course_access` for the game's course
+  (`game_service.assert_host_can_use_game`).
 - **`game_sessions`** — `id` UUID, `room_code` (6 chars, unique), `game_id`, `course_id`,
   `host_user_id` (nullable), `status` (`LOBBY | IN_PROGRESS | COMPLETED | ABANDONED`), `completed_at`.
 - **`session_scores`** — `session_id`, `user_id`, `question_id`, `points_awarded` (float),
@@ -67,8 +70,11 @@ model here does nothing to the database until a matching migration is written an
   `(session_id, user_id, question_id)`; duplicate-answer protection lives only in Redis
   (`session:{id}:answered:{qid}` checked in the gateway). If Redis is flushed mid-question a
   second answer would be stored and double-counted.
-- **Games are global.** `Game` has no `course_id`; T4's "course-specific games" needs a new column
-  and migration, and a decision on what replaces or complements `user_game_access`.
+- **A game's course and its sessions' course can differ historically.** `create_room` enforces
+  `session.course_id == game.course_id` when a room opens, but an admin may later move a game
+  (`PUT /admin/games/{id}` with `course_id`), and completed sessions keep their old course.
+- **`Game.course` / `Course.games` have no ORM cascade** — the FK is `RESTRICT`, so a course with
+  games can't be deleted (there is no course delete endpoint anyway).
 - **Courses can't be deleted** — there is no endpoint, and `game_sessions.course_id` has no cascade.
 - **Adding a question type needs no migration.** `type` is a free string and `config` /
   `answer_data` are schemaless JSON; the allowed values and shapes are enforced only by

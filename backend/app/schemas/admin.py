@@ -85,11 +85,18 @@ class RosterImportPayload(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class GameCreate(BaseModel):
+class GameMeta(BaseModel):
+    """A game's own fields; also validates an import bundle's `game` block,
+    which never carries a course (course ids are instance-specific)."""
+
     model_config = ConfigDict(extra="forbid")
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field("", max_length=5000)
     max_players: int = Field(150, ge=1, le=500)
+
+
+class GameCreate(GameMeta):
+    course_id: int = Field(..., gt=0)
 
 
 class GameUpdate(BaseModel):
@@ -97,6 +104,16 @@ class GameUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = Field(None, max_length=5000)
     max_players: int | None = Field(None, ge=1, le=500)
+    # Admin-only move to another course. Omit to keep; null is rejected
+    # (unassigning a game is not supported).
+    course_id: int | None = Field(None, gt=0)
+
+    @field_validator("course_id", mode="before")
+    @classmethod
+    def course_id_not_null(cls, v: object) -> object:
+        if v is None:
+            raise ValueError("course_id cannot be null; omit it to keep the course")
+        return v
 
 
 class GameResponse(BaseModel):
@@ -105,6 +122,7 @@ class GameResponse(BaseModel):
     title: str
     description: str
     max_players: int
+    course_id: int | None
     created_at: datetime
 
 

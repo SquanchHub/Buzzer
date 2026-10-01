@@ -12,10 +12,10 @@ how they fit together and documents the top-level modules that live directly in 
 | `routers/` | REST endpoints: `auth`, `game` (host-facing), `admin` (admin-only CRUD), `health`. | Every `admin` endpoint is `require_admin`; host-owned checks are inlined per handler. |
 | `websocket/` | Socket.io server: join, host-driven phase machine, answers, timers, host-disconnect grace. | Only place that emits events; per-player payloads go to `user:{id}` rooms. |
 | `services/` | Business logic: auth/JWT, room lifecycle, scoring, Redis state, CSV/HTML exports, roster import. | Callers own the commit; scoring branches per question type. |
-| `models/` | SQLAlchemy ORM models for all nine tables. | Games have no course link; several FKs have no cascade. |
+| `models/` | SQLAlchemy ORM models for all nine tables. | Each game belongs to one course (`games.course_id`, NULL = unassigned legacy); several FKs have no cascade. |
 | `schemas/` | Pydantic request/response models, incl. per-type question validation. | Create validates question structure, update does not. |
 | `common/` | Auth/role dependencies, error types and JSON error shapes, logging, rate limiter. | No course-scoped permission dependency exists yet. |
-| `migrations/` | Alembic environment and versioned migrations `001`–`003` (linear chain). | Schema changes happen only here (`alembic upgrade head`). |
+| `migrations/` | Alembic environment and versioned migrations `001`–`004` (linear chain). | Schema changes happen only here (`alembic upgrade head`). |
 
 ## Top-level modules
 
@@ -47,7 +47,8 @@ how they fit together and documents the top-level modules that live directly in 
 - **Commits:** `get_db` (REST) and the gateway's `_db()` context manager commit at the end;
   services mostly `flush()`. `start_game` / `complete_game` commit early on purpose.
 - **Roles:** `User.role` is `ADMIN | USER | GUEST`; per-course `HOST | PLAYER` lives in
-  `user_course_access`; non-admin hosts run games via `user_game_access`. Admins bypass all checks.
+  `user_course_access`; non-admin hosts run a game only with a `user_game_access` grant **and** HOST on the game's
+  course. Admins bypass all checks except the room/game course match in `create_room`.
 - **Answer secrecy:** `Question.answer_data` never leaves the server; clients get `config` plus a
   derived `answerReveal` after the question closes.
 
@@ -81,7 +82,9 @@ package: all three frontends, `tests/integration/engine/scoring.py`, `scripts/si
 - **Validation is asymmetric:** question create is structurally validated, update is not.
 - **Deleting a played question 500s** (no cascade on `session_scores.question_id`).
 - **Duplicate-answer protection is Redis-only** — no unique constraint in MySQL.
-- **No course-aware authorization** for games, questions or rosters; that is all admin-only today.
+- **Games are course-bound, but content management is still admin-only.** Hosts need a game grant
+  **and** HOST on its course to run it, and rooms must open in the game's course; questions and
+  rosters are still edited only through `/api/admin/*` (T4 phase 2 adds `/api/host/*`).
 - **Question-type logic is duplicated** across `game_service`, `gateway` and `report_service`
   (three reveal builders, two Levenshtein implementations), and `report_service` lacks `multi_select`.
 - **Disconnected players still count** toward `totalPlayers`, so "all answered" can't fire early.

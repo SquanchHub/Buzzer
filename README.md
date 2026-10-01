@@ -363,12 +363,13 @@ curl -H "Authorization: Bearer $TOKEN" \
   -o my_quiz.json
 ```
 
-**Import** — from the Admin UI, click **Import JSON** on the Games page and pick a `.json` file. This always creates a *new* game — it never overwrites an existing one. Or via the API:
+**Import** — from the Admin UI, choose the course to import into on the Games page, then click **Import JSON** and pick a `.json` file. Every game belongs to one course, and the course is supplied alongside the file (the file itself never contains a course). This always creates a *new* game — it never overwrites an existing one. Or via the API:
 
 ```bash
 curl -X POST "http://localhost:8000/api/admin/games/import" \
   -H "Authorization: Bearer $TOKEN" \
-  -F "file=@my_quiz.json"
+  -F "file=@my_quiz.json" \
+  -F "course_id=1"
 ```
 
 The file format is:

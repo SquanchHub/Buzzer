@@ -77,7 +77,9 @@ async def my_games(
 ) -> list[Game]:
     """
     Returns games the authenticated user can run.
-    ADMIN sees all games; USER sees games from user_game_access.
+    ADMIN sees all games, unassigned ones included. USER sees games they hold a
+    user_game_access grant for AND whose course they HOST (same rule as
+    game_service.assert_host_can_use_game).
     """
     if user.role == "ADMIN":
         result = await db.execute(select(Game).order_by(Game.title))
@@ -86,6 +88,12 @@ async def my_games(
     result = await db.execute(
         select(Game)
         .join(UserGameAccess, UserGameAccess.game_id == Game.id)
+        .join(
+            UserCourseAccess,
+            (UserCourseAccess.course_id == Game.course_id)
+            & (UserCourseAccess.user_id == UserGameAccess.user_id)
+            & (UserCourseAccess.role == "HOST"),
+        )
         .where(UserGameAccess.user_id == user.id)
         .order_by(Game.title)
     )

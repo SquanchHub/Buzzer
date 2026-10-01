@@ -16,7 +16,7 @@ pagination.
 | `UsersPage.tsx` | `/users` | List non-guest users; create local accounts. Row click → user detail. |
 | `UserDetailPage.tsx` | `/users/:userId` | Edit a user (username, display name, email, password, role USER/ADMIN), delete, grant/revoke course access (HOST or PLAYER) and game access. |
 | `GuestsPage.tsx` | `/guests` | List guest accounts, merge a guest into a netid, delete guests. |
-| `GamesPage.tsx` | `/games` | List, create, edit and delete games; import a game JSON file. |
+| `GamesPage.tsx` | `/games` | List, create, edit and delete games; import a game JSON file. Create requires a course; Import needs a target course picked first (sent as the `course_id` form field). Rows show the game's course or "Unassigned". The edit form cannot move a game yet (the API supports it). |
 | `QuestionEditorPage.tsx` | `/games/:gameId/questions` | Add, edit, delete and reorder a game's questions; export the game as JSON. |
 | `SessionsPage.tsx` | `/sessions` | All sessions with a status filter; per-session HTML report, CSV export (Canvas or raw options), delete. |
 
