@@ -51,8 +51,8 @@ and the top-level files.
 
 ## Gotchas collected from the child READMEs
 
-- **Error messages now readable:** the `detail`-only parsing described in `lib/README.md` was fixed
-  on `main` (`fix/frontend-error-messages`).
+- **Error parsing:** `lib/api.ts` now reads `message`, string `detail` and validation-error arrays
+  (`fix/frontend-error-messages`), but `LoginPage`'s direct `exchange-temp` fetch still reads only `detail`.
 - **Shared token** with host/admin on the nginx origin: joining as a guest replaces a signed-in
   host's token, and "Play Again" signs the host out in the same browser.
 - **Fragile game flow:** ordinary races ("Question is locked") end the game UI; reloads on results,

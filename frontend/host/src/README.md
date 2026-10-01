@@ -50,9 +50,8 @@ top-level files.
 
 ## Gotchas collected from the child READMEs
 
-- **Error messages now readable:** the `lib/api.ts` `detail`-only parsing described in
-  `lib/README.md` was fixed on `main` (`fix/frontend-error-messages`) — `api.ts` now reads
-  `message`, string `detail` and validation-error arrays.
+- **Error parsing:** `lib/api.ts` now reads `message`, string `detail` and validation-error arrays
+  (`fix/frontend-error-messages`), but `LoginPage`'s direct `exchange-temp` fetch still reads only `detail`.
 - **Shared token** with the player and admin apps on the nginx origin (`localStorage.token`), and
   no token refresh — an expired token passes `RequireAuth` and every call fails.
 - **Fragile game screens:** recoverable socket errors take over the whole screen; reloads on
