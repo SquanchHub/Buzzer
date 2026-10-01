@@ -29,17 +29,27 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   `get_player_question_summary`, `get_host_question_summary`.
   - `calculate_score` branches on `grading_type` (COMPLETENESS = full points for any answer)
     then on `question.type`: `multiple_choice`, `true_false`, `fill_in_the_blank` (Levenshtein
-    within `editDistance`), `multi_select` (sum of per-option points, floored at 0).
+    within `editDistance`), `multi_select` (sum of per-option points, floored at 0), `hotspot`
+    (flat band: inner = full points and correct; outer = `points_value × partialFraction`;
+    miss, malformed tap or invalid stored target = 0).
     **Adding a question type means adding a branch here** and in `record_answer`'s distribution keys.
   - `record_answer` adds a `SessionScore` row (flush only), then updates the Redis score,
-    answered set, and distribution hash.
+    answered set, and distribution hash. Hotspot distribution keys are band names
+    (`inner`/`outer`/`miss`) under ACCURACY; COMPLETENESS hotspot records no key.
+  - Game-over summaries: for hotspot, both use `hotspot_reveal`; the host summary's
+    `answerDistribution` is band counts over **all** answers, and it adds
+    `taps: [{x, y, band}]` (band `null` under COMPLETENESS), the first `HOTSPOT_TAP_CAP` (500)
+    in answer order (`session_scores.id`). Only hotspot items carry `taps`.
   - Hotspot helpers (pure, module level; `docs/plans/t7-hotspot.md` §5.2–5.4):
     `hotspot_target(question_id, config, answer_data)` → frozen `HotspotTarget` or `None` (bad
     stored data; logs `hotspot_target_invalid`, never raises); `hotspot_band(target, px, py)` →
     `"inner" | "outer" | "miss"` (aspect-corrected distance, boundaries inclusive);
     `hotspot_reveal(target | None)` → the one client-safe hotspot reveal shape, meant for every
-    reveal builder (gateway, report, both summaries). Validation rules come from
-    `schemas/admin.py`'s hotspot checker, not a copy.
+    reveal builder (gateway, report, both summaries); `hotspot_tap(answer_data)` → `(x, y)` or
+    `None` (the one tap parser); `hotspot_tap_band(grading_type, target, tap)` → band, `None`
+    under COMPLETENESS, `"miss"` for an invalid target. Validation rules come from
+    `schemas/admin.py`'s hotspot checker, not a copy. Call `hotspot_target` only under ACCURACY
+    (COMPLETENESS rows have no target and it would log a false warning).
   - `start_game` and `complete_game` call `db.commit()` themselves, so concurrent socket
     handlers see the new status.
 - **state_service** — key layout is documented in its module docstring

@@ -12,14 +12,18 @@ Run with:
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import pytest
 from structlog.testing import capture_logs
 
 from app.services.game_service import (
     HotspotTarget,
+    calculate_score,
     hotspot_band,
     hotspot_reveal,
+    hotspot_tap,
+    hotspot_tap_band,
     hotspot_target,
 )
 
@@ -199,3 +203,112 @@ def test_reveal_shape_omits_partial_fraction():
 
 def test_reveal_invalid_target_has_no_target_fields():
     assert hotspot_reveal(None) == {"type": "hotspot"}
+
+
+# ---------------------------------------------------------------------------
+# hotspot_tap / hotspot_tap_band
+# ---------------------------------------------------------------------------
+
+
+def test_tap_valid_and_normalised():
+    assert hotspot_tap({"x": 0, "y": 1}) == (0.0, 1.0)
+    assert hotspot_tap({"x": 0.25, "y": 0.5, "extra": "ignored"}) == (0.25, 0.5)
+
+
+@pytest.mark.parametrize(
+    "answer_data",
+    [
+        None,
+        [],
+        {},
+        {"x": 0.5},
+        {"x": True, "y": 0.5},
+        {"x": "0.5", "y": 0.5},
+        {"x": 0.5, "y": 1.5},
+        {"x": -0.1, "y": 0.5},
+        {"x": math.nan, "y": 0.5},
+        {"x": 0.5, "y": math.inf},
+        {"x": 10**400, "y": 0.5},
+    ],
+)
+def test_tap_malformed_returns_none(answer_data):
+    assert hotspot_tap(answer_data) is None
+
+
+def test_tap_band_rules():
+    t = target(1.0, 0.25, 0.375)
+    assert hotspot_tap_band("COMPLETENESS", t, (0.5, 0.5)) is None
+    assert hotspot_tap_band("ACCURACY", None, (0.5, 0.5)) == "miss"
+    assert hotspot_tap_band("ACCURACY", t, (0.5, 0.5)) == "inner"
+
+
+# ---------------------------------------------------------------------------
+# calculate_score (§5.3, §5.4)
+# ---------------------------------------------------------------------------
+
+
+def question(
+    grading="ACCURACY", points=1000.0, config=None, answer_data=None
+) -> SimpleNamespace:
+    """Just the attributes calculate_score reads. Target at (0.5, 0.5) on a square."""
+    return SimpleNamespace(
+        id=9,
+        type="hotspot",
+        grading_type=grading,
+        points_value=points,
+        config=config if config is not None else {"imageId": 1, "aspectRatio": 1},
+        answer_data=answer_data
+        if answer_data is not None
+        else {
+            "x": 0.5,
+            "y": 0.5,
+            "innerRadius": 0.125,
+            "outerRadius": 0.25,
+            "partialFraction": 0.5,
+        },
+    )
+
+
+def score(q, tap):
+    r = calculate_score(q, tap)
+    return r.points_awarded, r.is_correct
+
+
+def test_score_bands():
+    q = question()
+    assert score(q, {"x": 0.625, "y": 0.5}) == (1000.0, True)  # on the inner ring
+    assert score(q, {"x": 0.75, "y": 0.5}) == (500.0, False)  # on the outer ring
+    assert score(q, {"x": 0.76, "y": 0.5}) == (0, False)
+
+
+def test_score_partial_fraction_and_zero_points():
+    q = question(answer_data={**question().answer_data, "partialFraction": 0.3})
+    assert score(q, {"x": 0.75, "y": 0.5}) == (pytest.approx(300.0), False)
+    # points_value 0: inner is still "correct" with 0 points (the label uses yourBand).
+    assert score(question(points=0), {"x": 0.5, "y": 0.5}) == (0, True)
+
+
+def test_score_completeness_any_tap_full_points():
+    q = question(grading="COMPLETENESS", answer_data={})
+    assert score(q, {"x": 0.0, "y": 0.0}) == (1000.0, True)
+
+
+def test_score_malformed_tap_is_zero_and_does_not_read_target():
+    q = question(answer_data={"broken": True})
+    with capture_logs() as logs:
+        assert score(q, {"x": "0.5", "y": 0.5}) == (0, False)
+        assert score(q, {}) == (0, False)  # empty answer: existing early return
+    assert logs == []
+
+
+def test_score_invalid_stored_target_is_zero_and_logs():
+    # §10 test 18's calculate_score case: bad stored data never raises.
+    for config, answer_data in [
+        ({"imageId": 1, "aspectRatio": 1}, {"x": 0.5}),
+        ({"imageId": 1, "aspectRatio": 0}, question().answer_data),
+        ({"imageId": 1}, question().answer_data),
+    ]:
+        q = question(config=config, answer_data=answer_data)
+        with capture_logs() as logs:
+            assert score(q, {"x": 0.5, "y": 0.5}) == (0, False)
+        assert [e["event"] for e in logs] == ["hotspot_target_invalid"]

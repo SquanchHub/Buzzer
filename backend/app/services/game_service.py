@@ -294,6 +294,10 @@ async def authorise_player(db: AsyncSession, user: User, session: GameSession) -
 # ---------------------------------------------------------------------------
 
 
+# Most taps sent to the host per hotspot question (first N in answer order, §7.2).
+HOTSPOT_TAP_CAP = 500
+
+
 @dataclass(frozen=True)
 class HotspotTarget:
     """A hotspot question's validated target (docs/plans/t7-hotspot.md §5.2)."""
@@ -366,6 +370,38 @@ def hotspot_reveal(target: HotspotTarget | None) -> dict:
         "innerRadius": target.inner_radius,
         "outerRadius": target.outer_radius,
     }
+
+
+def _is_unit_coordinate(value: object) -> bool:
+    """int or float (not bool), finite, in [0, 1]."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return 0 <= value <= 1 and (isinstance(value, int) or math.isfinite(value))
+
+
+def hotspot_tap(answer_data: object) -> tuple[float, float] | None:
+    """A player's tap as (x, y), or None if it is missing or malformed (§7.4)."""
+    if not isinstance(answer_data, dict):
+        return None
+    x, y = answer_data.get("x"), answer_data.get("y")
+    if not (_is_unit_coordinate(x) and _is_unit_coordinate(y)):
+        return None
+    return float(x), float(y)
+
+
+def hotspot_tap_band(
+    grading_type: str, target: HotspotTarget | None, tap: tuple[float, float]
+) -> str | None:
+    """
+    The band shown for one tap: None under COMPLETENESS (there is no target),
+    "miss" when the ACCURACY target is invalid (§5.4), otherwise hotspot_band.
+    Callers get `target` from hotspot_target only under ACCURACY.
+    """
+    if grading_type == "COMPLETENESS":
+        return None
+    if target is None:
+        return "miss"
+    return hotspot_band(target, *tap)
 
 
 def calculate_score(question: Question, answer_data: dict) -> ScoreResult:
@@ -442,6 +478,23 @@ def calculate_score(question: Question, answer_data: dict) -> ScoreResult:
             is_correct=(score >= question.points_value and question.points_value > 0),
         )
 
+    if question.type == "hotspot":
+        tap = hotspot_tap(answer_data)
+        if tap is None:  # defensive: the gateway already rejects malformed taps
+            return ScoreResult(points_awarded=0, is_correct=False)
+        target = hotspot_target(question.id, question.config, question.answer_data)
+        if target is None:  # bad stored target: score as a miss (§5.4)
+            return ScoreResult(points_awarded=0, is_correct=False)
+        band = hotspot_band(target, *tap)
+        if band == "inner":
+            return ScoreResult(points_awarded=question.points_value, is_correct=True)
+        if band == "outer":
+            return ScoreResult(
+                points_awarded=question.points_value * target.partial_fraction,
+                is_correct=False,
+            )
+        return ScoreResult(points_awarded=0, is_correct=False)
+
     return ScoreResult(points_awarded=0, is_correct=False)
 
 
@@ -499,6 +552,12 @@ async def record_answer(
                     await state.increment_answer_dist(
                         redis, session_id, question.id, str(idx)
                     )
+    elif question.type == "hotspot" and question.grading_type == "ACCURACY":
+        # Band counts; under COMPLETENESS there is no target, so no key.
+        tap = hotspot_tap(answer_data)
+        if tap is not None:
+            target = hotspot_target(question.id, question.config, question.answer_data)
+            dist_key = hotspot_tap_band(question.grading_type, target, tap)
     if dist_key is not None:
         await state.increment_answer_dist(redis, session_id, question.id, dist_key)
 
@@ -587,6 +646,8 @@ async def get_player_question_summary(
                 "type": "multi_select",
                 "answerPoints": q_ans.get("answer_points", []),
             }
+        elif q_type == "hotspot":
+            reveal = hotspot_reveal(hotspot_target(r.question_id, r.config, q_ans))
         else:
             reveal = {}
 
@@ -625,6 +686,7 @@ async def get_host_question_summary(
             Question.config,
             Question.answer_data.label("q_answer_data"),
             Question.points_value,
+            SessionScore.id.label("score_id"),
             SessionScore.user_id,
             SessionScore.points_awarded,
             SessionScore.answer_data.label("player_answer"),
@@ -661,6 +723,7 @@ async def get_host_question_summary(
         if r.user_id is not None:
             scores_by_q[qid].append(
                 {
+                    "score_id": r.score_id,
                     "player_answer": r.player_answer,
                     "is_correct": bool(r.is_correct),
                     "answer_time_ms": r.answer_time_ms,
@@ -675,6 +738,9 @@ async def get_host_question_summary(
         q_ans = q["answer_data"]
         pts_val = q["points_value"]
         grading_type = q["grading_type"]
+        hs_target: HotspotTarget | None = None
+        if q_type == "hotspot" and grading_type == "ACCURACY":
+            hs_target = hotspot_target(qid, q["config"], q_ans)
 
         if grading_type == "COMPLETENESS":
             reveal: dict = {"type": "completeness"}
@@ -701,10 +767,13 @@ async def get_host_question_summary(
                 "type": "multi_select",
                 "answerPoints": q_ans.get("answer_points", []),
             }
+        elif q_type == "hotspot":
+            reveal = hotspot_reveal(hs_target)
         else:
             reveal = {}
 
         dist: dict[str, int] = {}
+        hs_taps: list[tuple[int, dict]] = []  # (score_id, tap) for hotspot
         correct_count = 0
         total_time = 0
         time_count = 0
@@ -732,6 +801,15 @@ async def get_host_question_summary(
                             if isinstance(idx, int):
                                 k = str(idx)
                                 dist[k] = dist.get(k, 0) + 1
+                elif q_type == "hotspot":
+                    tap = hotspot_tap(ans)
+                    if tap is not None:
+                        band = hotspot_tap_band(grading_type, hs_target, tap)
+                        if band is not None:  # band counts cover every row
+                            dist[band] = dist.get(band, 0) + 1
+                        hs_taps.append(
+                            (s["score_id"], {"x": tap[0], "y": tap[1], "band": band})
+                        )
             if s["is_correct"]:
                 correct_count += 1
             if s["answer_time_ms"] is not None:
@@ -757,5 +835,8 @@ async def get_host_question_summary(
                 else None,
             }
         )
+        if q_type == "hotspot":
+            hs_taps.sort(key=lambda t: t[0])  # answer order
+            result[-1]["taps"] = [tap for _, tap in hs_taps[:HOTSPOT_TAP_CAP]]
 
     return result
