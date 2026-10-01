@@ -67,5 +67,10 @@ non-dev mode `AsyncRedisManager` routes emits across instances, but these dicts 
 - No frontend or script emits `rejoin_room`; clients re-send `join_room` on every reconnect.
 - In `rejoin_room`, any ADMIN is treated as host, even one who joined the room as a player.
 - `gateway.socket_app` (line 61) is unused; `main.py` builds its own `ASGIApp`.
-- In `on_submit_answer`, the MySQL commit happens when `_db()` exits, after the socket emits;
-  the `has_answered` check is not atomic with `record_answer`'s `mark_answered`.
+- **Fixed: emits now follow the commit.** `on_submit_answer` used to commit only when `_db()`
+  exited, after its emits, so a host advancing within milliseconds of the last
+  `answer_received` got results missing that row (`totalAnswered` one short, that player's
+  `yourPoints` 0). It now commits right after `record_answer`, before any emit. Code added
+  between that commit and the emits runs outside the transaction (see the comment there).
+- In `on_submit_answer`, the `has_answered` check is still not atomic with `record_answer`'s
+  `mark_answered`.
