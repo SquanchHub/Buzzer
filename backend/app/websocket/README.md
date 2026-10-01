@@ -38,6 +38,13 @@ FastAPI app with `socketio.ASGIApp(sio, other_asgi_app=app)`, so `/socket.io/*` 
 - **Payload safety** — `_question_payload` never includes `answer_data`; `_answer_reveal`
   derives only the facts clients need (correct indices/value, accepted answers).
   **Adding a question type** means updating both, plus the `multi_select`-style shape check in `on_submit_answer`.
+- **Hotspot** (`docs/plans/t7-hotspot.md` §7.4) — `_answer_reveal` returns
+  `game_service.hotspot_reveal` (target point and both radii; no `partialFraction`).
+  `on_submit_answer` rejects a tap unless `x` and `y` are numbers in [0, 1] (error
+  "hotspot answer must include x and y between 0 and 1") and stores only `{x, y}`. At
+  `QUESTION → RESULTS` the host payload adds `taps: [{x, y, band}]` (first 500 in answer order)
+  and each player's payload adds `yourBand` (own band only; `null` if unanswered or
+  COMPLETENESS). Players never receive `taps`.
 
 ## In-process state (not in Redis or MySQL)
 
@@ -69,3 +76,8 @@ non-dev mode `AsyncRedisManager` routes emits across instances, but these dicts 
 - `gateway.socket_app` (line 61) is unused; `main.py` builds its own `ASGIApp`.
 - In `on_submit_answer`, the MySQL commit happens when `_db()` exits, after the socket emits;
   the `has_answered` check is not atomic with `record_answer`'s `mark_answered`.
+  Consequence (reproduced): if the host advances to results within milliseconds of the last
+  `answer_received`, the results query misses that uncommitted row, so `totalAnswered` is one
+  short and that player's `yourPoints` is 0 (hotspot `taps` / `yourBand` miss it the same way).
+  Redis-backed `answerDistribution` is unaffected. Real hosts rarely click that fast; scripted
+  clients do.
