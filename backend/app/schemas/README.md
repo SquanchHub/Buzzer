@@ -66,7 +66,8 @@ its dicts by hand.
 - `backend/app/routers/auth.py` — `schemas/auth.py`.
 - `backend/app/routers/game.py` — the room/session/list models in `schemas/game.py`.
 - `backend/app/services/roster_service.py` — `RosterUploadResult`.
-- `backend/app/services/game_service.py` — `ScoreResult`.
+- `backend/app/services/game_service.py` — `ScoreResult`; the hotspot checker
+  (`is_hotspot_aspect_ratio`, `hotspot_answer_error`) via `hotspot_target`.
 
 ## Gotchas found while reading
 

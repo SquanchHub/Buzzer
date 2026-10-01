@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import structlog
@@ -16,6 +18,7 @@ from ..models.course import CourseRoster, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
 from ..models.user import User
+from ..schemas.admin import hotspot_answer_error, is_hotspot_aspect_ratio
 from ..schemas.game import ScoreResult
 from . import state_service as state
 
@@ -289,6 +292,80 @@ async def authorise_player(db: AsyncSession, user: User, session: GameSession) -
 # ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HotspotTarget:
+    """A hotspot question's validated target (docs/plans/t7-hotspot.md §5.2)."""
+
+    x: float
+    y: float
+    inner_radius: float
+    outer_radius: float
+    partial_fraction: float
+    aspect_ratio: float
+
+
+def hotspot_target(
+    question_id: int, config: object, answer_data: object
+) -> HotspotTarget | None:
+    """
+    Parse an ACCURACY hotspot question's stored target. Returns None — and logs —
+    if the stored data breaks the §5.1 rules, so callers score a miss instead of
+    crashing mid-game (§5.4). Never raises. A bad imageId is not checked here:
+    clients handle that as "Image unavailable".
+    """
+    aspect = config.get("aspectRatio") if isinstance(config, dict) else None
+    if not is_hotspot_aspect_ratio(aspect) or hotspot_answer_error(answer_data):
+        logger.warning("hotspot_target_invalid", question_id=question_id)
+        return None
+    # Both checks passed, so every value below is a bounded finite number.
+    return HotspotTarget(
+        x=float(answer_data["x"]),
+        y=float(answer_data["y"]),
+        inner_radius=float(answer_data["innerRadius"]),
+        outer_radius=float(answer_data["outerRadius"]),
+        partial_fraction=float(answer_data["partialFraction"]),
+        aspect_ratio=float(aspect),
+    )
+
+
+def hotspot_band(target: HotspotTarget, px: float, py: float) -> str:
+    """
+    Band of a tap at normalised (px, py): "inner", "outer" or "miss".
+    Distance is measured in units of the image's longer side (§5.2), so the
+    rings are true circles on screen. Both boundaries are inclusive.
+    """
+    a = target.aspect_ratio
+    if a >= 1:  # landscape or square: width is the longer side
+        dx = px - target.x
+        dy = (py - target.y) / a
+    else:  # portrait: height is the longer side
+        dx = (px - target.x) * a
+        dy = py - target.y
+    d = math.sqrt(dx * dx + dy * dy)
+    if d <= target.inner_radius:
+        return "inner"
+    if d <= target.outer_radius:
+        return "outer"
+    return "miss"
+
+
+def hotspot_reveal(target: HotspotTarget | None) -> dict:
+    """
+    The client-safe ACCURACY hotspot reveal, shared by every reveal builder
+    (§7.4, §13.1 b). partialFraction is never revealed. With an invalid target
+    there is nothing to draw, so the reveal carries no target fields (§5.4).
+    """
+    if target is None:
+        return {"type": "hotspot"}
+    return {
+        "type": "hotspot",
+        "x": target.x,
+        "y": target.y,
+        "innerRadius": target.inner_radius,
+        "outerRadius": target.outer_radius,
+    }
 
 
 def calculate_score(question: Question, answer_data: dict) -> ScoreResult:

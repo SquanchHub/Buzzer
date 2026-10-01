@@ -33,6 +33,13 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     **Adding a question type means adding a branch here** and in `record_answer`'s distribution keys.
   - `record_answer` adds a `SessionScore` row (flush only), then updates the Redis score,
     answered set, and distribution hash.
+  - Hotspot helpers (pure, module level; `docs/plans/t7-hotspot.md` §5.2–5.4):
+    `hotspot_target(question_id, config, answer_data)` → frozen `HotspotTarget` or `None` (bad
+    stored data; logs `hotspot_target_invalid`, never raises); `hotspot_band(target, px, py)` →
+    `"inner" | "outer" | "miss"` (aspect-corrected distance, boundaries inclusive);
+    `hotspot_reveal(target | None)` → the one client-safe hotspot reveal shape, meant for every
+    reveal builder (gateway, report, both summaries). Validation rules come from
+    `schemas/admin.py`'s hotspot checker, not a copy.
   - `start_game` and `complete_game` call `db.commit()` themselves, so concurrent socket
     handlers see the new status.
 - **state_service** — key layout is documented in its module docstring
@@ -52,7 +59,8 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 
 - `backend/app/models/` — `User`, `Course`, `CourseRoster`, `UserCourseAccess`, `Game`,
   `Question`, `UserGameAccess`, `GameSession`, `SessionScore`.
-- `backend/app/schemas/` — `game.ScoreResult`, `admin.RosterUploadResult`.
+- `backend/app/schemas/` — `game.ScoreResult`, `admin.RosterUploadResult`, and the hotspot
+  checker in `admin.py` (`is_hotspot_aspect_ratio`, `hotspot_answer_error`).
 - `backend/app/common/` — `exceptions` (`ConflictError`, `ForbiddenError`, `NotFoundError`).
 - `backend/app/` top level — `config.settings`, `database.AsyncSessionLocal` (bootstrap only).
 - Within the directory: `game_service` → `state_service`; `bootstrap` → `auth_service`.
