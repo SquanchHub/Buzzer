@@ -273,7 +273,8 @@ class SimPlayer:
 
     # ── per-question handler ──────────────────────────────────────────────────
 
-    async def _handle_question(self, q: dict, label: str = ""):
+    async def _handle_question(self, q: dict, label: str = "") -> dict | None:
+        """Answer one question. Returns a newer question if one arrived meanwhile."""
         p = self.profile
         q_type = q.get("type", "unknown")
         q_id = q.get("questionId")
@@ -295,7 +296,22 @@ class SimPlayer:
             return
 
         delay = random.uniform(p.min_delay, min(p.max_delay, t_lim * 0.8))
-        await asyncio.sleep(delay)
+
+        # "Think" for `delay` seconds, but give up on this question if the host
+        # has already moved on — submitting it would only be rejected.
+        try:
+            newer = await self._wait("new_question", timeout=delay)
+        except asyncio.TimeoutError:
+            newer = None
+        if newer is not None:
+            n = newer.get("questionNumber", "?")
+            print(f"  {SKIP}  {self._tag()}  {ql:<14}  —  (abandoned, q{n} started)")
+            return newer
+
+        # Discard any late answer_received left over from an earlier question
+        acks = self._queues["answer_received"]
+        while not acks.empty():
+            acks.get_nowait()
 
         await self.sio.emit(
             "submit_answer",
@@ -306,14 +322,25 @@ class SimPlayer:
             },
         )
 
-        try:
-            ar = await self._wait("answer_received", timeout=10.0)
+        # Wait for the ack, but stop waiting if a newer question arrives first
+        ack_task = asyncio.ensure_future(self._wait("answer_received", timeout=10.0))
+        nq_task = asyncio.ensure_future(self._queues["new_question"].get())
+        done, pending = await asyncio.wait(
+            {ack_task, nq_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for t in pending:
+            t.cancel()
+
+        if ack_task in done and ack_task.exception() is None:
+            ar = ack_task.result()
             pts = ar.get("pointsAwarded", 0)
             ans = self._answer_str(answer)
             tick = OK if ar.get("isCorrect") else SKIP
             print(f"  {tick}  {self._tag()}  {ql:<14}  {ans:<22}  {pts:>5} pts")
-        except asyncio.TimeoutError:
+        else:
             print(f"  {ERR}  {self._tag()}  {ql:<14}  no answer_received")
+
+        return nq_task.result() if nq_task in done else None
 
     # ── connection & main loop ────────────────────────────────────────────────
 
@@ -348,7 +375,9 @@ class SimPlayer:
         # If we joined while a question is active (late joiner during QUESTION phase)
         current_q = sync.get("currentQuestion")
         if current_q:
-            await self._handle_question(current_q, label="(joined late)")
+            newer = await self._handle_question(current_q, label="(joined late)")
+            while newer:
+                newer = await self._handle_question(newer)
 
         # Race between new_question and game_over for the rest of the game
         while True:
@@ -365,7 +394,9 @@ class SimPlayer:
                 break
             if q_task in done:
                 try:
-                    await self._handle_question(q_task.result())
+                    q = q_task.result()
+                    while q:
+                        q = await self._handle_question(q)
                 except Exception:
                     pass
 
