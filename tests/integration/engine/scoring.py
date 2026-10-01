@@ -7,6 +7,7 @@ or grading method is added to the backend.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 
@@ -17,7 +18,7 @@ from dataclasses import dataclass, field
 @dataclass
 class QuestionSpec:
     """Declarative description of one question — mirrors the DB Question model."""
-    type: str           # 'multiple_choice' | 'true_false' | 'fill_in_the_blank'
+    type: str           # 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'hotspot'
     grading_type: str   # 'ACCURACY' | 'COMPLETENESS'
     prompt: str
     config: dict        # e.g. {"options": ["A", "B", "C"]}
@@ -47,7 +48,7 @@ class GameScenario:
     description: str = ""
 
     # Derived fields (populated by __post_init__)
-    _expected_scores: list[int] = field(default_factory=list, init=False, repr=False)
+    _expected_scores: list[float] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self):
         self._expected_scores = [
@@ -55,7 +56,7 @@ class GameScenario:
         ]
 
     @property
-    def expected_scores(self) -> list[int]:
+    def expected_scores(self) -> list[float]:
         return self._expected_scores
 
     def __str__(self):
@@ -90,7 +91,7 @@ def _levenshtein(a: str, b: str) -> int:
 # Scoring functions — must stay in sync with backend calculate_score()
 # ---------------------------------------------------------------------------
 
-def compute_question_score(q: QuestionSpec, response: dict | None) -> int:
+def compute_question_score(q: QuestionSpec, response: dict | None) -> float:
     """
     Return the points awarded for one player's response to one question.
     Mirrors backend game_service.calculate_score() logic exactly.
@@ -129,11 +130,38 @@ def compute_question_score(q: QuestionSpec, response: dict | None) -> int:
             return q.points_value
         return 0
 
+    if q.type == "hotspot":
+        return _hotspot_score(q, response)
+
     # Unknown question type — extend here when new types are added
     return 0
 
 
-def compute_player_score(scenario: GameScenario, player_idx: int) -> int:
+def _hotspot_score(q: QuestionSpec, response: dict) -> float:
+    """
+    Mirror of docs/plans/t7-hotspot.md §5.2–5.3, written from the spec rather than
+    imported from the backend. Distance is in units of the image's longer side;
+    both band boundaries are inclusive. Scenario taps must sit at least 0.005 from
+    every boundary (§7.10) so float rounding cannot flip an expected band.
+    """
+    px, py = response.get("x"), response.get("y")
+    for v in (px, py):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1:
+            return 0
+    t, aspect = q.answer_data, q.config["aspectRatio"]
+    if aspect >= 1:  # landscape or square
+        dx, dy = px - t["x"], (py - t["y"]) / aspect
+    else:  # portrait
+        dx, dy = (px - t["x"]) * aspect, py - t["y"]
+    d = math.sqrt(dx * dx + dy * dy)
+    if d <= t["innerRadius"]:
+        return q.points_value
+    if d <= t["outerRadius"]:
+        return q.points_value * t["partialFraction"]
+    return 0
+
+
+def compute_player_score(scenario: GameScenario, player_idx: int) -> float:
     """Sum of compute_question_score across all questions for one player."""
     script = scenario.player_scripts[player_idx]
     return sum(
@@ -179,5 +207,14 @@ def _build_reveal(q: QuestionSpec) -> dict:
             "type": "fill_in_the_blank",
             "acceptedAnswers": q.answer_data.get("acceptedAnswers", []),
             "editDistance": q.answer_data.get("editDistance", 0),
+        }
+    if q.type == "hotspot":
+        a = q.answer_data
+        return {
+            "type": "hotspot",
+            "x": a["x"],
+            "y": a["y"],
+            "innerRadius": a["innerRadius"],
+            "outerRadius": a["outerRadius"],
         }
     return {}
