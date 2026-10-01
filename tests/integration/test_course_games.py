@@ -333,3 +333,117 @@ def test_export_never_writes_course_id(api: Api):
     other = api.course()
     r = api.import_bundle(json.dumps(bundle).encode(), other)
     assert r.status_code == 201, r.text
+
+
+# ---------------------------------------------------------------------------
+# Effective host access = game grant AND HOST on the game's course (D1)
+# ---------------------------------------------------------------------------
+
+
+def _my_game_ids(api: Api, token: str) -> dict[int, dict]:
+    r = api.req("GET", "/game/my-games", token)
+    assert r.status_code == 200, r.text
+    return {g["id"]: g for g in r.json()}
+
+
+def test_host_with_both_grants_can_run_game(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    api.question(game["id"])
+    user_id, token = api.user()
+    assert api.grant_course(user_id, course_id).status_code == 204
+    assert api.grant_game(user_id, game["id"]).status_code == 204
+
+    mine = _my_game_ids(api, token)
+    assert mine[game["id"]]["course_id"] == course_id
+
+    r = api.room(course_id, game["id"], token)
+    assert r.status_code == 201, r.text
+
+
+def test_host_denied_on_game_whose_course_they_do_not_host(api: Api):
+    """A grant on game G (course A) is useless to a host who only hosts course B."""
+    course_a, course_b = api.course(), api.course()
+    game = api.game(course_a)
+    api.question(game["id"])
+    user_id, token = api.user()
+    # Legitimately granted while they hosted A ...
+    api.grant_course(user_id, course_a)
+    assert api.grant_game(user_id, game["id"]).status_code == 204
+    # ... then moved to host B only (the grant row survives).
+    api.grant_course(user_id, course_a, role="PLAYER")
+    api.grant_course(user_id, course_b)
+
+    assert game["id"] not in _my_game_ids(api, token)
+    for course_id in (course_a, course_b):
+        r = api.room(course_id, game["id"], token)
+        assert r.status_code == 403, r.text
+
+
+def test_revoking_course_host_revokes_game_access(api: Api):
+    course_id = api.course()
+    game = api.game(course_id)
+    api.question(game["id"])
+    user_id, token = api.user()
+    api.grant_course(user_id, course_id)
+    api.grant_game(user_id, game["id"])
+    assert game["id"] in _my_game_ids(api, token)
+
+    r = api.req("DELETE", f"/admin/users/{user_id}/course-access/{course_id}")
+    assert r.status_code == 204
+
+    assert game["id"] not in _my_game_ids(api, token)
+    r = api.room(course_id, game["id"], token)
+    assert r.status_code == 403
+    # The user's game grant itself is untouched — only its effect is gone.
+    detail = api.req("GET", f"/admin/users/{user_id}").json()
+    assert game["id"] in detail["game_access"]
+
+
+def test_game_access_denial_does_not_reveal_which_grant_is_missing(api: Api):
+    """Course HOST but no game grant → same 403 message as the reverse case."""
+    course_id = api.course()
+    game = api.game(course_id)
+    api.question(game["id"])
+
+    host_no_grant_id, host_no_grant = api.user()
+    api.grant_course(host_no_grant_id, course_id)
+    r1 = api.room(course_id, game["id"], host_no_grant)
+
+    grant_no_host_id, grant_no_host = api.user()
+    api.grant_course(grant_no_host_id, course_id)
+    api.grant_game(grant_no_host_id, game["id"])
+    other = api.course()
+    api.grant_course(grant_no_host_id, other)
+    api.req("DELETE", f"/admin/users/{grant_no_host_id}/course-access/{course_id}")
+    r2 = api.room(other, game["id"], grant_no_host)
+
+    assert r1.status_code == r2.status_code == 403
+    assert r1.json()["message"] == r2.json()["message"]
+
+
+def test_host_never_sees_unassigned_game_even_with_grant(api: Api, legacy_game: int):
+    course_id = api.course()
+    user_id, token = api.user()
+    api.grant_course(user_id, course_id)
+    # Grant row written directly: the admin API refuses it (tested below).
+    _mysql(
+        f"INSERT INTO user_game_access (user_id, game_id) "
+        f"VALUES ('{user_id}', {legacy_game});"
+    )
+    assert legacy_game not in _my_game_ids(api, token)
+    assert api.room(course_id, legacy_game, token).status_code == 403
+
+
+def test_admin_my_games_lists_all_games_with_course(api: Api, legacy_game: int):
+    course_id = api.course()
+    game = api.game(course_id)
+    mine = _my_game_ids(api, api.admin)
+    assert mine[game["id"]]["course_id"] == course_id
+    assert mine[legacy_game]["course_id"] is None
+
+
+def test_create_room_for_unknown_game_is_404_for_admin(api: Api):
+    course_id = api.course()
+    r = api.room(course_id, 99999999)
+    assert r.status_code == 404
