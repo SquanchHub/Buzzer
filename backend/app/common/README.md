@@ -25,9 +25,15 @@ logging configuration, and the rate limiter. This is where any new role or permi
 - **`get_refresh_token`** — reads the HttpOnly `refresh_token` cookie (used by `/api/auth/refresh`).
 - **Errors** (`exceptions.py`): `NotFoundError` 404, `ForbiddenError` 403, `UnauthorizedError` 401,
   `ConflictError` 409, or `BuzzerError(code, message, status)` for anything else.
+  `RequestBodyInvalidError(errors)` (not a `BuzzerError`) is for a **service** that finds a
+  request body invalid — e.g. T4 D8's re-validated question update. Build it with
+  `.from_validation_error(pydantic_exc)` (prefixes each `loc` with `"body"`, drops `url`) or
+  `.for_field(field, msg, input)`; it renders exactly like FastAPI's own 422.
 - **Error response shapes** produced by the handlers:
   - `BuzzerError` → `{"error": "<CODE>", "message": "<text>"}`
   - request validation → 422 `{"error": "VALIDATION_ERROR", "detail": [ {loc, msg, …}, … ]}`
+    — FastAPI's `RequestValidationError` and `RequestBodyInvalidError` both go through
+    `_validation_error_response`, so the two can't drift apart
   - uncaught exception → 500 `{"error": "INTERNAL_ERROR", "message": "An unexpected error occurred"}`
   - FastAPI `HTTPException` (not handled here, e.g. `import_game`) → `{"detail": "<text>"}`
 - **`limiter`** — apply with `@limiter.limit("5/15minutes")` on an endpoint that takes a `request` arg.
