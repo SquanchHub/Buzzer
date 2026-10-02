@@ -8,9 +8,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..common.exceptions import ForbiddenError, UnauthorizedError
+from ..common.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
 from ..database import get_db
+from ..models.course import Course
+from ..models.session import GameSession
 from ..models.user import User
+from ..services import game_service
 from ..services.auth_service import decode_token, get_user_by_id
 
 logger = structlog.get_logger()
@@ -63,6 +66,53 @@ async def require_user(
     """Allow ADMIN and USER roles; reject GUEST."""
     if user.role == "GUEST":
         raise ForbiddenError("Authenticated account required")
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Course / game / session scoped checks (docs/plans/t4-ui-restructuring.md §6.2.1)
+#
+# Each reads its id from the route's path parameter of the same name and returns the
+# User. Admins pass every check (they bypass the course and game layers everywhere).
+# ---------------------------------------------------------------------------
+
+
+async def require_course_host(
+    course_id: int,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """404 if the course doesn't exist — for everyone, admins included, so a path-based
+    course endpoint never answers 403 for a nonexistent course (this confirms course
+    ids exist to any signed-in user; courses are not secret). Then 403 unless HOST."""
+    if not await db.get(Course, course_id):
+        raise NotFoundError(f"Course {course_id} not found")
+    await game_service.assert_host_can_use_course(db, user, course_id)
+    return user
+
+
+async def require_game_access(
+    game_id: int,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """404 if the game doesn't exist; otherwise a non-admin needs both the game grant and
+    HOST on the game's course (D1), with one 403 message for every missing piece."""
+    await game_service.assert_host_can_use_game(db, user, game_id)
+    return user
+
+
+async def require_session_host(
+    session_id: str,
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """404 if the session doesn't exist; 403 unless ADMIN or the session's host."""
+    session = await db.get(GameSession, session_id)
+    if not session:
+        raise NotFoundError(f"Session {session_id} not found")
+    if user.role != "ADMIN" and session.host_user_id != user.id:
+        raise ForbiddenError("Only the session host can access this session")
     return user
 
 
