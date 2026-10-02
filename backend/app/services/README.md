@@ -17,6 +17,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `export_service.py` | Builds session score CSVs: a raw per-question table and a Canvas gradebook import format. |
 | `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
+| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check; questions and import/export follow in later phase-2 commits. |
 
 ## Key entry points
 
@@ -52,6 +53,19 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.
+- **content_service** (T4 phase 2; access control happens before it is called, in route
+  dependencies) — flushes, never commits:
+  - `has_live_session(db, redis, game_id)` — D7: a LOBBY/IN_PROGRESS session whose
+    `room:{code}` key still exists in Redis. Moved here unchanged from `routers/admin.py`.
+  - `list_course_games(db, actor, course_id)` → `list[HostGameItem]` (admin: every game in the
+    course; others: D1 — game grant AND course HOST), each with `session_count`.
+  - `create_game(db, actor, meta, course_id)` — 404 unknown course; a non-admin creator is
+    auto-granted the game (D1).
+  - `update_game(db, redis, actor, game_id, patch)` — metadata; `course_id` (admin schema only)
+    404 unknown / 409 while live. Takes `redis` for that live check (§6.2.2 omits it).
+  - `delete_game(db, redis, actor, game_id)` — D6: 409 while live; a non-admin also 409 if any
+    session has another or a NULL host; deletes scores, sessions and the game, then clears each
+    session's Redis state.
 
 ## Depends on
 
@@ -60,14 +74,20 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - `backend/app/schemas/` — `game.ScoreResult`, `admin.RosterUploadResult`.
 - `backend/app/common/` — `exceptions` (`ConflictError`, `ForbiddenError`, `NotFoundError`).
 - `backend/app/` top level — `config.settings`, `database.AsyncSessionLocal` (bootstrap only).
-- Within the directory: `game_service` → `state_service`; `bootstrap` → `auth_service`.
+- Within the directory: `game_service` → `state_service`; `content_service` → `state_service`;
+  `bootstrap` → `auth_service`.
+- `content_service` also uses `schemas/admin.py`'s game schemas (`GameMeta`, `GameUpdate`,
+  `HostGameUpdate`, `GameResponse`, `HostGameItem`).
 
 ## Depended on by
 
 - `backend/app/routers/` — `auth`, `game`, `admin` (every service except `bootstrap`).
 - `backend/app/websocket/` — `gateway.py` (`game_service`, `state_service`, `auth_service`),
   `middleware.py` (`auth_service`).
-- `backend/app/common/dependencies.py` — `auth_service.decode_token`, `get_user_by_id`.
+- `backend/app/common/dependencies.py` — `auth_service.decode_token`, `get_user_by_id`;
+  `game_service.assert_host_can_use_course` / `assert_host_can_use_game`.
+- `backend/app/routers/admin.py` — `content_service.has_live_session` (phase 3 switches the
+  rest of the admin game/question handlers to `content_service`).
 - `backend/app/main.py` — `bootstrap.bootstrap_admin` in the lifespan hook.
 - `tests/unit/test_auth.py` — token creation functions.
 

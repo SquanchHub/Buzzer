@@ -34,7 +34,7 @@ Other code only touches the module-level `router` object in each file
   `{"format": "buzzer/game", "version": 1}` JSON bundle that never contains `course_id`.
   Games are course-bound: `POST /games` needs `course_id` in the body and `POST /games/import`
   a `course_id` form field next to `file` (404 for an unknown course); `PUT /games/{id}` can move
-  a game to another course except while it has a live session (409, `_has_live_session`:
+  a game to another course except while it has a live session (409, `content_service.has_live_session`:
   MySQL `LOBBY/IN_PROGRESS` **and** the `room:{code}` key still in Redis);
   `POST /users/{id}/game-access` is 409 unless the target is ADMIN or HOSTs the game's course.
 - **game.py `/my-games`** — admins get every game (unassigned included); others only games they
