@@ -15,6 +15,7 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 | `CoursePage.tsx` | `/courses/:courseId` | The course's games the host can run (`GET /host/courses/:id/games`): create (→ editor), import JSON (`postForm` with `course_id`, → editor), edit link, export (`api.download`), delete with an inline confirm naming the session count ("…permanently deletes its N sessions and all their scores", T4 D6); a 409 shows on the game's row. Course name from `/game/my-courses`; link to the roster. |
 | `RosterPage.tsx` | `/courses/:courseId/roster` | **Ported from the admin app**: roster table with inline edit (`PATCH /host/courses/:id/roster/:rid`) and the CSV column-mapping wizard (`POST …/roster/import`; netids missing from the upload are deactivated). Heading names the course; back link to the course page. |
 | `QuestionEditorPage.tsx` | `/games/:gameId/edit` | **Ported from the admin app**: add/edit/delete/reorder questions (`/host/games/:id/questions*`), export JSON; plus a host-only **Game details** form (title, description, max players → `PUT /host/games/:id`, no course field — T4 D5). Errors such as the live-session 409 show inline above the content. The admin copy's literal `\u2026`/`\u00b7`/`\u00b1` text is fixed here. Back link to the game's course. |
+| `SessionsPage.tsx` | `/sessions` | The host's COMPLETED sessions, newest first (`GET /game/my-sessions`), each with **Download summary (HTML)** (`/game/sessions/:id/report`) and **Download scores (CSV)** (`/game/sessions/:id/export`) via `api.download` (T4 D9). |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
 | `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. |
@@ -52,7 +53,7 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 ## Gotchas found while reading
 
 - **Ported pages have copies in the admin app (T4 §6.3).** `RosterPage.tsx` and
-  `QuestionEditorPage.tsx`) are ports of `frontend/admin/src/pages/` files; each
+  `QuestionEditorPage.tsx` are ports of `frontend/admin/src/pages/` files; each
   starts with a comment listing what changed. A fix in one copy must be repeated in the other.
   Inherited from admin: after a roster import the result card must be dismissed with its icon-only
   ✕ (no accessible label) before "Upload CSV" appears again.

@@ -5,6 +5,7 @@ import ManagementLayout from './pages/ManagementLayout';
 import CoursePage from './pages/CoursePage';
 import RosterPage from './pages/RosterPage';
 import QuestionEditorPage from './pages/QuestionEditorPage';
+import SessionsPage from './pages/SessionsPage';
 import GameLayout from './pages/game/GameLayout';
 import LobbyPage from './pages/game/LobbyPage';
 import QuestionPage from './pages/game/QuestionPage';
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/courses/:courseId" element={<CoursePage />} />
           <Route path="/courses/:courseId/roster" element={<RosterPage />} />
           <Route path="/games/:gameId/edit" element={<QuestionEditorPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
         </Route>
         <Route path="/game/:code" element={<RequireAuth><GameLayout /></RequireAuth>}>
           <Route path="lobby" element={<LobbyPage />} />
