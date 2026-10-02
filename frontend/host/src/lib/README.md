@@ -22,6 +22,10 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
     (app errors), string `detail` (`HTTPException`), the 422 `detail` array joined as
     `field: msg; …`, the `error` code, or `HTTP <status>`.
   - `T` is only a compile-time cast; responses are not validated at runtime.
+- `api.put`, `api.patch` (JSON, same behaviour), `api.postForm<T>(path, FormData)` (multipart,
+  no JSON `Content-Type`, for the game import) and `api.download(path)` (fetches with the bearer
+  token and saves the response as a file named from `Content-Disposition` — an `<a href>` can't
+  send the token). Added for T4 phase 2's management pages, copied from the admin client.
 - `cn(...inputs: ClassValue[])` — used by every component in `frontend/host/src/components/ui/`.
 
 ## Depends on
@@ -52,8 +56,11 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
   token still passes `App.tsx`'s `RequireAuth` (which only checks that it exists), so pages load
   and every call fails until the host signs out manually. A socket reconnect also fails, since
   the gateway verifies the same token.
-- **Copies in each app:** the player `api.ts` is identical minus `delete`. The admin `api.ts`
-  adds `put`, `patch`, `postForm` and `download`. The player `utils.ts` adds `isTokenExpired()`,
-  which the host lacks. Fixes to error parsing have to be repeated in all three.
+- **Copies in each app:** the player `api.ts` has only `get`/`post`. The host and admin
+  `api.ts` both have `put`, `patch`, `delete`, `postForm` and `download` (the host's were copied
+  from admin in T4 phase 2). The player `utils.ts` adds `isTokenExpired()`, which the host lacks.
+  Fixes to error parsing have to be repeated in all three.
+- **`download` revokes its blob URL right after `a.click()`** (as the admin copy does). Chrome
+  handles this; some browsers can cancel the download when the URL is revoked that early.
 - **Non-JSON success bodies:** a 2xx response that isn't JSON makes `JSON.parse` throw a
   `SyntaxError`. No current host call hits this.
