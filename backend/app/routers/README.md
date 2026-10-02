@@ -12,7 +12,7 @@ questions) is **not** here — that runs over Socket.io in `backend/app/websocke
 | `__init__.py` | Empty package marker. |
 | `health.py` | `GET /api/health` — pings MySQL and Redis, reports active room count from Redis. |
 | `auth.py` | `/api/auth/*` — login, OAuth2 callback, temp-token exchange, guest join, refresh, logout. |
-| `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active sessions, create/ping/get rooms, delete a session, list/merge guests, export session CSV. |
+| `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active and completed sessions, create/ping/get rooms, delete a session, list/merge guests, session CSV and HTML report downloads. |
 | `host.py` | `/api/host/*` — course content management for hosts (T4 §6.2.3): course roster, course game list, game create/import/edit/delete/export, question CRUD/reorder. |
 | `admin.py` | `/api/admin/*` — admin-only CRUD for courses, rosters, games, questions, users, access grants; game JSON import/export; guest merge; session list, CSV export, HTML report. |
 
@@ -26,10 +26,12 @@ Other code only touches the module-level `router` object in each file
   `X-Auth-Request-User` header, returns an HTML redirect carrying a temp token),
   `POST /exchange-temp`, `POST /guest` (requires a live room in Redis), `POST /refresh`,
   `POST /logout`. The refresh cookie is HttpOnly, scoped to `path=/api/auth`, 7 days.
-- **game.py** — `GET /my-courses`, `/my-games`, `/my-active-sessions`; `POST /rooms`
+- **game.py** — `GET /my-courses`, `/my-games`, `/my-active-sessions`, `/my-sessions`
+  (COMPLETED sessions the caller hosted, newest first, with `player_count`); `POST /rooms`
   (delegates to `game_service.create_room`); `GET /rooms/{code}/ping` (public, no auth);
   `GET /rooms/{code}`; `DELETE /sessions/{id}`; `GET /sessions/{id}/guests`;
-  `POST /sessions/{id}/merge-guest`; `GET /sessions/{id}/export`.
+  `POST /sessions/{id}/merge-guest`; `GET /sessions/{id}/export` (raw CSV) and
+  `GET /sessions/{id}/report` (HTML) — both **409 until the session is COMPLETED** (T4 D9).
 - **admin.py** — every endpoint depends on `require_admin`. Question prompts are sanitized
   with `bleach` (allowed tags: `b i br u`) on create, update, and import. Import/export use a
   `{"format": "buzzer/game", "version": 1}` JSON bundle that never contains `course_id`.

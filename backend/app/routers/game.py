@@ -4,8 +4,8 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from fastapi.responses import Response, StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.dependencies import (
@@ -13,18 +13,19 @@ from ..common.dependencies import (
     require_session_host,
     require_user,
 )
-from ..common.exceptions import NotFoundError
+from ..common.exceptions import ConflictError, NotFoundError
 from ..config import settings
 from ..database import get_db
 from ..models.course import Course, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
-from ..models.session import GameSession
+from ..models.session import GameSession, SessionScore
 from ..models.user import User
 from ..redis_client import get_redis
 from ..schemas.game import (
     ActiveSessionItem,
     MyCourseItem,
     MyGameItem,
+    MySessionItem,
     RoomCreateRequest,
     RoomCreateResponse,
     RoomInfoResponse,
@@ -135,6 +136,51 @@ async def my_active_sessions(
             }
         )
     return rows
+
+
+@router.get("/my-sessions", response_model=list[MySessionItem])
+async def my_sessions(
+    user: Annotated[User, Depends(require_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    """COMPLETED sessions hosted by the current user, newest first (T4 §6.2.4) — the
+    host app's Sessions page lists them with their downloads."""
+    player_count = (
+        select(func.count(func.distinct(SessionScore.user_id)))
+        .where(SessionScore.session_id == GameSession.id)
+        .correlate(GameSession)
+        .scalar_subquery()
+    )
+    rows = await db.execute(
+        select(
+            GameSession.id,
+            GameSession.room_code,
+            GameSession.completed_at,
+            Game.title,
+            Course.name,
+            Course.semester,
+            player_count.label("player_count"),
+        )
+        .join(Game, Game.id == GameSession.game_id)
+        .join(Course, Course.id == GameSession.course_id)
+        .where(
+            GameSession.host_user_id == user.id,
+            GameSession.status == "COMPLETED",
+        )
+        .order_by(GameSession.completed_at.desc(), GameSession.created_at.desc())
+    )
+    return [
+        {
+            "session_id": r.id,
+            "room_code": r.room_code,
+            "game_title": r.title,
+            "course_name": r.name,
+            "course_semester": r.semester,
+            "completed_at": r.completed_at,
+            "player_count": r.player_count,
+        }
+        for r in rows
+    ]
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
@@ -319,8 +365,11 @@ async def export_session_scores(
     _: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StreamingResponse:
-    """Download session scores as a CSV. Accessible by the session host or an admin."""
+    """Download session scores as a CSV. Accessible by the session host or an admin,
+    once the session is COMPLETED (T4 D9)."""
     from ..services.export_service import build_session_csv
+
+    await _assert_completed(db, session_id)
 
     filename, content = await build_session_csv(db, session_id)
 
@@ -329,3 +378,28 @@ async def export_session_scores(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/sessions/{session_id}/report")
+async def session_report(
+    session_id: str,
+    _: Annotated[User, Depends(require_session_host)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Download the standalone, PII-free HTML report of a COMPLETED session (T4 D9)."""
+    from ..services.report_service import build_session_report
+
+    await _assert_completed(db, session_id)
+    filename, content = await build_session_report(db, session_id)
+    return Response(
+        content=content,
+        media_type="text/html",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+async def _assert_completed(db: AsyncSession, session_id: str) -> None:
+    # Existence was checked by require_session_host.
+    session = await db.get(GameSession, session_id)
+    if session.status != "COMPLETED":
+        raise ConflictError("Session has not finished yet")
