@@ -10,7 +10,7 @@ top-level files.
 
 | Directory | Role | README highlights |
 |---|---|---|
-| `pages/` | `LoginPage`, `HomePage` (create/rejoin rooms) and `game/` — `GameLayout` (socket + context) with Lobby, Question, Results and GameOver child pages. | URL follows server events; any `error` event replaces the whole game screen; reloads after results/game over hang on "Loading…". |
+| `pages/` | `LoginPage`, the management pages under `ManagementLayout` (`HomePage`: create/rejoin rooms, course cards; T4 phase 2 adds course, roster, editor and sessions pages) and `game/` — `GameLayout` (socket + context) with Lobby, Question, Results and GameOver child pages. | URL follows server events; any `error` event replaces the whole game screen; reloads after results/game over hang on "Loading…". |
 | `components/` | `ui/` primitives: `Button`, `Card`, `Input`, and `TimerBar` (the host copy supports `initialSeconds` for reconnects). | Copies of the admin primitives; `TimerBar` reads props once and must be remounted per question. |
 | `lib/` | `api` client (`get`/`post`/`delete`) and `cn`. | No `put`/`patch`/upload/download yet; no 401/refresh handling. |
 | `types/` *(no README)* | `game.ts` — TypeScript shapes of every socket payload the host receives (`SyncStatePayload`, `QuestionPayload`, `HostResultsPayload`, `HostGameOverPayload`, `AnswerReveal`, …) and the `HostPhase` union. | Hand-maintained mirror of `backend/app/websocket/gateway.py` payloads; not generated. |
@@ -20,7 +20,7 @@ top-level files.
 | File | Purpose |
 |---|---|
 | `main.tsx` | Mounts `<App />` in `StrictMode` into `#root` and imports `index.css`. |
-| `App.tsx` | `BrowserRouter` (basename `/host/` in production). Routes: `/login`; `/home` and `/game/:code/{lobby,question,results,gameover}` wrapped in `RequireAuth` (token exists — expiry not checked); `*` → `/login`. |
+| `App.tsx` | `BrowserRouter` (basename `/host/` in production). Routes: `/login`; the `ManagementLayout` group (`/home`, plus the T4 phase-2 pages) and `/game/:code/{lobby,question,results,gameover}` wrapped in `RequireAuth` (token exists — expiry not checked); `*` → `/login`. |
 | `index.css` | Tailwind directives plus a hardcoded dark `body` background (`#0f172a`) and text color. |
 
 ## How it fits together

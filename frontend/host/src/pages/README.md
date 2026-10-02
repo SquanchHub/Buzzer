@@ -1,15 +1,17 @@
 # frontend/host/src/pages/
 
-Screens for the Host app, the big-screen display an instructor runs. Two top-level pages
-(sign-in, room setup) and a `game/` subfolder where one layout owns the Socket.io connection
-and four child pages render each game phase. Routes are declared in `frontend/host/src/App.tsx`.
+Screens for the Host app, the big-screen display an instructor runs: sign-in; the management
+pages (room setup and, from T4 phase 2, course content), which share a top bar from
+`ManagementLayout`; and a `game/` subfolder where one layout owns the Socket.io connection and
+four child pages render each game phase. Routes are declared in `frontend/host/src/App.tsx`.
 
 ## Files
 
 | File | Route | Purpose |
 |---|---|---|
 | `LoginPage.tsx` | `/login` | NetID SSO link plus username/password form; exchanges the OAuth2 temp token (from the URL hash) via `/api/auth/exchange-temp`; stores the access token in `localStorage.token`. |
-| `HomePage.tsx` | `/home` | Lists the host's courses, games and active sessions; creates a room (`POST /game/rooms`), rejoins or deletes an active session. |
+| `ManagementLayout.tsx` | (layout) | Top bar for the non-game pages — Home · Sessions · Sign out (clears `localStorage.token`) — around an `<Outlet/>`. |
+| `HomePage.tsx` | `/home` | Active sessions (rejoin/delete); room creation, where the quiz list shows only the selected course's games (`MyGameItem.course_id`; unassigned games never match, T4 D4); a "Your courses" card list linking to `/courses/:courseId`. |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
 | `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. |
@@ -40,8 +42,9 @@ and four child pages render each game phase. Routes are declared in `frontend/ho
 
 ## Depended on by
 
-- `frontend/host/src/App.tsx` — the only importer; wraps `/home` and `/game/:code` in `RequireAuth`
-  (which only checks that `localStorage.token` exists, not whether it has expired).
+- `frontend/host/src/App.tsx` — the only importer; wraps the `ManagementLayout` routes and
+  `/game/:code` in `RequireAuth` (which only checks that `localStorage.token` exists, not whether
+  it has expired).
 
 ## Gotchas found while reading
 

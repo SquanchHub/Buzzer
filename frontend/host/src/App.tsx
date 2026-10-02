@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
+import ManagementLayout from './pages/ManagementLayout';
 import GameLayout from './pages/game/GameLayout';
 import LobbyPage from './pages/game/LobbyPage';
 import QuestionPage from './pages/game/QuestionPage';
@@ -17,7 +18,10 @@ export default function App() {
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/home" element={<RequireAuth><HomePage /></RequireAuth>} />
+        {/* Non-game pages share the management top bar (T4 §6.3). */}
+        <Route element={<RequireAuth><ManagementLayout /></RequireAuth>}>
+          <Route path="/home" element={<HomePage />} />
+        </Route>
         <Route path="/game/:code" element={<RequireAuth><GameLayout /></RequireAuth>}>
           <Route path="lobby" element={<LobbyPage />} />
           <Route path="question" element={<QuestionPage />} />
