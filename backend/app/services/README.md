@@ -17,7 +17,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `export_service.py` | Builds session score CSVs: a raw per-question table and a Canvas gradebook import format. |
 | `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
-| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check; questions and import/export follow in later phase-2 commits. |
+| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing; import/export follow in a later phase-2 commit. |
 
 ## Key entry points
 
@@ -66,6 +66,15 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   - `delete_game(db, redis, actor, game_id)` — D6: 409 while live; a non-admin also 409 if any
     session has another or a NULL host; deletes scores, sessions and the game, then clears each
     session's Redis state.
+  - Questions — every mutation is 409 while the game is live (D7):
+    `list_questions`; `create_question` always **appends** (a sent `order_index` is ignored);
+    `update_question` (D8) 422s any explicit `null` and any `order_index`, then merges the sent
+    fields onto the stored question's seven content fields and re-validates the whole thing with
+    `QuestionCreate` (`RequestBodyInvalidError` → 422 `VALIDATION_ERROR`); `delete_question` is 409
+    if any answer was recorded for it, then re-packs `order_index` to 0..n-1;
+    `reorder_questions` (409 unless exactly the game's ids) is the **only** way to move a question.
+  - `sanitize_prompt` / `PROMPT_TAGS` — bleach, keeping `b i br u`. `routers/admin.py` still has
+    its own copy until phase 3.
 
 ## Depends on
 
@@ -93,6 +102,10 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 
 ## Gotchas found while reading
 
+- **A prompt that is only markup is stored empty.** Prompts are validated (`min_length=1`)
+  *before* they are sanitized, so e.g. `<script></script>` passes validation and is saved as
+  `""` — on the admin path and in `content_service`. Kept as is (T4 §6.2.5 h); validate the
+  sanitized text if empty prompts ever matter.
 - Only `room:{code}` has a TTL (90 min). The `session:{id}:*` keys never expire; they are only
   removed by `delete_room_state` (abandon or host delete). Completed games leave them behind.
 - `update_player_score` is read-modify-write on a JSON blob, so concurrent updates can lose one.

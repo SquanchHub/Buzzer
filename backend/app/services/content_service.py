@@ -12,14 +12,16 @@ Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over t
 
 from __future__ import annotations
 
+import bleach
 import structlog
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..common.exceptions import ConflictError, NotFoundError
+from ..common.exceptions import ConflictError, NotFoundError, RequestBodyInvalidError
 from ..models.course import Course, UserCourseAccess
-from ..models.game import Game, UserGameAccess
+from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
 from ..models.user import User
 from ..schemas.admin import (
@@ -28,6 +30,8 @@ from ..schemas.admin import (
     GameUpdate,
     HostGameItem,
     HostGameUpdate,
+    QuestionCreate,
+    QuestionUpdate,
 )
 from . import state_service as state
 
@@ -197,3 +201,175 @@ async def delete_game(
     for s in sessions:
         await state.delete_room_state(redis, s.room_code, s.id)
     logger.info("game_deleted", game_id=game_id, sessions=len(session_ids), by=actor.id)
+
+
+# ---------------------------------------------------------------------------
+# Questions (D6, D7, D8, §6.2.5 a)
+# ---------------------------------------------------------------------------
+
+# Prompt HTML allowed through the sanitizer (moved from routers/admin.py, which keeps
+# its own copy until phase 3 switches it over).
+PROMPT_TAGS = ["b", "i", "br", "u"]
+
+# The QuestionCreate fields an update merges onto the stored question: all of them
+# except order_index, which only reorder_questions changes (§6.2.5 a).
+_MERGE_FIELDS = (
+    "type",
+    "grading_type",
+    "prompt",
+    "config",
+    "answer_data",
+    "time_limit_seconds",
+    "points_value",
+)
+
+
+def sanitize_prompt(prompt: str) -> str:
+    """Strip every tag except b/i/br/u. Runs after validation, so a prompt that is only
+    markup (e.g. "<script></script>") is stored empty — existing behaviour, see the
+    services README gotcha."""
+    return bleach.clean(prompt, tags=PROMPT_TAGS, attributes={}, strip=True)
+
+
+async def _assert_not_live(db: AsyncSession, redis: Redis, game_id: int) -> None:
+    if await has_live_session(db, redis, game_id):
+        raise ConflictError("This game has a live session")
+
+
+async def _get_question(db: AsyncSession, game_id: int, question_id: int) -> Question:
+    question = await db.scalar(
+        select(Question).where(Question.id == question_id, Question.game_id == game_id)
+    )
+    if not question:
+        raise NotFoundError(f"Question {question_id} not found in game {game_id}")
+    return question
+
+
+async def _questions(db: AsyncSession, game_id: int) -> list[Question]:
+    return list(
+        (
+            await db.execute(
+                select(Question)
+                .where(Question.game_id == game_id)
+                .order_by(Question.order_index, Question.id)
+            )
+        ).scalars()
+    )
+
+
+async def list_questions(db: AsyncSession, game_id: int) -> list[Question]:
+    await _get_game(db, game_id)
+    return await _questions(db, game_id)
+
+
+async def create_question(
+    db: AsyncSession, redis: Redis, game_id: int, body: QuestionCreate
+) -> Question:
+    """409 while live. Always appended at max(order_index) + 1; a caller's order_index
+    is ignored — reorder_questions is the only way to change position (§6.2.5 a)."""
+    await _get_game(db, game_id)
+    await _assert_not_live(db, redis, game_id)
+    last = await db.scalar(
+        select(func.max(Question.order_index)).where(Question.game_id == game_id)
+    )
+    question = Question(
+        game_id=game_id,
+        type=body.type,
+        grading_type=body.grading_type,
+        prompt=sanitize_prompt(body.prompt),
+        config=body.config,
+        answer_data=body.answer_data,
+        time_limit_seconds=body.time_limit_seconds,
+        points_value=body.points_value,
+        order_index=0 if last is None else last + 1,
+    )
+    db.add(question)
+    await db.flush()
+    await db.refresh(question)
+    return question
+
+
+async def update_question(
+    db: AsyncSession,
+    redis: Redis,
+    game_id: int,
+    question_id: int,
+    patch: QuestionUpdate,
+) -> Question:
+    """D8: 404 if not in this game; 409 while live; 422 for any explicit null and for
+    order_index (§6.2.5 a); otherwise merge the sent fields onto the stored question
+    and validate the result as a whole with QuestionCreate (422 VALIDATION_ERROR)."""
+    question = await _get_question(db, game_id, question_id)
+    await _assert_not_live(db, redis, game_id)
+
+    sent = patch.model_dump(exclude_unset=True)
+    nulls = [field for field, value in sent.items() if value is None]
+    if nulls:
+        raise RequestBodyInvalidError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", field),
+                    "msg": f"{field} cannot be null; omit it to keep the current value",
+                    "input": None,
+                }
+                for field in nulls
+            ]
+        )
+    if "order_index" in sent:
+        raise RequestBodyInvalidError.for_field(
+            "order_index",
+            "order_index can't be changed here; use "
+            f"POST /games/{game_id}/questions/reorder",
+            sent["order_index"],
+        )
+
+    merged = {field: getattr(question, field) for field in _MERGE_FIELDS}
+    merged.update(sent)
+    try:
+        valid = QuestionCreate(**merged)
+    except ValidationError as exc:
+        raise RequestBodyInvalidError.from_validation_error(exc) from exc
+
+    for field in _MERGE_FIELDS:
+        setattr(question, field, getattr(valid, field))
+    question.prompt = sanitize_prompt(valid.prompt)
+    await db.flush()
+    return question
+
+
+async def delete_question(
+    db: AsyncSession, redis: Redis, game_id: int, question_id: int
+) -> None:
+    """D6: 404; 409 while live; 409 if any answer was recorded for it (deleting scores
+    would rewrite completed sessions). Then re-pack the rest to order_index 0..n-1."""
+    question = await _get_question(db, game_id, question_id)
+    await _assert_not_live(db, redis, game_id)
+    answered = await db.scalar(
+        select(func.count(SessionScore.id)).where(
+            SessionScore.question_id == question_id
+        )
+    )
+    if answered:
+        raise ConflictError("Question has recorded answers")
+    await db.delete(question)
+    await db.flush()
+    for index, q in enumerate(await _questions(db, game_id)):
+        q.order_index = index
+    await db.flush()
+
+
+async def reorder_questions(
+    db: AsyncSession, redis: Redis, game_id: int, order: list[int]
+) -> None:
+    """409 while live; 409 unless `order` is exactly this game's question ids."""
+    await _get_game(db, game_id)
+    await _assert_not_live(db, redis, game_id)
+    questions = {q.id: q for q in await _questions(db, game_id)}
+    if len(order) != len(questions) or set(order) != set(questions):
+        raise ConflictError(
+            "order list must contain exactly the IDs of all questions in this game"
+        )
+    for index, qid in enumerate(order):
+        questions[qid].order_index = index
+    await db.flush()
