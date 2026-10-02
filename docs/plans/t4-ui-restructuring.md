@@ -361,6 +361,28 @@ mirrored. Course list for hosts is the existing `GET /game/my-courses`.
 - `GET /game/sessions/{session_id}/export`: switch to `require_session_host`; add the COMPLETED
   409 (no existing test exercises this endpoint).
 
+#### 6.2.5 Phase 2 implementation decisions (2026-10-02)
+
+Reading the phase 2 code paths against this spec before implementation surfaced the points below.
+Each was decided by the owner and **overrides the section it names**.
+
+| # | Point | Decision |
+|---|---|---|
+| a | D8 says to merge "exactly `QuestionCreate`'s seven fields", but `QuestionCreate` has **eight**: the seven listed plus `order_index`. `QuestionUpdate` also accepts `order_index`, and today's admin handlers write a caller's `order_index` directly, which can create duplicate positions. | D8's count was wrong: the merge scope is the eight fields **minus `order_index`** (the seven D8 lists). `content_service.create_question` always appends at `max(order_index)+1` and ignores any `order_index` sent. `update_question` rejects a patch carrying `order_index` with a 422 (`RequestBodyInvalidError`, `loc: ["body","order_index"]`, message pointing at `POST …/questions/reorder`). Reorder is the only way to change a question's position. The admin editor never sends `order_index`, so phase 3 is unaffected. |
+| b | Import errors today are `HTTPException(422, detail="…")`, but D8 says services never raise FastAPI exceptions, and T7 §6.3 expects "the project's 422 error type with the same messages". | `content_service.import_game` raises `RequestBodyInvalidError` carrying **one** error entry with today's message text (e.g. `loc: ["body","file"]`, `msg: "Question 3 invalid: …"`). The admin import route keeps its current `HTTPException` shape until phase 3 switches it to `content_service`. |
+| c | §6.3 says "each course card links to `/courses/:courseId`", but the host `HomePage` has no course cards; courses appear only in the room-creation `<select>`. | Add a **"Your courses"** card list under the room-creation card; each card links to `/courses/:courseId`. |
+| d | `GET /host/courses/{id}/games` needs `session_count` and the D1 filter, but §6.2.2 lists no read function for it. | Add `content_service.list_course_games(db, actor, course_id) -> list[HostGameItem data]` (admin: all games in the course; others: games D1 lets them run). |
+| e | `require_session_host` replaces four inlined checks with four different 403 messages. | One message: `"Only the session host can access this session"`. No test asserts the old wording. |
+| f | No host endpoint returns a single course, but the course and roster pages need its name. | The pages read the name from `GET /game/my-courses`; no new endpoint. |
+| g | The phase 2 tests need user/course/grant helpers like those in `tests/integration/test_course_games.py`. | A small shared helper module under `tests/integration/`; `test_course_games.py` is not edited and its code is not copied. |
+| h | Prompts are sanitized (bleach) **after** validation, so a prompt such as `<script></script>` passes `min_length=1` and is stored as an empty string. | Kept as is (existing behaviour, also on the admin path). Recorded as a finding in `backend/app/services/README.md` gotchas when `content_service` lands. |
+| i | `delete_game` clears Redis after the MySQL deletes flush but before `get_db` commits, so a failed commit leaves MySQL rows without Redis state. | Accepted as specified: such sessions are simply no longer live (D7). |
+| j | If T7's MR !13 merges first, the ported `QuestionEditorPage`'s type list won't include `hotspot`. | Port unchanged. Editing hotspot questions in the host editor is T7 stage B (`HotspotEditor`, t7-hotspot.md §7.9). |
+
+Branching: phase 2 branches from `main` now rather than after !13 merges. New README text goes in
+different places from T7's to keep conflicts small, and `main` is merged into this branch as soon as
+!13 lands.
+
 ### 6.3 Phase 2 — host frontend (Arjun)
 
 `frontend/host/src/lib/api.ts`: add `put`, `patch`, `postForm`, `download`, copied from
