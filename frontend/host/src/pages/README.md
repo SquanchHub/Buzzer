@@ -12,9 +12,9 @@ and four child pages render each game phase. Routes are declared in `frontend/ho
 | `HomePage.tsx` | `/home` | Lists the host's courses, games and active sessions; creates a room (`POST /game/rooms`), rejoins or deletes an active session. |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
-| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. |
-| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select) or word cloud (fill-in-the-blank) with correct answers highlighted; 10s countdown to the next question when auto-advance is on. |
-| `game/GameOverPage.tsx` | `…/gameover` | Anonymous score histogram, average/high score, per-question breakdown cards. |
+| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. Hotspot adds the image (`HotspotView`) with no rings or taps while open (`docs/plans/t7-hotspot.md` H5). |
+| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select), word cloud (fill-in-the-blank) or hotspot view (image, rings, every tap coloured by band, band legend; COMPLETENESS: neutral taps + "N taps") with correct answers highlighted; 10s countdown to the next question when auto-advance is on. |
+| `game/GameOverPage.tsx` | `…/gameover` | Anonymous score histogram, average/high score, per-question breakdown cards (hotspot cards draw `HotspotView` from the summary's `taps`). |
 
 ## Key entry points
 
@@ -33,6 +33,7 @@ and four child pages render each game phase. Routes are declared in `frontend/ho
 
 - `frontend/host/src/lib/` — `api` (`get`/`post`/`delete` wrapper around `fetch('/api' + path)`).
 - `frontend/host/src/components/ui/` — `Button`, `Card`/`CardHeader`/`CardContent`, `Input`, `TimerBar`.
+- `frontend/host/src/components/HotspotView.tsx` — hotspot display (`HotspotView`, `ringsFromReveal`).
 - `frontend/host/src/types/game.ts` — socket payload types (`QuestionPayload`, `HostResultsPayload`, …).
 - npm: `react-router-dom`, `socket.io-client`, `qrcode.react`, `lucide-react`.
 - Backend: `/api/auth/*`, `/api/game/*` (`backend/app/routers/`) and the Socket.io protocol

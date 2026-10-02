@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from pydantic import (
@@ -130,11 +131,64 @@ class GameResponse(BaseModel):
 # Questions
 # ---------------------------------------------------------------------------
 
+# Hotspot rules (docs/plans/t7-hotspot.md §5.1). The single checker for these
+# rules: QuestionCreate uses it to reject bad input, and game_service uses it to
+# detect bad *stored* data at scoring time (§5.4, §13.1 i).
+_HOTSPOT_CONFIG_KEYS = {"imageId", "aspectRatio"}
+_HOTSPOT_ANSWER_KEYS = {"x", "y", "innerRadius", "outerRadius", "partialFraction"}
+
+
+def _is_finite_number(value: object) -> bool:
+    """True for int or float, excluding bool (an int subclass), NaN and infinity."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    # math.isfinite would overflow on huge ints; ints are always finite anyway.
+    return isinstance(value, int) or math.isfinite(value)
+
+
+def is_hotspot_aspect_ratio(value: object) -> bool:
+    return _is_finite_number(value) and 0.2 <= value <= 5
+
+
+def hotspot_config_error(config: object) -> str | None:
+    """Why a hotspot config breaks §5.1, or None if it is valid."""
+    if not isinstance(config, dict) or set(config) != _HOTSPOT_CONFIG_KEYS:
+        return "hotspot config must have exactly 'imageId' and 'aspectRatio'"
+    image_id = config["imageId"]
+    if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id < 1:
+        return "hotspot imageId must be a positive integer"
+    if not is_hotspot_aspect_ratio(config["aspectRatio"]):
+        return "hotspot aspectRatio must be a finite number between 0.2 and 5"
+    return None
+
+
+def hotspot_answer_error(answer_data: object) -> str | None:
+    """Why ACCURACY hotspot answer_data breaks §5.1, or None if it is valid."""
+    if not isinstance(answer_data, dict) or set(answer_data) != _HOTSPOT_ANSWER_KEYS:
+        return (
+            "ACCURACY hotspot answer_data must have exactly 'x', 'y', "
+            "'innerRadius', 'outerRadius' and 'partialFraction'"
+        )
+    if not all(_is_finite_number(answer_data[k]) for k in _HOTSPOT_ANSWER_KEYS):
+        return "hotspot answer_data values must be finite numbers"
+    inner = answer_data["innerRadius"]
+    outer = answer_data["outerRadius"]
+    if not (0 <= answer_data["x"] <= 1 and 0 <= answer_data["y"] <= 1):
+        return "hotspot x and y must be between 0 and 1"
+    if not 0.02 <= inner <= 0.5:
+        return "hotspot innerRadius must be between 0.02 and 0.5"
+    if not inner <= outer <= 1:
+        return "hotspot outerRadius must be between innerRadius and 1"
+    if not 0 <= answer_data["partialFraction"] <= 1:
+        return "hotspot partialFraction must be between 0 and 1"
+    return None
+
 
 class QuestionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str = Field(
-        ..., pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select)$"
+        ...,
+        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot)$",
     )
     grading_type: str = Field(..., pattern="^(ACCURACY|COMPLETENESS)$")
     prompt: str = Field(..., min_length=1, max_length=2000)
@@ -200,13 +254,20 @@ class QuestionCreate(BaseModel):
                     )
                 if any(not isinstance(p, (int, float)) for p in pts):
                     raise ValueError("answer_points values must be numbers")
+        if self.type == "hotspot":
+            error = hotspot_config_error(self.config)
+            if error is None and self.grading_type == "ACCURACY":
+                error = hotspot_answer_error(self.answer_data)
+            if error is not None:
+                raise ValueError(error)
         return self
 
 
 class QuestionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str | None = Field(
-        None, pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select)$"
+        None,
+        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot)$",
     )
     grading_type: str | None = Field(None, pattern="^(ACCURACY|COMPLETENESS)$")
     prompt: str | None = Field(None, min_length=1, max_length=2000)

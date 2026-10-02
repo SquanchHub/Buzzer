@@ -1,4 +1,22 @@
 import { useGame } from './GameLayout';
+import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
+import type { HotspotBand, PlayerAnswerReveal } from '../../types/game';
+
+const HOTSPOT_LABELS: Record<HotspotBand, { text: string; className: string }> = {
+  inner: { text: 'Bullseye!', className: 'text-green-400' },
+  outer: { text: 'Close!', className: 'text-amber-400' },
+  miss: { text: 'Miss', className: 'text-red-400' },
+};
+
+/** Rings to draw from a hotspot reveal, or null (COMPLETENESS / invalid target, §5.4). */
+function hotspotRings(reveal: PlayerAnswerReveal) {
+  if (reveal.type !== 'hotspot') return null;
+  const { x, y, innerRadius, outerRadius } = reveal;
+  if (x === undefined || y === undefined || innerRadius === undefined || outerRadius === undefined) {
+    return null;
+  }
+  return { x, y, innerRadius, outerRadius };
+}
 
 function describeAnswer(
   lastAnswerData: Record<string, unknown> | null,
@@ -18,11 +36,15 @@ function describeAnswer(
   if (type === 'fill_in_the_blank') {
     return typeof lastAnswerData.text === 'string' ? lastAnswerData.text : null;
   }
+  if (type === 'hotspot') {
+    const { x, y } = lastAnswerData;
+    return typeof x === 'number' && typeof y === 'number' ? `Tapped (${x.toFixed(2)}, ${y.toFixed(2)})` : null;
+  }
   return null;
 }
 
 export default function ResultsPage() {
-  const { questionResults, currentQuestion, lastAnswerData } = useGame();
+  const { questionResults, currentQuestion, lastAnswerData, questionImage } = useGame();
 
   if (!questionResults) {
     return (
@@ -41,6 +63,23 @@ export default function ResultsPage() {
   const isCompleteness = answerReveal.type === 'completeness';
   const isFitb = answerReveal.type === 'fill_in_the_blank';
   const isCorrect = !isCompleteness && yourPoints > 0;
+  const isHotspot = currentQuestion?.type === 'hotspot';
+  // Hotspot label comes from the server's yourBand, never from points (H12, §13.1 c).
+  const hotspotLabel = isCompleteness
+    ? null
+    : !lastAnswerData
+      ? { text: 'No answer', className: 'text-slate-400' }
+      : questionResults.yourBand
+        ? HOTSPOT_LABELS[questionResults.yourBand]
+        : { text: 'Answer recorded', className: 'text-indigo-400' }; // band unknown: don't guess
+  const hotspotImage: HotspotImage =
+    questionImage && currentQuestion && questionImage.questionId === currentQuestion.questionId
+      ? questionImage
+      : { status: 'error' };
+  const ownTap =
+    isHotspot && lastAnswerData && typeof lastAnswerData.x === 'number' && typeof lastAnswerData.y === 'number'
+      ? { x: lastAnswerData.x, y: lastAnswerData.y, band: questionResults.yourBand ?? null }
+      : null;
 
   const fitbAccepted: string[] =
     isFitb && 'acceptedAnswers' in answerReveal ? answerReveal.acceptedAnswers : [];
@@ -49,7 +88,9 @@ export default function ResultsPage() {
     <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-5 text-center">
 
       {/* Correct / Wrong / Recorded */}
-      {isCompleteness ? (
+      {isHotspot && hotspotLabel ? (
+        <p className={`${hotspotLabel.className} text-4xl font-black`}>{hotspotLabel.text}</p>
+      ) : isCompleteness ? (
         <p className="text-indigo-400 text-4xl font-black">Answer recorded!</p>
       ) : isCorrect ? (
         <p className="text-green-400 text-4xl font-black">Correct!</p>
@@ -62,6 +103,20 @@ export default function ResultsPage() {
         <p className="text-slate-400 text-base">
           You answered: <span className="text-slate-200 font-semibold">{answeredLabel}</span>
         </p>
+      )}
+
+      {/* Hotspot: own tap and the target rings */}
+      {isHotspot && currentQuestion && (
+        <div className="w-full max-w-md">
+          <HotspotCanvas
+            aspectRatio={currentQuestion.config.aspectRatio ?? 1}
+            image={hotspotImage}
+            label={`Your tap and the target for: ${currentQuestion.prompt}`}
+            marker={ownTap}
+            rings={hotspotRings(answerReveal)}
+            maxHeightVh={40}
+          />
+        </div>
       )}
 
       {/* Correct answer for FITB ACCURACY */}

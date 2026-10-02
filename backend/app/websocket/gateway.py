@@ -160,6 +160,9 @@ def _answer_reveal(q: Question) -> dict:
             "type": "multi_select",
             "answerPoints": q.answer_data.get("answer_points", []),
         }
+    if q.type == "hotspot":
+        target = game_service.hotspot_target(q.id, q.config, q.answer_data)
+        return game_service.hotspot_reveal(target)
     return {}
 
 
@@ -872,15 +875,43 @@ async def _on_host_advance_impl(sid: str) -> None:
             from sqlalchemy import select as sa_select
             from ..models.session import SessionScore as _Score
 
-            q_score_rows = await db.execute(
-                sa_select(_Score.user_id, _Score.points_awarded).where(
-                    _Score.session_id == session_id,
-                    _Score.question_id == question.id,
+            q_score_rows = (
+                await db.execute(
+                    sa_select(_Score.user_id, _Score.points_awarded, _Score.answer_data)
+                    .where(
+                        _Score.session_id == session_id,
+                        _Score.question_id == question.id,
+                    )
+                    .order_by(_Score.id)  # answer order, for the hotspot tap cap
                 )
-            )
+            ).all()
             q_scores: dict[str, int] = {
                 r.user_id: r.points_awarded for r in q_score_rows
             }
+
+            # Hotspot: every tap with its band for the host (capped), and each
+            # player's own band for their result label (§7.4, H12).
+            hs_taps: list[dict] | None = None
+            hs_bands: dict[str, str | None] = {}
+            if question.type == "hotspot":
+                hs_target = (
+                    game_service.hotspot_target(
+                        question.id, question.config, question.answer_data
+                    )
+                    if question.grading_type == "ACCURACY"
+                    else None
+                )
+                hs_taps = []
+                for r in q_score_rows:
+                    tap = game_service.hotspot_tap(r.answer_data)
+                    if tap is None:
+                        continue
+                    band = game_service.hotspot_tap_band(
+                        question.grading_type, hs_target, tap
+                    )
+                    hs_bands[r.user_id] = band
+                    if len(hs_taps) < game_service.HOTSPOT_TAP_CAP:
+                        hs_taps.append({"x": tap[0], "y": tap[1], "band": band})
 
             # Bar-chart results → host (no player names)
             await sio.emit(
@@ -891,6 +922,7 @@ async def _on_host_advance_impl(sid: str) -> None:
                     "answerDistribution": answer_dist,
                     "totalAnswered": len(q_scores),
                     "totalPlayers": len(players),
+                    **({"taps": hs_taps} if hs_taps is not None else {}),
                 },
                 to=_host_room(room_code),
             )
@@ -911,6 +943,13 @@ async def _on_host_advance_impl(sid: str) -> None:
                         "yourScore": player.get("score", 0),
                         "yourRank": rank_map.get(uid, len(players)),
                         "playerCount": len(players),
+                        # Own band only — never other players' taps. None if
+                        # unanswered or COMPLETENESS.
+                        **(
+                            {"yourBand": hs_bands.get(uid)}
+                            if question.type == "hotspot"
+                            else {}
+                        ),
                     },
                     to=_user_room(uid),
                 )
@@ -1148,6 +1187,16 @@ async def on_submit_answer(sid: str, data: dict) -> None:
                     sid, "selectedIndices contains an out-of-bounds index"
                 )
                 return
+
+        if question.type == "hotspot":
+            tap = game_service.hotspot_tap(answer_data)
+            if tap is None:
+                await _emit_error(
+                    sid, "hotspot answer must include x and y between 0 and 1"
+                )
+                return
+            # Store only the point: extra client keys are dropped (§7.4).
+            answer_data = {"x": tap[0], "y": tap[1]}
 
         result = await game_service.record_answer(
             db, redis, session_id, user_id, question, answer_data, answer_time_ms

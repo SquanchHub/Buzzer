@@ -626,3 +626,22 @@ gaps; each is now closed in the section named.
 | 8 | `aspectRatio` is client-supplied and unchecked. | Recorded as accepted risk (§12). |
 | 9 | "Question N" numbering unspecified. | 1-based, matching today's import message (§6.3). |
 | 10 | "First 500" taps had no order. | Ordered by `session_scores.id`; band counts over all rows (§7.2, §7.4). |
+
+### 13.1 Stage A implementation refinements (2026-10-01)
+
+Reading the stage A code against this spec before implementation surfaced the points below. Each
+was decided by the owner and **overrides the section it names**.
+
+| # | Point | Decision |
+|---|---|---|
+| a | §5.4 shows a printf-style log call; `game_service` logs with structlog (event name + key/value fields). | `logger.warning("hotspot_target_invalid", question_id=...)`. |
+| b | There are four reveal builders, not two: `gateway._answer_reveal`, `report_service._answer_reveal`, and inline ones in **both** `game_service` game-over summaries (§7.2 named only the player one). | One helper, `game_service.hotspot_reveal(target: HotspotTarget \| None) -> dict`, returns the §7.4 shape or the §5.4 no-target shape. All four builders call it for hotspot (ACCURACY); none builds the shape itself. Overrides "its own copy" in §7.5. |
+| c | §7.7 maps `yourBand: null` to "the existing unanswered wording", but the player `ResultsPage` has none (unanswered shows "Incorrect"; COMPLETENESS shows "Answer recorded!" even when unanswered). | Hotspot label: COMPLETENESS reveal → "Answer recorded!"; no tap this question (`lastAnswerData` null) → "No answer"; otherwise from `yourBand` per §7.7. Other types unchanged. |
+| d | `report_service._extract_answer_key(q_type, answer_data)` cannot see the question, so it cannot compute a band. | Its signature changes to take the `Question` (callers updated). |
+| e | §9 says canvases can be developed against "any locally served test image" but `images.ts` always requests `/api/images/{id}`, which does not exist before T8; the player would see "Image unavailable" and no Submit. | A **dev-only** Vite route in host and player `vite.config.ts` serves `GET /api/images/{id}` from `frontend/dev-images/{id}.png`, registered ahead of the `/api` proxy, active only under `vite` dev (`apply: 'serve'`), never in a build. Own commit; marked in code for removal in stage C; gotcha lines in each touched README. `frontend/dev-images/1.png` is a small self-made test PNG so a fresh clone can play a hotspot question in dev. |
+| f | Socket tests 6–10 are marked **T8**, but stage A's backend needs no image (admin create skips the existence check before T4 phase 3). | Written in stage A against `POST /api/admin/games/{g}/questions` with a placeholder `imageId`; switched to the host route and a real T8 image in stage C. |
+| g | Test 14 says "Needs —" but names `/api/host/games/import` (T4 phase 2). | Test 14 is written in stage B. Stage A changes nothing about sample games. |
+| h | Image-load failure is specified only for the player `QuestionPage`. | Everywhere else (player results and recap, all host views) draws rings and taps on a blank letterbox labelled "Image unavailable", as the report does (§7.5). |
+| i | §5.1's rules would be implemented twice: in the Pydantic validator and in `hotspot_target`. | **One checker, in `backend/app/schemas/admin.py`:** `hotspot_config_error(config) -> str \| None`, `hotspot_answer_error(answer_data) -> str \| None`, and `is_hotspot_aspect_ratio(value) -> bool`. `QuestionCreate.validate_structure` raises with their messages; `game_service.hotspot_target` calls `is_hotspot_aspect_ratio` and `hotspot_answer_error` (not the `imageId` check — a bad `imageId` is the clients' "Image unavailable" path, §5.4). `game_service` already imports from `schemas`, so no new dependency direction. Refines §5.2 / §7.1. |
+| j | §7.6 names no CSS variables for canvas colours. | `--hotspot-inner`, `--hotspot-outer`, `--hotspot-miss`, `--hotspot-neutral`, read with `getComputedStyle`; fixed fallbacks until T9. |
+| k | The simulator could aim using `--game-json`, but §7.10 says uniform; the engine's `compute_question_score` returns `int`, but partial credit is fractional. | Simulator stays uniform as specified. Engine return type becomes `float`. |

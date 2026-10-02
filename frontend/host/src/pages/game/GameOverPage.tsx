@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
+import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
 import type { AnswerReveal, HostQuestionSummaryItem } from '../../types/game';
 
 const TARGET_BUCKETS = 8;
@@ -84,6 +85,7 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
     true_false: 'True / False',
     fill_in_the_blank: 'Fill in the Blank',
     multi_select: 'Multi-Select',
+    hotspot: 'Hotspot',
   };
 
   const answeredPct = totalPlayers > 0 ? Math.round((totalAnswered / totalPlayers) * 100) : 0;
@@ -138,6 +140,17 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
 
       {/* Distribution */}
       <div className="space-y-2">
+        {type === 'hotspot' && (
+          <HotspotView
+            imageId={config.imageId}
+            aspectRatio={config.aspectRatio ?? 1}
+            label={`Taps for: ${prompt}`}
+            rings={ringsFromReveal(reveal)}
+            taps={item.taps ?? []}
+            legend={{ accuracy: gradingType === 'ACCURACY', distribution: answerDistribution }}
+            maxHeightVh={35}
+          />
+        )}
         {(type === 'multiple_choice' || type === 'multi_select') && (config.options ?? []).map((opt, i) => {
           const count = answerDistribution[String(i)] ?? 0;
           const correct = isCorrectIndex(i);

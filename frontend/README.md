@@ -43,6 +43,12 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
 
 ## Gotchas collected from the app READMEs
 
+- **DEV ONLY until T7 stage C: `/api/images/{id}` is faked by Vite.** `host/vite.config.ts` and
+  `player/vite.config.ts` contain a `devImages` plugin (`apply: 'serve'`) that serves
+  `frontend/dev-images/{id}.png` for that route, plus a `server.fs.allow` entry for the folder.
+  It exists only on the Vite dev servers (not nginx, not builds) so hotspot questions can be
+  played before T8. Remove all of it in stage C — see `dev-images/README.md`.
+
 - **No shared code:** primitives and API clients are copied three times and have already drifted
   (player button sizing, `TimerBar` props, API client methods). Fixes and theming (T9) must be
   applied per app.

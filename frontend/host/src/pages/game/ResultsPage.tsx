@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
+import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
 import type { AnswerReveal } from '../../types/game';
 
 const RESULTS_DISPLAY_SECONDS = 10;
@@ -237,6 +238,7 @@ export default function ResultsPage() {
   }, [autoAdvance, questionResults, emitAdvance]);
 
   const isFitb = currentQuestion?.type === 'fill_in_the_blank';
+  const isHotspot = currentQuestion?.type === 'hotspot';
 
   const bars =
     !isFitb && questionResults
@@ -259,7 +261,26 @@ export default function ResultsPage() {
         </p>
       )}
 
-      {questionResults && isFitb ? (
+      {questionResults && isHotspot && currentQuestion ? (
+        <div className="w-full max-w-4xl">
+          {/* Rings under ACCURACY; COMPLETENESS (no target) shows neutral taps only. */}
+          <HotspotView
+            imageId={currentQuestion.config.imageId}
+            aspectRatio={currentQuestion.config.aspectRatio ?? 1}
+            label={`Taps for: ${currentQuestion.prompt}`}
+            rings={ringsFromReveal(questionResults.answerReveal)}
+            taps={questionResults.taps ?? []}
+            legend={{
+              accuracy: currentQuestion.gradingType === 'ACCURACY',
+              distribution: questionResults.answerDistribution,
+            }}
+            maxHeightVh={50}
+          />
+          <p className="mt-1 text-center text-slate-500 text-sm">
+            {questionResults.totalAnswered} / {questionResults.totalPlayers} answered
+          </p>
+        </div>
+      ) : questionResults && isFitb ? (
         <WordCloud
           distribution={questionResults.answerDistribution}
           answerReveal={questionResults.answerReveal}
