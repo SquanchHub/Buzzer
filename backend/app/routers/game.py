@@ -8,7 +8,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..common.dependencies import get_current_user, require_user
+from ..common.dependencies import (
+    get_current_user,
+    require_session_host,
+    require_user,
+)
 from ..common.exceptions import NotFoundError
 from ..config import settings
 from ..database import get_db
@@ -136,19 +140,12 @@ async def my_active_sessions(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(
     session_id: str,
-    user: Annotated[User, Depends(require_user)],
+    user: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
     redis=Depends(get_redis),
 ) -> None:
     """Permanently delete a session and all associated scores. Host or admin only."""
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise NotFoundError(f"Session {session_id} not found")
-
-    if user.role != "ADMIN" and session.host_user_id != user.id:
-        from ..common.exceptions import ForbiddenError
-
-        raise ForbiddenError("Only the session host can delete this session")
+    session = await db.get(GameSession, session_id)  # exists: require_session_host
 
     # Wipe Redis state (room key, player keys, question key, answered sets, dist hashes)
     await state.delete_room_state(redis, session.room_code, session_id)
@@ -239,22 +236,12 @@ async def get_room(
 @router.get("/sessions/{session_id}/guests")
 async def list_session_guests(
     session_id: str,
-    user: Annotated[User, Depends(require_user)],
+    _: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[dict]:
     """List unmerged guest players from a completed session."""
     from ..models.session import SessionScore
     from ..models.user import User as UserModel
-
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise NotFoundError(f"Session {session_id} not found")
-
-    # Only the session host or an admin can see this
-    if user.role != "ADMIN" and session.host_user_id != user.id:
-        from ..common.exceptions import ForbiddenError
-
-        raise ForbiddenError("Only the session host can view guest players")
 
     result = await db.execute(
         select(UserModel)
@@ -280,20 +267,12 @@ async def list_session_guests(
 async def merge_guest_for_session(
     session_id: str,
     body: dict,
-    user: Annotated[User, Depends(require_user)],
+    _: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Host-initiated guest merge. Delegates to the same logic as the admin endpoint."""
     from ..models.session import SessionScore
     from ..models.user import User as UserModel
-
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise NotFoundError(f"Session {session_id} not found")
-    if user.role != "ADMIN" and session.host_user_id != user.id:
-        from ..common.exceptions import ForbiddenError
-
-        raise ForbiddenError("Only the session host can merge guest players")
 
     guest_user_id: str = body.get("guest_user_id", "")
     target_netid: str = body.get("target_netid", "")
@@ -337,19 +316,10 @@ async def merge_guest_for_session(
 @router.get("/sessions/{session_id}/export")
 async def export_session_scores(
     session_id: str,
-    user: Annotated[User, Depends(require_user)],
+    _: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StreamingResponse:
     """Download session scores as a CSV. Accessible by the session host or an admin."""
-    session = await db.get(GameSession, session_id)
-    if not session:
-        raise NotFoundError(f"Session {session_id} not found")
-
-    if user.role != "ADMIN" and session.host_user_id != user.id:
-        from ..common.exceptions import ForbiddenError
-
-        raise ForbiddenError("Only the session host can export scores")
-
     from ..services.export_service import build_session_csv
 
     filename, content = await build_session_csv(db, session_id)

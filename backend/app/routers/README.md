@@ -55,8 +55,9 @@ Other code only touches the module-level `router` object in each file
   finishes; many update/delete handlers therefore never call `db.commit()` themselves.
 - Auth dependencies from `common/dependencies.py`: `require_admin` (ADMIN only),
   `require_user` (ADMIN or USER, rejects GUEST), `get_current_user` (any valid token).
-- Host-owned session endpoints in `game.py` repeat the check "ADMIN or `session.host_user_id`";
-  it is inlined per handler, not a shared dependency.
+- Host-owned session endpoints in `game.py` (delete session, list guests, merge guest, CSV
+  export) depend on `require_session_host`: 404 unknown session, 403 "Only the session host can
+  access this session" unless ADMIN or `session.host_user_id` (T4 §6.2.1).
 - Errors are raised as `common/exceptions.py` types (`NotFoundError`, `ConflictError`,
   `ForbiddenError`, `UnauthorizedError`); `import_game` raises `HTTPException(422)` directly.
 - Rate limits via `common/rate_limit.limiter`: login 5/15min, exchange-temp 10/min, guest 10/15min.
