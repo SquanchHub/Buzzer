@@ -50,6 +50,8 @@ Other code only touches the module-level `router` object in each file
   first — an unknown `course_id` is therefore **403 for a host, not 404**. Handlers only
   translate `content_service` (and `roster_service`) calls; `PUT /games/{id}` uses
   `HostGameUpdate`, so `course_id` is a 422. Roster PATCH queries on both ids (404 otherwise).
+  **Interim:** every mutating `host.py` handler commits before returning, because `get_db`'s
+  commit runs after the response is sent (T4 §6.2.5 k); see the gotcha below.
 
 ## Conventions visible in the code
 
@@ -86,6 +88,12 @@ Other code only touches the module-level `router` object in each file
   `/api/auth/*` and `/api/game/*`, and the host app (T4 phase 2) also `/api/host/*`.
 
 ## Gotchas found while reading
+
+- **`get_db` commits after the response is sent** (FastAPI 0.142 runs code after a dependency's
+  `yield` once the response has gone out). A client that reads immediately after a write can see
+  stale or missing data unless the handler commits itself — measured at 162/200 stale reads after
+  `PUT /admin/games/{id}`. Admin create handlers and every mutating `host.py` handler commit
+  in-handler; the app-wide fix is planned on `fix/get-db-commit-timing` (T4 §6.2.5 k).
 
 - `health.py` counts players with `SCARD room:{code}:players`, but `state_service` stores the
   player set under `session:{session_id}:players`, so `activePlayers` looks like it is always 0.

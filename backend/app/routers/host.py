@@ -4,7 +4,12 @@
 Every endpoint is gated by a course/game dependency from common/dependencies.py (or by
 require_user plus assert_host_can_use_course for the two that take the course in the
 body); none uses require_admin, and admins pass every check. Handlers only translate
-content_service / roster_service calls to HTTP; get_db commits when the request ends.
+content_service / roster_service calls to HTTP.
+
+INTERIM (T4 §6.2.5 k): every mutating handler commits before it returns. get_db's own commit
+runs only after the response has been sent (FastAPI 0.142), so a client that reads right
+after a write could miss it. Services still only flush. Once fix/get-db-commit-timing makes
+get_db commit before the response, these commits are harmless no-ops (nothing left to flush).
 """
 
 from __future__ import annotations
@@ -77,7 +82,9 @@ async def import_roster(
         {"netid": r.netid, "full_name": r.full_name, "email": r.email}
         for r in payload.rows
     ]
-    return await process_roster_rows(db, course_id, rows)
+    result = await process_roster_rows(db, course_id, rows)
+    await db.commit()  # interim, see module docstring
+    return result
 
 
 @router.patch(
@@ -106,7 +113,7 @@ async def patch_roster_entry(
         entry.full_name = body.full_name.strip()
     if body.email is not None:
         entry.email = str(body.email).lower()
-    await db.flush()
+    await db.commit()  # interim, see module docstring
     return entry
 
 
@@ -130,7 +137,9 @@ async def create_game(
     # 403 here, not content_service's 404 (§6.4).
     await game_service.assert_host_can_use_course(db, user, body.course_id)
     meta = GameMeta(**body.model_dump(exclude={"course_id"}))
-    return await content_service.create_game(db, user, meta, body.course_id)
+    game = await content_service.create_game(db, user, meta, body.course_id)
+    await db.commit()  # interim, see module docstring
+    return game
 
 
 @router.post("/games/import", status_code=201)
@@ -142,6 +151,7 @@ async def import_game(
 ) -> dict:
     await game_service.assert_host_can_use_course(db, user, course_id)
     game = await content_service.import_game(db, user, await file.read(), course_id)
+    await db.commit()  # interim, see module docstring
     return {"game_id": game.id}
 
 
@@ -158,7 +168,9 @@ async def update_game(
     db: Db,
     redis=Depends(get_redis),
 ) -> Game:
-    return await content_service.update_game(db, redis, user, game_id, body)
+    game = await content_service.update_game(db, redis, user, game_id, body)
+    await db.commit()  # interim, see module docstring
+    return game
 
 
 @router.delete("/games/{game_id}", status_code=204)
@@ -166,6 +178,7 @@ async def delete_game(
     game_id: int, user: GameAccess, db: Db, redis=Depends(get_redis)
 ) -> None:
     await content_service.delete_game(db, redis, user, game_id)
+    await db.commit()  # interim, see module docstring
 
 
 @router.get("/games/{game_id}/export")
@@ -198,7 +211,9 @@ async def create_question(
     db: Db,
     redis=Depends(get_redis),
 ) -> Question:
-    return await content_service.create_question(db, redis, game_id, body)
+    question = await content_service.create_question(db, redis, game_id, body)
+    await db.commit()  # interim, see module docstring
+    return question
 
 
 @router.put("/games/{game_id}/questions/{question_id}", response_model=QuestionResponse)
@@ -210,7 +225,11 @@ async def update_question(
     db: Db,
     redis=Depends(get_redis),
 ) -> Question:
-    return await content_service.update_question(db, redis, game_id, question_id, body)
+    question = await content_service.update_question(
+        db, redis, game_id, question_id, body
+    )
+    await db.commit()  # interim, see module docstring
+    return question
 
 
 @router.delete("/games/{game_id}/questions/{question_id}", status_code=204)
@@ -222,6 +241,7 @@ async def delete_question(
     redis=Depends(get_redis),
 ) -> None:
     await content_service.delete_question(db, redis, game_id, question_id)
+    await db.commit()  # interim, see module docstring
 
 
 @router.post("/games/{game_id}/questions/reorder", status_code=204)
@@ -233,3 +253,4 @@ async def reorder_questions(
     redis=Depends(get_redis),
 ) -> None:
     await content_service.reorder_questions(db, redis, game_id, body.order)
+    await db.commit()  # interim, see module docstring
