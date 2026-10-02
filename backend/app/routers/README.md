@@ -97,5 +97,22 @@ Other code only touches the module-level `router` object in each file
 
 - `health.py` counts players with `SCARD room:{code}:players`, but `state_service` stores the
   player set under `session:{session_id}:players`, so `activePlayers` looks like it is always 0.
-- `merge_guest_for_session` in `game.py` looks up the netid with `.lower()` but no `.strip()`,
-  and never promotes the guest if no real user exists; `admin.merge_guest` does both.
+- **The two guest merges are different operations, on purpose.** `admin.merge_guest`
+  (`POST /admin/users/merge-guest`) is a **global identity merge**: it re-attributes *all* of the
+  guest's answers, in every session, then deletes the guest — or, if no account has that netid
+  yet, promotes the guest in place (`netid` set, `role=USER`). Admins are global, so that is
+  intended. `merge_guest_for_session` in `game.py` (`POST /game/sessions/{id}/merge-guest`) is
+  **session-scoped**: a host moves only *that* session's answers (409 unless the session is
+  COMPLETED; 409 if the target already has answers in it; 404 if the guest has none there). The
+  guest is kept while it still has answers elsewhere and deleted once it has none; it is never
+  promoted, since that would change its identity in other hosts' sessions. Both normalise the
+  netid with `.strip().lower()`. (Before the fix the host path moved *all* of the guest's
+  answers, including other hosts' sessions.)
+- **Admin merge can double-count (documented, not fixed):** if the target account already
+  answered in a session the guest also played, `admin.merge_guest` leaves two rows for the same
+  question there, both counted. The host path refuses that case with a 409.
+- **Finding — host merge targets any netid (documented, not fixed):** a host can attribute their
+  session's guest answers to *any* account with a netid, even one with no roster row or access
+  in the session's course. It only affects the host's own session's rows, but it writes into
+  that account's score history. Restricting targets to the course roster/access would be a
+  separate authorization change.

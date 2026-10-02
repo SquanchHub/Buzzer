@@ -316,41 +316,87 @@ async def merge_guest_for_session(
     _: Annotated[User, Depends(require_session_host)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Host-initiated guest merge. Delegates to the same logic as the admin endpoint."""
+    """Host-initiated guest merge, scoped to THIS session: re-attribute the guest's answers
+    in this session to the real account with `target_netid`.
+
+    Unlike admin.merge_guest (a global identity merge an admin may do across every
+    session), a host may only move rows of a session they hosted. The guest account is
+    deleted only once it has no answers left anywhere; it is never promoted here, since
+    promotion would change the guest's identity in other hosts' sessions too.
+    """
     from ..models.session import SessionScore
     from ..models.user import User as UserModel
 
+    # Existence and "ADMIN or this session's host" are checked by require_session_host.
+    session = await db.get(GameSession, session_id)
+    # A live session's scores also live in Redis under the guest's id; merging mid-game
+    # would split the guest's state between the two stores.
+    if session.status != "COMPLETED":
+        raise ConflictError("Guests can only be merged once the session has finished")
+
     guest_user_id: str = body.get("guest_user_id", "")
-    target_netid: str = body.get("target_netid", "")
+    target_netid: str = (body.get("target_netid") or "").strip().lower()
 
     if not guest_user_id or not target_netid:
-        from ..common.exceptions import ConflictError
-
         raise ConflictError("guest_user_id and target_netid are required")
 
     guest = await db.get(UserModel, guest_user_id)
     if not guest or guest.role != "GUEST":
         raise NotFoundError(f"Guest user {guest_user_id} not found")
 
-    real_result = await db.execute(
-        select(UserModel).where(UserModel.netid == target_netid.lower())
+    real_user = await db.scalar(
+        select(UserModel).where(UserModel.netid == target_netid)
     )
-    real_user = real_result.scalar_one_or_none()
     if not real_user:
         raise NotFoundError(f"No user with netid '{target_netid}' found")
 
-    scores_result = await db.execute(
-        select(SessionScore).where(SessionScore.user_id == guest_user_id)
+    # Two rows for the same player and question would count twice (nothing in the
+    # schema prevents it), so refuse if the account already answered in this session.
+    already = await db.scalar(
+        select(func.count(SessionScore.id)).where(
+            SessionScore.session_id == session_id,
+            SessionScore.user_id == real_user.id,
+        )
     )
-    for score in scores_result.scalars().all():
-        score.user_id = real_user.id
+    if already:
+        raise ConflictError(f"'{target_netid}' already has answers in this session")
 
-    await db.delete(guest)
+    rows = (
+        (
+            await db.execute(
+                select(SessionScore).where(
+                    SessionScore.session_id == session_id,
+                    SessionScore.user_id == guest_user_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        raise NotFoundError(f"Guest {guest_user_id} has no answers in this session")
+    for score in rows:
+        score.user_id = real_user.id
+    await db.flush()
+
+    # Answers in other sessions stay with the guest (their hosts, or an admin, can merge
+    # them). session_scores.user_id has no ON DELETE, so the guest can only be deleted
+    # once nothing references it.
+    remaining = await db.scalar(
+        select(func.count(SessionScore.id)).where(SessionScore.user_id == guest_user_id)
+    )
+    if not remaining:
+        await db.delete(guest)
+    # Commit here rather than in get_db, whose commit runs after the response is sent:
+    # a failure there would turn this merge into a silent no-op behind a 204.
+    await db.commit()
     logger.info(
         "guest_merged_by_host",
         guest_id=guest_user_id,
         real_user_id=real_user.id,
         session_id=session_id,
+        moved=len(rows),
+        guest_deleted=not remaining,
     )
 
 
