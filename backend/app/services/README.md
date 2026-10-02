@@ -17,7 +17,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `export_service.py` | Builds session score CSVs: a raw per-question table and a Canvas gradebook import format. |
 | `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
-| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing; import/export follow in a later phase-2 commit. |
+| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing, game import/export (bundle format v1, never `course_id`). |
 
 ## Key entry points
 
@@ -75,6 +75,11 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     `reorder_questions` (409 unless exactly the game's ids) is the **only** way to move a question.
   - `sanitize_prompt` / `PROMPT_TAGS` — bleach, keeping `b i br u`. `routers/admin.py` still has
     its own copy until phase 3.
+  - `export_game(db, game_id)` → `(filename, bytes)`: the version-1 bundle, byte-identical to the
+    admin route's export. `import_game(db, actor, raw, course_id)` → `Game`: 404 unknown course;
+    every structural problem is a 422 `RequestBodyInvalidError` on `body.file` with the admin
+    route's message text (§6.2.5 b), raised before anything is written; then `create_game`
+    (same auto-grant) and the questions in bundle order, prompts sanitized.
 
 ## Depends on
 

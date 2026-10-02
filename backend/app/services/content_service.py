@@ -12,6 +12,8 @@ Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over t
 
 from __future__ import annotations
 
+import json
+
 import bleach
 import structlog
 from pydantic import ValidationError
@@ -373,3 +375,99 @@ async def reorder_questions(
     for index, qid in enumerate(order):
         questions[qid].order_index = index
     await db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Import / export (D10: bundles never carry course_id)
+# ---------------------------------------------------------------------------
+
+BUNDLE_FORMAT = "buzzer/game"
+BUNDLE_VERSION = 1
+
+
+async def export_game(db: AsyncSession, game_id: int) -> tuple[str, bytes]:
+    """The game as a version-1 bundle: (filename, JSON bytes). No course_id."""
+    game = await _get_game(db, game_id)
+    bundle = {
+        "format": BUNDLE_FORMAT,
+        "version": BUNDLE_VERSION,
+        "game": {
+            "title": game.title,
+            "description": game.description,
+            "max_players": game.max_players,
+        },
+        "questions": [
+            {
+                "type": q.type,
+                "grading_type": q.grading_type,
+                "prompt": q.prompt,
+                "config": q.config,
+                "answer_data": q.answer_data,
+                "time_limit_seconds": q.time_limit_seconds,
+                "points_value": q.points_value,
+            }
+            for q in await _questions(db, game_id)
+        ],
+    }
+    safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in game.title)
+    return f"{safe_title}.json", json.dumps(
+        bundle, indent=2, ensure_ascii=False
+    ).encode()
+
+
+def _invalid_file(msg: str) -> RequestBodyInvalidError:
+    # §6.2.5 b: the same messages as the admin import route, as one error on "file".
+    return RequestBodyInvalidError.for_field("file", msg)
+
+
+async def import_game(
+    db: AsyncSession, actor: User, raw: bytes, course_id: int
+) -> Game:
+    """Create a new game in `course_id` from a bundle (never overwrites). 404 for an
+    unknown course; every structural problem is a 422 RequestBodyInvalidError raised
+    before anything is written. Same auto-grant rule as create_game."""
+    if not await db.get(Course, course_id):
+        raise NotFoundError(f"Course {course_id} not found")
+    try:
+        bundle = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise _invalid_file(f"Invalid JSON: {exc}") from exc
+    if not isinstance(bundle, dict) or bundle.get("format") != BUNDLE_FORMAT:
+        raise _invalid_file("Unrecognised file format")
+    version = bundle.get("version")
+    if version != BUNDLE_VERSION:
+        raise _invalid_file(
+            f"Unsupported version {version!r}; server supports version {BUNDLE_VERSION}"
+        )
+    try:
+        meta = GameMeta(**bundle.get("game", {}))
+    except (ValidationError, TypeError) as exc:
+        raise _invalid_file(f"Invalid game metadata: {exc}") from exc
+    questions_raw = bundle.get("questions", [])
+    if not isinstance(questions_raw, list):
+        raise _invalid_file("questions must be a list")
+    questions: list[QuestionCreate] = []
+    for i, q in enumerate(questions_raw):
+        try:
+            questions.append(QuestionCreate(**q))
+        except (ValidationError, TypeError) as exc:
+            raise _invalid_file(f"Question {i + 1} invalid: {exc}") from exc
+
+    game = await create_game(db, actor, meta, course_id)
+    for index, q in enumerate(questions):
+        db.add(
+            Question(
+                game_id=game.id,
+                type=q.type,
+                grading_type=q.grading_type,
+                prompt=sanitize_prompt(q.prompt),
+                config=q.config,
+                answer_data=q.answer_data,
+                time_limit_seconds=q.time_limit_seconds,
+                points_value=q.points_value,
+                order_index=index,
+            )
+        )
+    await db.flush()
+    logger.info("game_imported", game_id=game.id, questions=len(questions), by=actor.id)
+    return game
