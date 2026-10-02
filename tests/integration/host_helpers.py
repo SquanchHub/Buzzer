@@ -52,6 +52,28 @@ def redis_exists(*keys: str) -> int:
     return int(out.stdout.strip())
 
 
+def redis_keys(pattern: str) -> list[str]:
+    """Keys matching `pattern` in the stack's Redis (KEYS is fine at test-database size)."""
+    out = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "redis",
+            "redis-cli",
+            "--raw",
+            "KEYS",
+            pattern,
+        ],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [k for k in out.stdout.splitlines() if k]
+
+
 class HostApi:
     def __init__(self, base_url: str, admin_token: str):
         self.base = base_url
