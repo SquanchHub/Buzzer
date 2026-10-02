@@ -13,6 +13,7 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 | `ManagementLayout.tsx` | (layout) | Top bar for the non-game pages — Home · Sessions · Sign out (clears `localStorage.token`) — around an `<Outlet/>`. |
 | `HomePage.tsx` | `/home` | Active sessions (rejoin/delete); room creation, where the quiz list shows only the selected course's games (`MyGameItem.course_id`; unassigned games never match, T4 D4); a "Your courses" card list linking to `/courses/:courseId`. |
 | `CoursePage.tsx` | `/courses/:courseId` | The course's games the host can run (`GET /host/courses/:id/games`): create (→ editor), import JSON (`postForm` with `course_id`, → editor), edit link, export (`api.download`), delete with an inline confirm naming the session count ("…permanently deletes its N sessions and all their scores", T4 D6); a 409 shows on the game's row. Course name from `/game/my-courses`; link to the roster. |
+| `RosterPage.tsx` | `/courses/:courseId/roster` | **Ported from the admin app**: roster table with inline edit (`PATCH /host/courses/:id/roster/:rid`) and the CSV column-mapping wizard (`POST …/roster/import`; netids missing from the upload are deactivated). Heading names the course; back link to the course page. |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
 | `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. |
@@ -48,6 +49,12 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
   it has expired).
 
 ## Gotchas found while reading
+
+- **Ported pages have copies in the admin app (T4 §6.3).** `RosterPage.tsx` (and, from T4 phase 2's
+  editor commit, `QuestionEditorPage.tsx`) are ports of `frontend/admin/src/pages/` files; each
+  starts with a comment listing what changed. A fix in one copy must be repeated in the other.
+  Inherited from admin: after a roster import the result card must be dismissed with its icon-only
+  ✕ (no accessible label) before "Upload CSV" appears again.
 
 - **Reloading after the game ends:** a reload on `/gameover` shows "Loading final results…"
   forever. `sync_state` with status `COMPLETED` is ignored, and `game_over` is not sent again.

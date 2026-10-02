@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import ManagementLayout from './pages/ManagementLayout';
 import CoursePage from './pages/CoursePage';
+import RosterPage from './pages/RosterPage';
 import GameLayout from './pages/game/GameLayout';
 import LobbyPage from './pages/game/LobbyPage';
 import QuestionPage from './pages/game/QuestionPage';
@@ -23,6 +24,7 @@ export default function App() {
         <Route element={<RequireAuth><ManagementLayout /></RequireAuth>}>
           <Route path="/home" element={<HomePage />} />
           <Route path="/courses/:courseId" element={<CoursePage />} />
+          <Route path="/courses/:courseId/roster" element={<RosterPage />} />
         </Route>
         <Route path="/game/:code" element={<RequireAuth><GameLayout /></RequireAuth>}>
           <Route path="lobby" element={<LobbyPage />} />
