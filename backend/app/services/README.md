@@ -27,6 +27,11 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - **game_service** — `create_room`, `get_session_by_code`, `start_game`, `complete_game`,
   `abandon_game`, `authorise_player`, `calculate_score`, `record_answer`, `get_leaderboard`,
   `get_player_question_summary`, `get_host_question_summary`.
+  - Access: `assert_host_can_use_course` (HOST on the course) and `assert_host_can_use_game`
+    (404 if missing; non-admins need a `user_game_access` grant **and** HOST on the game's course,
+    unassigned games are admin-only, one shared 403 message). Admins bypass both.
+  - `create_room` runs both asserts, then refuses (409) an unassigned game or one whose course
+    differs from the requested course — admins included — before counting rooms.
   - `calculate_score` branches on `grading_type` (COMPLETENESS = full points for any answer)
     then on `question.type`: `multiple_choice`, `true_false`, `fill_in_the_blank` (Levenshtein
     within `editDistance`), `multi_select` (sum of per-option points, floored at 0), `hotspot`

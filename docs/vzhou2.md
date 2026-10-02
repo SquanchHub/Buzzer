@@ -12,3 +12,7 @@
 - **2026-09-30, 21:38–21:42** — Completed the remaining T3 roll-up READMEs (`frontend/host/src/`, `frontend/player/src/`, `frontend/`) from Arjun's child READMEs, noting that his error-message fix is now on `main`.
 - **2026-09-30, 21:42–21:46** — Merged `main` into this branch and verified every README against the current code; corrected stale error-parsing notes in the host/player `lib` READMEs and roll-ups, the host pages auto-advance description, and the backend JWT-key warning note.
 - **2026-09-30, 21:46–21:58** — Audited both pushed branches against the instructions and rubric, adopted a pre-push compliance check, and prepared this branch's merge request for Arjun.
+
+### Branch: `feat/t4-ui-restructuring`
+
+- **2026-10-01, 15:20–15:50** — Deleted the merged local branches, then implemented T4 phase 1 test-first: migration 004 (`games.course_id` with backfill), course-required game create/import, the both-grants host rule, the room/game course match, the admin grant and course-move 409s, the admin Games page course picker, 45 integration tests (100% coverage of changed backend lines), and README/design-doc updates; found a pre-existing commit-after-response race to fix separately.

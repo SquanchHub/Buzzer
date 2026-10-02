@@ -71,20 +71,30 @@ async def assert_host_can_use_course(
 
 
 async def assert_host_can_use_game(db: AsyncSession, user: User, game_id: int) -> None:
-    """Admin can use any game; USER must have an entry in user_game_access."""
+    """Admin can use any game. A USER needs BOTH a user_game_access grant AND the
+    HOST role on the game's course, so revoking course HOST also revokes the game.
+    Unassigned games (course_id NULL) are admin-only. Every non-admin failure gets
+    the same message, so it doesn't reveal which grant is missing."""
+    game = await db.get(Game, game_id)
+    if not game:
+        raise NotFoundError(f"Game {game_id} not found")
     if user.role == "ADMIN":
-        game = await db.get(Game, game_id)
-        if not game:
-            raise NotFoundError(f"Game {game_id} not found")
         return
 
     result = await db.execute(
-        select(UserGameAccess).where(
+        select(UserGameAccess)
+        .join(
+            UserCourseAccess,
+            (UserCourseAccess.user_id == UserGameAccess.user_id)
+            & (UserCourseAccess.course_id == game.course_id)
+            & (UserCourseAccess.role == "HOST"),
+        )
+        .where(
             UserGameAccess.user_id == user.id,
             UserGameAccess.game_id == game_id,
         )
     )
-    if not result.scalar_one_or_none():
+    if game.course_id is None or not result.scalar_one_or_none():
         raise ForbiddenError("You do not have access to this game")
 
 
@@ -105,6 +115,16 @@ async def create_room(
     await assert_host_can_use_course(db, host, course_id)
     await assert_host_can_use_game(db, host, game_id)
 
+    # Invariant (admins included): a session is played in its game's course, so
+    # the unchanged roster check in authorise_player admits that course's players.
+    game = await db.get(Game, game_id)
+    if game.course_id is None:
+        raise ConflictError(
+            "This game is not assigned to a course; an admin must assign one first"
+        )
+    if game.course_id != course_id:
+        raise ConflictError("This game belongs to a different course")
+
     # Enforce global room limit — count only LOBBY/IN_PROGRESS rooms.
     # COMPLETED/ABANDONED rooms may linger in Redis briefly for reconnection
     # but do not consume a concurrent-room slot.
@@ -123,7 +143,6 @@ async def create_room(
     if room_count >= max_rooms:
         raise ConflictError(f"Maximum of {max_rooms} concurrent rooms reached")
 
-    await db.get(Game, game_id)
     room_code = await generate_room_code(redis)
 
     session = GameSession(

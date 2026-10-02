@@ -1,3 +1,5 @@
+import math
+
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -37,6 +39,17 @@ class ConflictError(BuzzerError):
         super().__init__("CONFLICT", message, status.HTTP_409_CONFLICT)
 
 
+def _replace_non_finite(value: object) -> object:
+    """Swap NaN/Infinity floats for strings so the value can be rendered as strict JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)  # "nan", "inf" or "-inf"
+    if isinstance(value, dict):
+        return {k: _replace_non_finite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_replace_non_finite(v) for v in value]
+    return value
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(BuzzerError)
     async def buzzer_error_handler(request: Request, exc: BuzzerError) -> JSONResponse:
@@ -57,11 +70,14 @@ def register_exception_handlers(app: FastAPI) -> None:
         # raw exception in a field-validator error's `ctx`), so this must go through
         # jsonable_encoder the same way FastAPI's own default handler does -- passing it
         # straight to JSONResponse crashes with a generic 500 that hides the real error.
+        # Each error also echoes the rejected `input`. Python's json accepts NaN/Infinity
+        # in request bodies, but JSONResponse refuses to render them, so a body rejected
+        # *for* containing NaN would otherwise turn its 422 into a 500.
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
                 "error": "VALIDATION_ERROR",
-                "detail": jsonable_encoder(exc.errors()),
+                "detail": _replace_non_finite(jsonable_encoder(exc.errors())),
             },
         )
 
