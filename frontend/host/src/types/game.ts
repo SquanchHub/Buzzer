@@ -24,14 +24,32 @@ export interface PlayerLeftPayload {
   playerCount: number;
 }
 
+// Hotspot (docs/plans/t7-hotspot.md §7.6). Keep in sync with the player copy.
+export type HotspotBand = 'inner' | 'outer' | 'miss';
+
+export interface HotspotConfig {
+  imageId: number;
+  aspectRatio: number; // image width ÷ height
+}
+
+/** One player's tap as the host sees it; band is null under COMPLETENESS. */
+export interface HotspotTap {
+  x: number;
+  y: number;
+  band: HotspotBand | null;
+}
+
+// The server sends at most this many taps per question (first N in answer order).
+export const HOTSPOT_TAP_CAP = 500;
+
 export interface QuestionPayload {
   questionId: number;
   questionNumber: number;
   totalQuestions: number;
-  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select';
+  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
   prompt: string;
-  config: { options?: string[]; maxLength?: number };
+  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
   timeLimitSeconds: number;
   pointsValue: number;
   editDistance?: number;
@@ -66,6 +84,8 @@ export type AnswerReveal =
   | { type: 'fill_in_the_blank'; acceptedAnswers: string[]; editDistance: number }
   | { type: 'completeness' }
   | { type: 'multi_select'; answerPoints: number[] }
+  // Target fields are absent when the stored target is invalid (§5.4).
+  | { type: 'hotspot'; x?: number; y?: number; innerRadius?: number; outerRadius?: number }
   | Record<string, never>;
 
 export interface HostResultsPayload {
@@ -74,15 +94,16 @@ export interface HostResultsPayload {
   answerDistribution: Record<string, number>;
   totalAnswered: number;
   totalPlayers: number;
+  taps?: HotspotTap[]; // hotspot only
 }
 
 export interface HostQuestionSummaryItem {
   questionId: number;
   questionNumber: number;
   prompt: string;
-  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select';
+  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
-  config: { options?: string[]; maxLength?: number };
+  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
   pointsValue: number;
   answerReveal: AnswerReveal;
   answerDistribution: Record<string, number>;
@@ -90,6 +111,7 @@ export interface HostQuestionSummaryItem {
   totalPlayers: number;
   correctCount: number;
   avgAnswerTimeMs: number | null;
+  taps?: HotspotTap[]; // hotspot only
 }
 
 export interface HostGameOverPayload {

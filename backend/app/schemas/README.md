@@ -18,7 +18,7 @@ its dicts by hand.
 ## Key entry points
 
 - **`QuestionCreate`** (`admin.py`) — the central validator. Allowed `type` is a regex:
-  `multiple_choice | true_false | fill_in_the_blank | multi_select`. `validate_structure`
+  `multiple_choice | true_false | fill_in_the_blank | multi_select | hotspot`. `validate_structure`
   (model validator) checks per type:
   - `multiple_choice` — `config.options` list with ≥2 items; if ACCURACY, `answer_data.answer_points`
     same length, non-negative numbers.
@@ -27,8 +27,19 @@ its dicts by hand.
     same length (non-negative), optional non-negative integer `editDistance`.
   - `multi_select` — `config.options` ≥2; if ACCURACY, `answer_points` same length, numbers
     (**negatives allowed** — they are penalties).
+  - `hotspot` — `config` is exactly `{imageId, aspectRatio}` (positive int; finite number in
+    [0.2, 5]) under **both** grading types; if ACCURACY, `answer_data` is exactly
+    `{x, y, innerRadius, outerRadius, partialFraction}` (finite numbers; `x`, `y` in [0, 1];
+    0.02 ≤ inner ≤ 0.5; inner ≤ outer ≤ 1; fraction in [0, 1]). Bool is rejected everywhere.
+    camelCase keys. Spec: `docs/plans/t7-hotspot.md` §5.1. Whether `imageId` exists is not checked
+    here (needs the DB).
   - Field bounds: `prompt` 1–2000 chars, `time_limit_seconds` 2–300, `points_value` 0–100000.
   Also reused by `admin.import_game` to validate every question in an imported JSON bundle.
+- **Hotspot checker** (`admin.py`, module level) — `hotspot_config_error(config)` and
+  `hotspot_answer_error(answer_data)` return an error message or `None`;
+  `is_hotspot_aspect_ratio(value)`. The one implementation of the §5.1 rules: `QuestionCreate`
+  raises with these messages, and scoring code reuses them to detect bad stored data. Never
+  raise, whatever JSON they are given.
 - **`QuestionUpdate`** — all fields optional, same `type` regex, **no structural validation**.
 - **`GameMeta`** — a game's own fields (`title`, `description`, `max_players`); validates the
   `game` block of an import bundle, which never carries a course.
@@ -36,6 +47,11 @@ its dicts by hand.
 - **`GameUpdate`** — all optional; `course_id` (admin move) must be positive, and an explicit
   `null` is a 422 rather than "unassign". `GameResponse` and `MyGameItem` expose `course_id`
   (`None` = unassigned legacy game).
+- **Host-facing (T4 phase 2):** `HostGameUpdate` — `GameUpdate` without `course_id`
+  (`extra="forbid"`, so a host sending one gets a 422; only admins move games, D5);
+  `HostGameItem(GameResponse)` adds `session_count` (sessions in any status) for the host's
+  delete confirmation; `MySessionItem` (`game.py`) — a completed session the caller hosted:
+  `session_id, room_code, game_title, course_name, course_semester, completed_at, player_count`.
 - **`LoginRequest`** (`auth.py`) — requires `username`+`password` or a dev-only `netid`.
 - **`RoomCreateRequest`** (`game.py`) — positive `game_id` and `course_id`.
 - **`ScoreResult`** (`game.py`) — `{points_awarded, is_correct}`, returned by
@@ -60,7 +76,8 @@ its dicts by hand.
 - `backend/app/routers/auth.py` — `schemas/auth.py`.
 - `backend/app/routers/game.py` — the room/session/list models in `schemas/game.py`.
 - `backend/app/services/roster_service.py` — `RosterUploadResult`.
-- `backend/app/services/game_service.py` — `ScoreResult`.
+- `backend/app/services/game_service.py` — `ScoreResult`; the hotspot checker
+  (`is_hotspot_aspect_ratio`, `hotspot_answer_error`) via `hotspot_target`.
 
 ## Gotchas found while reading
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -83,6 +84,18 @@ class MyGameItem(BaseModel):
     description: str
     max_players: int
     course_id: int | None  # None = unassigned legacy game (admins only)
+
+
+class MySessionItem(BaseModel):
+    """A completed session the caller hosted (T4 §6.2.4, `GET /game/my-sessions`)."""
+
+    session_id: str
+    room_code: str
+    game_title: str
+    course_name: str
+    course_semester: str
+    completed_at: datetime | None
+    player_count: int  # distinct players with at least one recorded answer
 
 
 # ---------------------------------------------------------------------------

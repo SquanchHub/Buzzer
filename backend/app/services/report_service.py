@@ -20,6 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.course import Course
 from ..models.game import Game, Question
 from ..models.session import GameSession, SessionScore
+from ..schemas.admin import is_hotspot_aspect_ratio
+from .game_service import (
+    HotspotTarget,
+    hotspot_reveal,
+    hotspot_tap,
+    hotspot_tap_band,
+    hotspot_target,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -65,13 +73,25 @@ def _answer_reveal(q: Question) -> dict:
             "acceptedAnswers": q.answer_data.get("acceptedAnswers", []),
             "editDistance": q.answer_data.get("editDistance", 0),
         }
+    if q.type == "hotspot":
+        return hotspot_reveal(hotspot_target(q.id, q.config, q.answer_data))
     return {}
 
 
-def _extract_answer_key(q_type: str, answer_data: dict | None) -> str | None:
-    """Convert a player's answer_data blob into the distribution key used for charting."""
+def _extract_answer_key(
+    q: Question, answer_data: dict | None, hs_target: HotspotTarget | None = None
+) -> str | None:
+    """Convert a player's answer_data blob into the distribution key used for charting.
+    For hotspot the key is the band; pass the question's target (computed once per
+    question by the caller) so bad stored data logs once, not once per answer."""
+    q_type = q.type
     if not answer_data:
         return None
+    if q_type == "hotspot":
+        tap = hotspot_tap(answer_data)
+        if tap is None:
+            return None
+        return hotspot_tap_band(q.grading_type, hs_target, tap)
     if q_type == "multiple_choice":
         idx = answer_data.get("selectedIndex")
         return str(idx) if idx is not None else None
@@ -248,6 +268,89 @@ def _render_word_cloud(q: Question, dist: dict[str, int], reveal: dict) -> str:
     return "\n".join(parts)
 
 
+# Tap colours by band; None = COMPLETENESS (no target, neutral).
+_HOTSPOT_BAND_COLOURS: dict[str | None, str] = {
+    "inner": "#4ade80",
+    "outer": "#fbbf24",
+    "miss": "#f87171",
+    None: "#94a3b8",
+}
+_HOTSPOT_BAND_LABELS = {"inner": "Bullseye", "outer": "Close", "miss": "Miss"}
+
+
+def _hotspot_image_data_uri(q: Question) -> str | None:
+    """The question's image as a data: URI, or None if unavailable.
+
+    STAGE A STUB (docs/plans/t7-hotspot.md §9): returns None until T8 provides C5
+    (image bytes and content type callable from Python). Stage C replaces the body
+    with a C5 lookup on q.config["imageId"] and base64-encodes the bytes.
+    """
+    return None
+
+
+def _render_hotspot(
+    q: Question,
+    dist: dict[str, int],
+    target: HotspotTarget | None,
+    taps: list[tuple[float, float, str | None]],
+) -> str:
+    """Inline SVG: image (or an "Image unavailable" box), rings under ACCURACY, every
+    tap as a dot coloured by band, and a legend. No player names (§7.5)."""
+    accuracy = q.grading_type == "ACCURACY"
+    aspect = q.config.get("aspectRatio") if isinstance(q.config, dict) else None
+    a = float(aspect) if is_hotspot_aspect_ratio(aspect) else 1.0
+    # viewBox: longer side 1000 units, so a radius r (fraction of the longer side)
+    # is r * 1000 in both directions — the same circle scoring measures.
+    w, h = (1000.0, 1000.0 / a) if a >= 1 else (1000.0 * a, 1000.0)
+
+    parts = [
+        f'<svg class="hotspot-svg" viewBox="0 0 {w:.1f} {h:.1f}" role="img" '
+        f'aria-label="Hotspot taps">'
+        f'<rect width="{w:.1f}" height="{h:.1f}" fill="#0f172a"/>'
+    ]
+    image = _hotspot_image_data_uri(q)
+    if image is not None:
+        parts.append(
+            f'<image href="{_esc(image)}" width="{w:.1f}" height="{h:.1f}" '
+            f'preserveAspectRatio="none"/>'
+        )
+    else:
+        parts.append(
+            f'<text x="{w / 2:.1f}" y="{h / 2:.1f}" text-anchor="middle" '
+            f'dominant-baseline="middle" font-size="40" fill="#475569">'
+            f"Image unavailable</text>"
+        )
+    if accuracy and target is not None:
+        cx, cy = target.x * w, target.y * h
+        parts.append(
+            f'<circle class="ring-outer" cx="{cx:.1f}" cy="{cy:.1f}" '
+            f'r="{target.outer_radius * 1000:.1f}" fill="none" stroke="#fbbf24" '
+            f'stroke-width="4" stroke-dasharray="12 8"/>'
+            f'<circle class="ring-inner" cx="{cx:.1f}" cy="{cy:.1f}" '
+            f'r="{target.inner_radius * 1000:.1f}" fill="none" stroke="#4ade80" '
+            f'stroke-width="4"/>'
+        )
+    for x, y, band in taps:
+        parts.append(
+            f'<circle cx="{x * w:.1f}" cy="{y * h:.1f}" r="8" '
+            f'fill="{_HOTSPOT_BAND_COLOURS[band]}" stroke="#0f172a" stroke-width="2"/>'
+        )
+    parts.append("</svg>")
+
+    if accuracy:
+        legend = " · ".join(
+            f'<span style="color:{_HOTSPOT_BAND_COLOURS[band]}">●</span> '
+            f"{label} {dist.get(band, 0)}"
+            for band, label in _HOTSPOT_BAND_LABELS.items()
+        )
+        if target is None:
+            legend += ' · <span class="hotspot-note">Target data invalid</span>'
+    else:
+        legend = f"{len(taps)} tap{'s' if len(taps) != 1 else ''}"
+    parts.append(f'<div class="hotspot-legend">{legend}</div>')
+    return '<div class="hotspot">' + "".join(parts) + "</div>"
+
+
 def _render_histogram(buckets: list[dict]) -> str:
     max_count = max((b["count"] for b in buckets), default=0) or 1
     MAX_H = 160  # max bar height px
@@ -310,6 +413,7 @@ body{
 .badge-mc{background:#1e3a5f;color:#93c5fd}
 .badge-tf{background:#1a3a2a;color:#86efac}
 .badge-fitb{background:#3b2f1e;color:#fbbf24}
+.badge-hotspot{background:#3b1d2e;color:#f9a8d4}
 .badge-accuracy{background:#2e1b3d;color:#c084fc}
 .badge-completeness{background:#2d2d1a;color:#fde68a}
 .q-timing{margin-left:auto;color:#475569;font-size:0.78rem}
@@ -342,6 +446,11 @@ body{
 .wc-word{font-weight:700;color:#64748b}
 .wc-word.correct{color:#4ade80}
 .wc-empty{color:#334155;font-size:0.9rem;text-align:center;padding:20px}
+
+/* ── Hotspot ── */
+.hotspot-svg{display:block;width:100%;height:auto;border-radius:12px}
+.hotspot-legend{margin-top:12px;text-align:center;font-size:0.85rem;color:#94a3b8}
+.hotspot-note{color:#f87171;font-weight:700}
 
 /* ── Histogram ── */
 .summary-card{
@@ -427,9 +536,13 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
         answered = len(q_scores)
         correct_count = sum(1 for s in q_scores if s.is_correct)
 
+        hs_target: HotspotTarget | None = None
+        if q.type == "hotspot" and q.grading_type == "ACCURACY":
+            hs_target = hotspot_target(q.id, q.config, q.answer_data)
+
         dist: dict[str, int] = defaultdict(int)
         for s in q_scores:
-            key = _extract_answer_key(q.type, s.answer_data)
+            key = _extract_answer_key(q, s.answer_data, hs_target)
             if key is not None:
                 dist[key] += 1
 
@@ -440,6 +553,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
             "multiple_choice": ("Multiple Choice", "badge-mc"),
             "true_false": ("True / False", "badge-tf"),
             "fill_in_the_blank": ("Fill in the Blank", "badge-fitb"),
+            "hotspot": ("Hotspot", "badge-hotspot"),
         }.get(q.type, (q.type, ""))
         type_label, type_class = type_badge
 
@@ -453,6 +567,14 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
             chart = _render_bar_chart(q, dict(dist), reveal, total_players)
         elif q.type == "fill_in_the_blank":
             chart = _render_word_cloud(q, dict(dist), reveal)
+        elif q.type == "hotspot":
+            hs_taps = []
+            for s in q_scores:
+                tap = hotspot_tap(s.answer_data)
+                if tap is not None:
+                    band = hotspot_tap_band(q.grading_type, hs_target, tap)
+                    hs_taps.append((tap[0], tap[1], band))
+            chart = _render_hotspot(q, dict(dist), hs_target, hs_taps)
         else:
             chart = ""
 

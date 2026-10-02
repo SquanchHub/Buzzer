@@ -38,6 +38,13 @@ FastAPI app with `socketio.ASGIApp(sio, other_asgi_app=app)`, so `/socket.io/*` 
 - **Payload safety** — `_question_payload` never includes `answer_data`; `_answer_reveal`
   derives only the facts clients need (correct indices/value, accepted answers).
   **Adding a question type** means updating both, plus the `multi_select`-style shape check in `on_submit_answer`.
+- **Hotspot** (`docs/plans/t7-hotspot.md` §7.4) — `_answer_reveal` returns
+  `game_service.hotspot_reveal` (target point and both radii; no `partialFraction`).
+  `on_submit_answer` rejects a tap unless `x` and `y` are numbers in [0, 1] (error
+  "hotspot answer must include x and y between 0 and 1") and stores only `{x, y}`. At
+  `QUESTION → RESULTS` the host payload adds `taps: [{x, y, band}]` (first 500 in answer order)
+  and each player's payload adds `yourBand` (own band only; `null` if unanswered or
+  COMPLETENESS). Players never receive `taps`.
 
 ## In-process state (not in Redis or MySQL)
 
@@ -62,6 +69,13 @@ non-dev mode `AsyncRedisManager` routes emits across instances, but these dicts 
 
 ## Gotchas found while reading
 
+- **Open finding — `host_advance` double-advance race (own branch planned).** At
+  `QUESTION → RESULTS` the handler emits `question_results` *before* it writes
+  `question_phase = "RESULTS"` to Redis. A second `host_advance` arriving in that window (~10 ms,
+  reproduced with a scripted host) still sees `QUESTION`: results are shown twice, no next
+  question is sent, and the game never reaches `game_over`. Real hosts are protected by the
+  results screen's countdown; scripted clients must wait briefly after `question_results` before
+  advancing again.
 - A player who disconnects stays in `session:{id}:players`, so `totalPlayers` and
   `all_players_answered` still count them; the early "all answered" signal never fires.
 - No frontend or script emits `rejoin_room`; clients re-send `join_room` on every reconnect.

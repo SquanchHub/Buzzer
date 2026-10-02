@@ -10,6 +10,7 @@ Socket.io connection is opened in `frontend/player/src/pages/game/GameLayout.tsx
 |---|---|
 | `api.ts` | `api.get` / `api.post` — `fetch` wrappers that prefix `/api`, send JSON, attach the bearer token, and throw on non-2xx. |
 | `utils.ts` | `cn(...classes)` (`clsx` + `tailwind-merge`) and `isTokenExpired(token)`, which decodes the JWT payload and compares `exp` to now. |
+| `images.ts` | `loadImageUrl(imageId)` — fetches `/api/images/{id}` with the bearer token and returns an object URL (caller revokes it); throws `ImageUnavailableError` on network error, non-2xx, or a non-image body. Copied in the host app. |
 
 ## Key entry points
 
@@ -26,6 +27,11 @@ Socket.io connection is opened in `frontend/player/src/pages/game/GameLayout.tsx
   decoded, has no `exp`, or `exp` has passed. It does **not** verify the signature; it only
   decides whether to bother the server. The server re-verifies on every request and socket connect.
 - `cn(...inputs)` — used by every component in `frontend/player/src/components/ui/`.
+
+- `loadImageUrl(imageId)` — an `<img src>` can't send the bearer token, so images are fetched
+  into a same-origin blob (no canvas tainting). Uses `fetch`'s default cache mode so T8's
+  immutable `Cache-Control` serves repeats locally (`docs/plans/t7-hotspot.md` §4 C3). Until T8
+  exists there is no `/api/images` route; in `vite` dev see the dev image route (stage C removes it).
 
 ## Depends on
 

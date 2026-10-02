@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 logger = structlog.get_logger()
 
@@ -39,6 +40,44 @@ class ConflictError(BuzzerError):
         super().__init__("CONFLICT", message, status.HTTP_409_CONFLICT)
 
 
+class RequestBodyInvalidError(Exception):
+    """A request body that a *service* found invalid (docs/plans/t4-ui-restructuring.md D8).
+
+    Rendered exactly like FastAPI's own request-validation 422 —
+    {"error": "VALIDATION_ERROR", "detail": [{type, loc, msg, input, ...}, ...]} — so
+    the frontends' errorMessage() shows it as "field: msg". Not a BuzzerError: that
+    body is {"error", "message"} and can't carry the per-field list.
+    """
+
+    def __init__(self, errors: list[dict]):
+        self.errors = errors
+        super().__init__(f"{len(errors)} validation error(s)")
+
+    @classmethod
+    def from_validation_error(cls, exc: ValidationError) -> "RequestBodyInvalidError":
+        """Wrap a pydantic error from validating a body inside a service. Each loc is
+        prefixed with "body" and the docs `url` is dropped, matching FastAPI's 422s."""
+        return cls(
+            [{**e, "loc": ("body", *e["loc"])} for e in exc.errors(include_url=False)]
+        )
+
+    @classmethod
+    def for_field(
+        cls, field: str, msg: str, input: object = None
+    ) -> "RequestBodyInvalidError":
+        """One error against a body field, e.g. an explicit null or a bad import file."""
+        return cls(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", field),
+                    "msg": msg,
+                    "input": input,
+                }
+            ]
+        )
+
+
 def _replace_non_finite(value: object) -> object:
     """Swap NaN/Infinity floats for strings so the value can be rendered as strict JSON."""
     if isinstance(value, float) and not math.isfinite(value):
@@ -48,6 +87,24 @@ def _replace_non_finite(value: object) -> object:
     if isinstance(value, list):
         return [_replace_non_finite(v) for v in value]
     return value
+
+
+def _validation_error_response(errors: list) -> JSONResponse:
+    # The one 422 VALIDATION_ERROR body, shared by both validation handlers below.
+    # errors can embed non-JSON-serializable objects (e.g. Pydantic v2 puts the
+    # raw exception in a field-validator error's `ctx`), so this must go through
+    # jsonable_encoder the same way FastAPI's own default handler does -- passing it
+    # straight to JSONResponse crashes with a generic 500 that hides the real error.
+    # Each error also echoes the rejected `input`. Python's json accepts NaN/Infinity
+    # in request bodies, but JSONResponse refuses to render them, so a body rejected
+    # *for* containing NaN would otherwise turn its 422 into a 500.
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": "VALIDATION_ERROR",
+            "detail": _replace_non_finite(jsonable_encoder(errors)),
+        },
+    )
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -66,20 +123,14 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
         logger.warning("validation_error", errors=exc.errors(), path=str(request.url))
-        # exc.errors() can embed non-JSON-serializable objects (e.g. Pydantic v2 puts the
-        # raw exception in a field-validator error's `ctx`), so this must go through
-        # jsonable_encoder the same way FastAPI's own default handler does -- passing it
-        # straight to JSONResponse crashes with a generic 500 that hides the real error.
-        # Each error also echoes the rejected `input`. Python's json accepts NaN/Infinity
-        # in request bodies, but JSONResponse refuses to render them, so a body rejected
-        # *for* containing NaN would otherwise turn its 422 into a 500.
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={
-                "error": "VALIDATION_ERROR",
-                "detail": _replace_non_finite(jsonable_encoder(exc.errors())),
-            },
-        )
+        return _validation_error_response(exc.errors())
+
+    @app.exception_handler(RequestBodyInvalidError)
+    async def request_body_invalid_handler(
+        request: Request, exc: RequestBodyInvalidError
+    ) -> JSONResponse:
+        logger.warning("validation_error", errors=exc.errors, path=str(request.url))
+        return _validation_error_response(exc.errors)
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:

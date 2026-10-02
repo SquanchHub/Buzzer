@@ -9,7 +9,7 @@ how they fit together and documents the top-level modules that live directly in 
 
 | Directory | Role | README highlights |
 |---|---|---|
-| `routers/` | REST endpoints: `auth`, `game` (host-facing), `admin` (admin-only CRUD), `health`. | Every `admin` endpoint is `require_admin`; host-owned checks are inlined per handler. |
+| `routers/` | REST endpoints: `auth`, `game` (host-facing), `host` (host content management, T4), `admin` (admin-only CRUD), `health`. | Every `admin` endpoint is `require_admin`; `host` endpoints use the course/game dependencies in `common/`. |
 | `websocket/` | Socket.io server: join, host-driven phase machine, answers, timers, host-disconnect grace. | Only place that emits events; per-player payloads go to `user:{id}` rooms. |
 | `services/` | Business logic: auth/JWT, room lifecycle, scoring, Redis state, CSV/HTML exports, roster import. | Callers own the commit; scoring branches per question type. |
 | `models/` | SQLAlchemy ORM models for all nine tables. | Each game belongs to one course (`games.course_id`, NULL = unassigned legacy); several FKs have no cascade. |
@@ -21,7 +21,7 @@ how they fit together and documents the top-level modules that live directly in 
 
 | File | Purpose |
 |---|---|
-| `main.py` | Builds the FastAPI `app` (lifespan: connect Redis, `bootstrap_admin()`), adds rate-limit and CORS middleware, registers error handlers, mounts the four routers at `/api`, then wraps it as `asgi_app = socketio.ASGIApp(sio, other_asgi_app=app)`. Uvicorn serves `app.main:asgi_app`. Swagger at `/api/docs` in development only. |
+| `main.py` | Builds the FastAPI `app` (lifespan: connect Redis, `bootstrap_admin()`), adds rate-limit and CORS middleware, registers error handlers, mounts the five routers at `/api`, then wraps it as `asgi_app = socketio.ASGIApp(sio, other_asgi_app=app)`. Uvicorn serves `app.main:asgi_app`. Swagger at `/api/docs` in development only. |
 | `config.py` | `settings` (pydantic-settings, reads env / `.env`): DB and Redis URLs, JWT keys, CORS origins, `MAX_ROOMS`, admin bootstrap credentials, `STRESS_TEST_KEY`. `APP_ENV=development` drives dev behaviour. |
 | `database.py` | Async engine (`asyncmy`), `AsyncSessionLocal`, declarative `Base`, and the `get_db` dependency that **commits on success / rolls back on error** when the request ends. SQL is echoed to logs in development. |
 | `redis_client.py` | Lazily created module-level async Redis client (`decode_responses=True`); `get_redis()` / `close_redis()`. |

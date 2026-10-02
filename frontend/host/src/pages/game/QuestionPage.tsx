@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { TimerBar } from '../../components/ui/TimerBar';
+import { HotspotView } from '../../components/HotspotView';
 
 export default function QuestionPage() {
   const { currentQuestion, answeredCount, playerCount, allAnswered, answerPhaseEnded, questionLocked, lockedTimerSeconds, autoAdvance, emitAdvance, emitLockQuestion } = useGame();
@@ -25,6 +26,7 @@ export default function QuestionPage() {
     true_false: 'True / False',
     fill_in_the_blank: 'Fill in the Blank',
     multi_select: 'Multi-Select',
+    hotspot: 'Hotspot',
   };
 
   function editDistanceLabel(d: number): string {
@@ -74,6 +76,18 @@ export default function QuestionPage() {
         <h2 className="text-4xl font-bold text-slate-100 text-center max-w-3xl leading-tight">
           {currentQuestion.prompt}
         </h2>
+      )}
+
+      {/* Hotspot: the image only — no rings, no taps while the question is open (H5). */}
+      {!questionLocked && currentQuestion.type === 'hotspot' && (
+        <div className="w-full max-w-4xl">
+          <HotspotView
+            imageId={currentQuestion.config.imageId}
+            aspectRatio={currentQuestion.config.aspectRatio ?? 1}
+            label={currentQuestion.prompt}
+            maxHeightVh={50}
+          />
+        </div>
       )}
 
       <div className="text-slate-300 text-xl">

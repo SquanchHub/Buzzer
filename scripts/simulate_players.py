@@ -21,6 +21,8 @@ All question types are handled automatically:
   fill_in_the_blank — random word from --fitb-words; if --game-json supplied,
                       correct answers are drawn from acceptedAnswers and wrong
                       answers from --fitb-words
+  hotspot           — uniform random tap (x, y) in [0, 1]; the target is never
+                      used, even with --game-json (docs/plans/t7-hotspot.md §7.10)
 
 Usage:
     # Basic — 20 players, default profile mix, default FITB word pool
@@ -258,6 +260,9 @@ class SimPlayer:
             k = random.randint(1, n)
             return {"selectedIndices": sorted(random.sample(range(n), k))}
 
+        if q_type == "hotspot":
+            return {"x": random.random(), "y": random.random()}
+
         return None  # unknown type
 
     def _answer_str(self, answer: dict) -> str:
@@ -269,6 +274,8 @@ class SimPlayer:
             return f"options {answer['selectedIndices']}"
         if "selectedValue" in answer:
             return str(answer["selectedValue"])
+        if "x" in answer and "y" in answer:
+            return f"({answer['x']:.2f}, {answer['y']:.2f})"
         return repr(answer)
 
     # ── per-question handler ──────────────────────────────────────────────────
