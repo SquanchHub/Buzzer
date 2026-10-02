@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 
 interface Course { id: number; name: string; semester: string }
-interface Game { id: number; title: string }
+interface Game { id: number; title: string; course_id: number | null }
 interface ActiveSession {
   session_id: string;
   room_code: string;
@@ -36,9 +36,16 @@ export default function HomePage() {
       setGames(g);
       setActiveSessions(s);
       if (c.length === 1) setCourseId(c[0].id);
-      if (g.length === 1) setGameId(g[0].id);
     }).catch(() => setError('Failed to load courses or games. Are you still logged in?'));
   }, []);
+
+  // A game runs only in its own course (T4 D4), so the quiz list follows the selected
+  // course; unassigned games (course_id null) never match and stay hidden.
+  const courseGames = courseId === '' ? [] : games.filter(g => g.course_id === courseId);
+  useEffect(() => {
+    setGameId(courseGames.length === 1 ? courseGames[0].id : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, games]);
 
   async function deleteSession(sessionId: string) {
     try {
@@ -67,13 +74,8 @@ export default function HomePage() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem('token');
-    navigate('/login');
-  }
-
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
+    <div className="flex flex-col items-center gap-4">
       {activeSessions.length > 0 && (
         <Card className="w-full max-w-lg border-amber-500/40">
           <CardHeader>
@@ -127,13 +129,8 @@ export default function HomePage() {
 
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100">Create Game Room</h1>
-              <p className="text-slate-400 text-sm mt-1">Select a course and quiz to begin</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={logout}>Sign Out</Button>
-          </div>
+          <h1 className="text-2xl font-bold text-slate-100">Create Game Room</h1>
+          <p className="text-slate-400 text-sm mt-1">Select a course and quiz to begin</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -156,12 +153,17 @@ export default function HomePage() {
               onChange={e => setGameId(Number(e.target.value))}
               className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="">Select a quiz…</option>
-              {games.map(g => (
+              <option value="">{courseId === '' ? 'Select a course first' : 'Select a quiz…'}</option>
+              {courseGames.map(g => (
                 <option key={g.id} value={g.id}>{g.title}</option>
               ))}
             </select>
           </div>
+          {courseId !== '' && courseGames.length === 0 && (
+            <p className="text-slate-500 text-sm">
+              No quizzes you can run in this course yet — create one from the course page below.
+            </p>
+          )}
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <Button
             className="w-full"
@@ -173,6 +175,27 @@ export default function HomePage() {
           </Button>
         </CardContent>
       </Card>
+
+      {courses.length > 0 && (
+        <section className="w-full max-w-lg">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Your courses</h2>
+          <div className="space-y-2">
+            {courses.map(c => (
+              <Link
+                key={c.id}
+                to={`/courses/${c.id}`}
+                className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 hover:border-indigo-500 hover:bg-slate-800 transition-colors"
+              >
+                <div>
+                  <p className="text-slate-100 font-medium">{c.name}</p>
+                  <p className="text-slate-400 text-sm">{c.semester}</p>
+                </div>
+                <span className="text-indigo-400 text-sm">Games &amp; roster →</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

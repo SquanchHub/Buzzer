@@ -47,6 +47,11 @@ its dicts by hand.
 - **`GameUpdate`** — all optional; `course_id` (admin move) must be positive, and an explicit
   `null` is a 422 rather than "unassign". `GameResponse` and `MyGameItem` expose `course_id`
   (`None` = unassigned legacy game).
+- **Host-facing (T4 phase 2):** `HostGameUpdate` — `GameUpdate` without `course_id`
+  (`extra="forbid"`, so a host sending one gets a 422; only admins move games, D5);
+  `HostGameItem(GameResponse)` adds `session_count` (sessions in any status) for the host's
+  delete confirmation; `MySessionItem` (`game.py`) — a completed session the caller hosted:
+  `session_id, room_code, game_title, course_name, course_semester, completed_at, player_count`.
 - **`LoginRequest`** (`auth.py`) — requires `username`+`password` or a dev-only `netid`.
 - **`RoomCreateRequest`** (`game.py`) — positive `game_id` and `course_id`.
 - **`ScoreResult`** (`game.py`) — `{points_awarded, is_correct}`, returned by

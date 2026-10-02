@@ -12,7 +12,8 @@ questions) is **not** here — that runs over Socket.io in `backend/app/websocke
 | `__init__.py` | Empty package marker. |
 | `health.py` | `GET /api/health` — pings MySQL and Redis, reports active room count from Redis. |
 | `auth.py` | `/api/auth/*` — login, OAuth2 callback, temp-token exchange, guest join, refresh, logout. |
-| `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active sessions, create/ping/get rooms, delete a session, list/merge guests, export session CSV. |
+| `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active and completed sessions, create/ping/get rooms, delete a session, list/merge guests, session CSV and HTML report downloads. |
+| `host.py` | `/api/host/*` — course content management for hosts (T4 §6.2.3): course roster, course game list, game create/import/edit/delete/export, question CRUD/reorder. |
 | `admin.py` | `/api/admin/*` — admin-only CRUD for courses, rosters, games, questions, users, access grants; game JSON import/export; guest merge; session list, CSV export, HTML report. |
 
 ## Key entry points
@@ -25,20 +26,32 @@ Other code only touches the module-level `router` object in each file
   `X-Auth-Request-User` header, returns an HTML redirect carrying a temp token),
   `POST /exchange-temp`, `POST /guest` (requires a live room in Redis), `POST /refresh`,
   `POST /logout`. The refresh cookie is HttpOnly, scoped to `path=/api/auth`, 7 days.
-- **game.py** — `GET /my-courses`, `/my-games`, `/my-active-sessions`; `POST /rooms`
+- **game.py** — `GET /my-courses`, `/my-games`, `/my-active-sessions`, `/my-sessions`
+  (COMPLETED sessions the caller hosted, newest first, with `player_count`); `POST /rooms`
   (delegates to `game_service.create_room`); `GET /rooms/{code}/ping` (public, no auth);
   `GET /rooms/{code}`; `DELETE /sessions/{id}`; `GET /sessions/{id}/guests`;
-  `POST /sessions/{id}/merge-guest`; `GET /sessions/{id}/export`.
+  `POST /sessions/{id}/merge-guest`; `GET /sessions/{id}/export` (raw CSV) and
+  `GET /sessions/{id}/report` (HTML) — both **409 until the session is COMPLETED** (T4 D9).
 - **admin.py** — every endpoint depends on `require_admin`. Question prompts are sanitized
   with `bleach` (allowed tags: `b i br u`) on create, update, and import. Import/export use a
   `{"format": "buzzer/game", "version": 1}` JSON bundle that never contains `course_id`.
   Games are course-bound: `POST /games` needs `course_id` in the body and `POST /games/import`
   a `course_id` form field next to `file` (404 for an unknown course); `PUT /games/{id}` can move
-  a game to another course except while it has a live session (409, `_has_live_session`:
+  a game to another course except while it has a live session (409, `content_service.has_live_session`:
   MySQL `LOBBY/IN_PROGRESS` **and** the `room:{code}` key still in Redis);
   `POST /users/{id}/game-access` is 409 unless the target is ADMIN or HOSTs the game's course.
 - **game.py `/my-games`** — admins get every game (unassigned included); others only games they
   hold a grant for **and** whose course they HOST.
+- **host.py** — no `require_admin` anywhere; admins pass every check. Course routes
+  (`/courses/{course_id}/roster`, `…/roster/import`, `…/roster/{roster_id}`, `…/games`) depend on
+  `require_course_host` (**404 for a nonexistent course, even for a host**); game and question
+  routes (`/games/{game_id}…`) on `require_game_access`. `POST /games` and `POST /games/import`
+  take the course in the body/form, so they run `require_user` + `assert_host_can_use_course`
+  first — an unknown `course_id` is therefore **403 for a host, not 404**. Handlers only
+  translate `content_service` (and `roster_service`) calls; `PUT /games/{id}` uses
+  `HostGameUpdate`, so `course_id` is a 422. Roster PATCH queries on both ids (404 otherwise).
+  **Interim:** every mutating `host.py` handler commits before returning, because `get_db`'s
+  commit runs after the response is sent (T4 §6.2.5 k); see the gotcha below.
 
 ## Conventions visible in the code
 
@@ -46,8 +59,9 @@ Other code only touches the module-level `router` object in each file
   finishes; many update/delete handlers therefore never call `db.commit()` themselves.
 - Auth dependencies from `common/dependencies.py`: `require_admin` (ADMIN only),
   `require_user` (ADMIN or USER, rejects GUEST), `get_current_user` (any valid token).
-- Host-owned session endpoints in `game.py` repeat the check "ADMIN or `session.host_user_id`";
-  it is inlined per handler, not a shared dependency.
+- Host-owned session endpoints in `game.py` (delete session, list guests, merge guest, CSV
+  export) depend on `require_session_host`: 404 unknown session, 403 "Only the session host can
+  access this session" unless ADMIN or `session.host_user_id` (T4 §6.2.1).
 - Errors are raised as `common/exceptions.py` types (`NotFoundError`, `ConflictError`,
   `ForbiddenError`, `UnauthorizedError`); `import_game` raises `HTTPException(422)` directly.
 - Rate limits via `common/rate_limit.limiter`: login 5/15min, exchange-temp 10/min, guest 10/15min.
@@ -56,7 +70,9 @@ Other code only touches the module-level `router` object in each file
 
 - `backend/app/services/` — `auth_service` (tokens, password hashing, user lookup/creation),
   `game_service` (`create_room`, `get_session_by_code`), `state_service` (Redis room state,
-  `delete_room_state`), `export_service`, `report_service`, `roster_service`.
+  `delete_room_state`), `export_service`, `report_service`, `roster_service`, and
+  `content_service` (all of `host.py`'s game/question logic; `admin.py` uses only its
+  `has_live_session` until phase 3).
 - `backend/app/models/` — `User`, `Course`, `CourseRoster`, `UserCourseAccess`, `Game`,
   `Question`, `UserGameAccess`, `GameSession`, `SessionScore` (queried directly in handlers).
 - `backend/app/schemas/` — `auth`, `game`, `admin` Pydantic request/response models.
@@ -69,9 +85,15 @@ Other code only touches the module-level `router` object in each file
 - All three frontends call these endpoints through `fetch('/api' + path)` in
   `frontend/{host,player,admin}/src/lib/api.ts`. The admin app uses `/api/admin/*` plus
   `/api/auth/login` and `DELETE /api/game/sessions/{id}`; the host and player apps use
-  `/api/auth/*` and `/api/game/*`.
+  `/api/auth/*` and `/api/game/*`, and the host app (T4 phase 2) also `/api/host/*`.
 
 ## Gotchas found while reading
+
+- **`get_db` commits after the response is sent** (FastAPI 0.142 runs code after a dependency's
+  `yield` once the response has gone out). A client that reads immediately after a write can see
+  stale or missing data unless the handler commits itself — measured at 162/200 stale reads after
+  `PUT /admin/games/{id}`. Admin create handlers and every mutating `host.py` handler commit
+  in-handler; the app-wide fix is planned on `fix/get-db-commit-timing` (T4 §6.2.5 k).
 
 - `health.py` counts players with `SCARD room:{code}:players`, but `state_service` stores the
   player set under `session:{session_id}:players`, so `activePlayers` looks like it is always 0.
