@@ -13,6 +13,7 @@ questions) is **not** here — that runs over Socket.io in `backend/app/websocke
 | `health.py` | `GET /api/health` — pings MySQL and Redis, reports active room count from Redis. |
 | `auth.py` | `/api/auth/*` — login, OAuth2 callback, temp-token exchange, guest join, refresh, logout. |
 | `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active sessions, create/ping/get rooms, delete a session, list/merge guests, export session CSV. |
+| `host.py` | `/api/host/*` — course content management for hosts (T4 §6.2.3): course roster, course game list, game create/import/edit/delete/export, question CRUD/reorder. |
 | `admin.py` | `/api/admin/*` — admin-only CRUD for courses, rosters, games, questions, users, access grants; game JSON import/export; guest merge; session list, CSV export, HTML report. |
 
 ## Key entry points
@@ -39,6 +40,14 @@ Other code only touches the module-level `router` object in each file
   `POST /users/{id}/game-access` is 409 unless the target is ADMIN or HOSTs the game's course.
 - **game.py `/my-games`** — admins get every game (unassigned included); others only games they
   hold a grant for **and** whose course they HOST.
+- **host.py** — no `require_admin` anywhere; admins pass every check. Course routes
+  (`/courses/{course_id}/roster`, `…/roster/import`, `…/roster/{roster_id}`, `…/games`) depend on
+  `require_course_host` (**404 for a nonexistent course, even for a host**); game and question
+  routes (`/games/{game_id}…`) on `require_game_access`. `POST /games` and `POST /games/import`
+  take the course in the body/form, so they run `require_user` + `assert_host_can_use_course`
+  first — an unknown `course_id` is therefore **403 for a host, not 404**. Handlers only
+  translate `content_service` (and `roster_service`) calls; `PUT /games/{id}` uses
+  `HostGameUpdate`, so `course_id` is a 422. Roster PATCH queries on both ids (404 otherwise).
 
 ## Conventions visible in the code
 
@@ -56,7 +65,9 @@ Other code only touches the module-level `router` object in each file
 
 - `backend/app/services/` — `auth_service` (tokens, password hashing, user lookup/creation),
   `game_service` (`create_room`, `get_session_by_code`), `state_service` (Redis room state,
-  `delete_room_state`), `export_service`, `report_service`, `roster_service`.
+  `delete_room_state`), `export_service`, `report_service`, `roster_service`, and
+  `content_service` (all of `host.py`'s game/question logic; `admin.py` uses only its
+  `has_live_session` until phase 3).
 - `backend/app/models/` — `User`, `Course`, `CourseRoster`, `UserCourseAccess`, `Game`,
   `Question`, `UserGameAccess`, `GameSession`, `SessionScore` (queried directly in handlers).
 - `backend/app/schemas/` — `auth`, `game`, `admin` Pydantic request/response models.
@@ -69,7 +80,7 @@ Other code only touches the module-level `router` object in each file
 - All three frontends call these endpoints through `fetch('/api' + path)` in
   `frontend/{host,player,admin}/src/lib/api.ts`. The admin app uses `/api/admin/*` plus
   `/api/auth/login` and `DELETE /api/game/sessions/{id}`; the host and player apps use
-  `/api/auth/*` and `/api/game/*`.
+  `/api/auth/*` and `/api/game/*`, and the host app (T4 phase 2) also `/api/host/*`.
 
 ## Gotchas found while reading
 
