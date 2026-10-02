@@ -116,6 +116,16 @@ class GameUpdate(BaseModel):
         return v
 
 
+class HostGameUpdate(BaseModel):
+    """A host's game edit (T4 §6.2.3): GameUpdate without course_id. Only admins move a
+    game between courses (D5), so extra="forbid" makes a host's course_id a 422."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, max_length=5000)
+    max_players: int | None = Field(None, ge=1, le=500)
+
+
 class GameResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -124,6 +134,13 @@ class GameResponse(BaseModel):
     max_players: int
     course_id: int | None
     created_at: datetime
+
+
+class HostGameItem(GameResponse):
+    """A game in a host's course list (T4 §6.2.3), with the number of its sessions in any
+    status — the host app's delete confirmation names it (§6.3)."""
+
+    session_count: int
 
 
 # ---------------------------------------------------------------------------
