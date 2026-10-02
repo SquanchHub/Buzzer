@@ -14,7 +14,7 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 | `HomePage.tsx` | `/home` | Active sessions (rejoin/delete); room creation, where the quiz list shows only the selected course's games (`MyGameItem.course_id`; unassigned games never match, T4 D4); a "Your courses" card list linking to `/courses/:courseId`. |
 | `CoursePage.tsx` | `/courses/:courseId` | The course's games the host can run (`GET /host/courses/:id/games`): create (→ editor), import JSON (`postForm` with `course_id`, → editor), edit link, export (`api.download`), delete with an inline confirm naming the session count ("…permanently deletes its N sessions and all their scores", T4 D6); a 409 shows on the game's row. Course name from `/game/my-courses`; link to the roster. |
 | `RosterPage.tsx` | `/courses/:courseId/roster` | **Ported from the admin app**: roster table with inline edit (`PATCH /host/courses/:id/roster/:rid`) and the CSV column-mapping wizard (`POST …/roster/import`; netids missing from the upload are deactivated). Heading names the course; back link to the course page. |
-| `QuestionEditorPage.tsx` | `/games/:gameId/edit` | **Ported from the admin app**: add/edit/delete/reorder questions (`/host/games/:id/questions*`), export JSON; plus a host-only **Game details** form (title, description, max players → `PUT /host/games/:id`, no course field — T4 D5). Errors such as the live-session 409 show inline above the content. The admin copy's literal `\u2026`/`\u00b7`/`\u00b1` text is fixed here. Back link to the game's course. |
+| `QuestionEditorPage.tsx` | `/games/:gameId/edit` | **Ported from the admin app**: add/edit/delete/reorder questions (`/host/games/:id/questions*`), export JSON; plus a host-only **Game details** form (title, description, max players → `PUT /host/games/:id`, no course field — T4 D5). Errors such as the live-session 409 show inline above the content. The admin copy's literal `\u2026`/`\u00b7`/`\u00b1` text is fixed here. Back link to the game's course. Host-only so far: the **hotspot** type (`HotspotEditor` panel; Save disabled until the image has loaded with an aspect ratio in 0.2–5; points field shown under both gradings; a note under COMPLETENESS that the target is ignored; one-line summary in the list — `docs/plans/t7-hotspot.md` §7.9, §13.2). |
 | `SessionsPage.tsx` | `/sessions` | The host's COMPLETED sessions, newest first (`GET /game/my-sessions`), each with **Download summary (HTML)** (`/game/sessions/:id/report`) and **Download scores (CSV)** (`/game/sessions/:id/export`) via `api.download` (T4 D9). |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
@@ -40,6 +40,7 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 - `frontend/host/src/lib/` — `api` (`get`/`post`/`delete` wrapper around `fetch('/api' + path)`).
 - `frontend/host/src/components/ui/` — `Button`, `Card`/`CardHeader`/`CardContent`, `Input`, `TimerBar`.
 - `frontend/host/src/components/HotspotView.tsx` — hotspot display (`HotspotView`, `ringsFromReveal`).
+- `frontend/host/src/components/HotspotEditor.tsx` — hotspot authoring panel, used by `QuestionEditorPage`.
 - `frontend/host/src/types/game.ts` — socket payload types (`QuestionPayload`, `HostResultsPayload`, …).
 - npm: `react-router-dom`, `socket.io-client`, `qrcode.react`, `lucide-react`.
 - Backend: `/api/auth/*`, `/api/game/*` (`backend/app/routers/`) and the Socket.io protocol
@@ -57,7 +58,13 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
   `QuestionEditorPage.tsx` are ports of `frontend/admin/src/pages/` files; each
   starts with a comment listing what changed. A fix in one copy must be repeated in the other.
   Inherited from admin: after a roster import the result card must be dismissed with its icon-only
-  ✕ (no accessible label) before "Upload CSV" appears again.
+  ✕ (no accessible label) before "Upload CSV" appears again. The hotspot type is the exception
+  running the other way: it exists only in the host copy until T4 phase 3 copies `HotspotEditor`
+  and the page's hotspot branches into admin.
+- **A hotspot question can't be saved (or edited) without a loadable image.** In dev that means
+  `frontend/dev-images/{id}.png` (served by Vite, and checked by the backend through a dev-only
+  mount); on nginx/builds no image exists before T8, so the editor keeps Save disabled. A stored
+  question whose image is gone also can't be edited until its Image ID is changed.
 
 - **Reloading after the game ends:** a reload on `/gameover` shows "Loading final results…"
   forever. `sync_state` with status `COMPLETED` is ignored, and `game_over` is not sent again.
