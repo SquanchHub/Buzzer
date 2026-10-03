@@ -26,7 +26,7 @@ export default function LoginPage() {
         return;
       }
       localStorage.setItem('token', data.access_token);
-      navigate('/courses');
+      navigate('/users');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

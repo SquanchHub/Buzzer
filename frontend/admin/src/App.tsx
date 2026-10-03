@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate, NavLink } from 'react-router-dom';
 import { tokenRole } from './lib/utils';
-import { BookOpen, Users, Gamepad2, UserX, LogOut, History } from 'lucide-react';
+import { BookOpen, Users, Gamepad2, UserX, LogOut, History, MonitorPlay, Smartphone } from 'lucide-react';
 import LoginPage from './pages/LoginPage';
 import CoursesPage from './pages/CoursesPage';
 import RosterPage from './pages/RosterPage';
@@ -43,6 +43,13 @@ function AdminLayout() {
         : 'text-slate-300 hover:bg-slate-700 hover:text-slate-100'
     }`;
 
+  const secondaryLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+      isActive
+        ? 'bg-slate-700 text-slate-100'
+        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+    }`;
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar */}
@@ -50,24 +57,43 @@ function AdminLayout() {
         <div className="px-6 py-5 border-b border-slate-700">
           <h1 className="text-lg font-bold text-white">Buzzer Admin</h1>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
-          <NavLink to="/courses" className={linkClass}>
-            <BookOpen size={16} /> Courses
-          </NavLink>
-          <NavLink to="/users" className={linkClass}>
-            <Users size={16} /> Users
-          </NavLink>
-          <NavLink to="/games" className={linkClass}>
-            <Gamepad2 size={16} /> Games
-          </NavLink>
-          <NavLink to="/guests" className={linkClass}>
-            <UserX size={16} /> Guests
-          </NavLink>
-          <NavLink to="/sessions" className={linkClass}>
-            <History size={16} /> Sessions
-          </NavLink>
+        <nav className="flex-1 p-3 space-y-6">
+          <div className="space-y-1">
+            <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Administration
+            </p>
+            <NavLink to="/users" className={linkClass}>
+              <Users size={16} /> Users
+            </NavLink>
+            <NavLink to="/courses" className={linkClass}>
+              <BookOpen size={16} /> Courses
+            </NavLink>
+            <NavLink to="/guests" className={linkClass}>
+              <UserX size={16} /> Guests
+            </NavLink>
+          </div>
+          {/* Host-side content tools, kept for admins but visually secondary. */}
+          <div className="space-y-1">
+            <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Content &amp; hosting
+            </p>
+            <NavLink to="/games" className={secondaryLinkClass}>
+              <Gamepad2 size={14} /> Games
+            </NavLink>
+            <NavLink to="/sessions" className={secondaryLinkClass}>
+              <History size={14} /> Sessions
+            </NavLink>
+          </div>
         </nav>
-        <div className="p-3 border-t border-slate-700">
+        <div className="p-3 border-t border-slate-700 space-y-1">
+          {/* Same origin under nginx, so the admin arrives signed in. In `npm run dev`
+              each app has its own port and these paths don't resolve. */}
+          <a href="/host/" className={secondaryLinkClass({ isActive: false })}>
+            <MonitorPlay size={14} /> Open Host app
+          </a>
+          <a href="/player/" className={secondaryLinkClass({ isActive: false })}>
+            <Smartphone size={14} /> Open Player app
+          </a>
           <button
             onClick={logout}
             className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-700 hover:text-slate-100 w-full transition-colors"
@@ -102,7 +128,7 @@ export default function App() {
             <Route path="/sessions" element={<SessionsPage />} />
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/courses" replace />} />
+        <Route path="*" element={<Navigate to="/users" replace />} />
       </Routes>
     </BrowserRouter>
   );
