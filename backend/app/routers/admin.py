@@ -20,6 +20,7 @@ from ..schemas.admin import (
     AdminSessionItem,
     CourseAccessGrant,
     CourseCreate,
+    CourseMemberResponse,
     CourseResponse,
     CourseUpdate,
     GameAccessGrant,
@@ -91,6 +92,35 @@ async def get_course(
     if not course:
         raise NotFoundError(f"Course {course_id} not found")
     return course
+
+
+@router.get("/courses/{course_id}/access", response_model=list[CourseMemberResponse])
+async def list_course_access(
+    course_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: DbSession,
+) -> list[dict]:
+    """Users with a role in this course, HOSTs first. Grant/revoke stay on
+    POST/DELETE /users/{id}/course-access."""
+    if not await db.get(Course, course_id):
+        raise NotFoundError(f"Course {course_id} not found")
+    rows = await db.execute(
+        select(User, UserCourseAccess.role)
+        .join(UserCourseAccess, UserCourseAccess.user_id == User.id)
+        .where(UserCourseAccess.course_id == course_id)
+        # The role enum is declared HOST, PLAYER, so this sorts HOSTs first.
+        .order_by(UserCourseAccess.role, User.display_name, User.username)
+    )
+    return [
+        {
+            "user_id": u.id,
+            "username": u.username,
+            "display_name": u.display_name,
+            "netid": u.netid,
+            "role": role,
+        }
+        for u, role in rows.all()
+    ]
 
 
 @router.put("/courses/{course_id}", response_model=CourseResponse)

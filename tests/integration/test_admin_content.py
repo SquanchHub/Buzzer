@@ -268,3 +268,43 @@ def test_admin_question_routes_404_for_unknown_ids(hapi):  # noqa: F811
         == 404
     )
     assert hapi.req("DELETE", "/admin/games/99999999").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Course membership (GET /admin/courses/{id}/access)
+# ---------------------------------------------------------------------------
+
+
+def test_course_access_lists_members_with_roles(hapi):  # noqa: F811
+    course, other = hapi.course(), hapi.course()
+    host_id, _ = hapi.host_of(course)
+    player_id, _ = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    outsider_id, _ = hapi.user()
+    hapi.grant_course(outsider_id, other)
+
+    r = hapi.req("GET", f"/admin/courses/{course}/access")
+    assert r.status_code == 200, r.text
+    members = {m["user_id"]: m for m in r.json()}
+    assert set(members) == {host_id, player_id}
+    assert members[host_id]["role"] == "HOST"
+    assert members[player_id]["role"] == "PLAYER"
+    assert {"user_id", "username", "display_name", "netid", "role"} <= set(
+        members[host_id]
+    )
+    # HOSTs first.
+    assert [m["role"] for m in r.json()] == ["HOST", "PLAYER"]
+
+    # A role change and a revoke show up straight away.
+    hapi.grant_course(player_id, course, role="HOST")
+    hapi.ok("DELETE", f"/admin/users/{host_id}/course-access/{course}")
+    r = hapi.req("GET", f"/admin/courses/{course}/access")
+    assert [(m["user_id"], m["role"]) for m in r.json()] == [(player_id, "HOST")]
+
+
+def test_course_access_empty_404_and_403(hapi):  # noqa: F811
+    course = hapi.course()
+    assert hapi.ok("GET", f"/admin/courses/{course}/access") == []
+    assert hapi.req("GET", "/admin/courses/99999999/access").status_code == 404
+    _, host = hapi.host_of(course)
+    assert hapi.req("GET", f"/admin/courses/{course}/access", host).status_code == 403

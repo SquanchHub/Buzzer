@@ -372,6 +372,16 @@ class CourseAccessGrant(BaseModel):
     role: str = Field(..., pattern="^(HOST|PLAYER)$")
 
 
+class CourseMemberResponse(BaseModel):
+    """A user with HOST or PLAYER in one course (admin course detail page)."""
+
+    user_id: str
+    username: str | None
+    display_name: str | None
+    netid: str | None
+    role: str  # HOST | PLAYER
+
+
 class GameAccessGrant(BaseModel):
     model_config = ConfigDict(extra="forbid")
     game_id: int
