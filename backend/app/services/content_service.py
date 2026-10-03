@@ -13,6 +13,7 @@ Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over t
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import bleach
 import structlog
@@ -22,6 +23,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.exceptions import ConflictError, NotFoundError, RequestBodyInvalidError
+from ..config import settings
 from ..models.course import Course, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
@@ -264,6 +266,45 @@ async def list_questions(db: AsyncSession, game_id: int) -> list[Question]:
     return await _questions(db, game_id)
 
 
+# ---------------------------------------------------------------------------
+# Hotspot image existence (docs/plans/t7-hotspot.md §7.3, §13.2 G1)
+# ---------------------------------------------------------------------------
+
+# DEV ONLY — REMOVE IN T7 STAGE C, together with the docker-compose.yml mount and the Vite
+# dev-images route: stage C replaces _image_exists with T8's C4 check (§4). The mount is
+# frontend/dev-images, the same files the host/player Vite dev servers serve as
+# /api/images/{id}, so the backend and the dev frontends agree on which images exist.
+_DEV_IMAGES_DIR = Path("/dev-images")
+
+
+def _image_exists(image_id: int) -> bool:
+    """Stage B stand-in for C4. Keyed off APP_ENV, never off the folder being present:
+    in development an image exists iff {id}.png is in the dev-images mount; in any
+    other environment no image exists, because nothing can serve one before T8."""
+    if not settings.is_development:
+        return False
+    return (_DEV_IMAGES_DIR / f"{image_id}.png").is_file()
+
+
+def _check_hotspot_image(question: QuestionCreate) -> None:
+    """422 on config.imageId if a (structurally valid) hotspot question names an image
+    that doesn't exist. Runs after QuestionCreate validation, so structural errors win."""
+    if question.type != "hotspot":
+        return
+    image_id = question.config["imageId"]
+    if not _image_exists(image_id):
+        raise RequestBodyInvalidError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "config", "imageId"),
+                    "msg": f"Image {image_id} does not exist",
+                    "input": image_id,
+                }
+            ]
+        )
+
+
 async def create_question(
     db: AsyncSession, redis: Redis, game_id: int, body: QuestionCreate
 ) -> Question:
@@ -271,6 +312,7 @@ async def create_question(
     is ignored — reorder_questions is the only way to change position (§6.2.5 a)."""
     await _get_game(db, game_id)
     await _assert_not_live(db, redis, game_id)
+    _check_hotspot_image(body)
     last = await db.scalar(
         select(func.max(Question.order_index)).where(Question.game_id == game_id)
     )
@@ -332,6 +374,9 @@ async def update_question(
         valid = QuestionCreate(**merged)
     except ValidationError as exc:
         raise RequestBodyInvalidError.from_validation_error(exc) from exc
+    # Checked on every update, even one that doesn't touch imageId: D8 validates the
+    # merged question as a whole (§13.2 G7).
+    _check_hotspot_image(valid)
 
     for field in _MERGE_FIELDS:
         setattr(question, field, getattr(valid, field))
@@ -448,6 +493,11 @@ async def import_game(
         raise _invalid_file("questions must be a list")
     questions: list[QuestionCreate] = []
     for i, q in enumerate(questions_raw):
+        # A v1 bundle's imageId would point at an arbitrary image on this server (§6.3.3).
+        if isinstance(q, dict) and q.get("type") == "hotspot":
+            raise _invalid_file(
+                f"Question {i + 1}: hotspot questions require a version 2 bundle"
+            )
         try:
             questions.append(QuestionCreate(**q))
         except (ValidationError, TypeError) as exc:

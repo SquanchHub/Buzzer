@@ -30,6 +30,9 @@ services:
     volumes:
       - ./backend:/app
       - ./logs:/app/logs
+      # DEV ONLY — REMOVE IN T7 STAGE C: the images content_service._image_exists checks
+      # (docs/plans/t7-hotspot.md §13.2 G1). Used only when APP_ENV=development.
+      - ./frontend/dev-images:/dev-images:ro
     depends_on:
       mysql:
         condition: service_healthy

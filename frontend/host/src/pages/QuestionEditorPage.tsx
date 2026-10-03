@@ -4,7 +4,8 @@
 // course field, T4 D5), the page wrapper (inside ManagementLayout), and the admin copy's
 // literal "\u2026"/"\u00b7"/"\u00b1" text fixed (it rendered as backslash sequences).
 // Errors (e.g. the live-session 409) show inline above the content. Keep other fixes
-// in sync with the admin copy.
+// in sync with the admin copy. Host-only so far: the hotspot type (T7 stage B,
+// docs/plans/t7-hotspot.md §7.9, §13.2), until T4 phase 3 copies HotspotEditor to admin.
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Download } from 'lucide-react';
@@ -12,8 +13,16 @@ import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
+import {
+  HotspotEditor,
+  HOTSPOT_ASPECT_MAX,
+  HOTSPOT_ASPECT_MIN,
+  HOTSPOT_DEFAULT_TARGET,
+  type HotspotEditorConfig,
+  type HotspotEditorTarget,
+} from '../components/HotspotEditor';
 
-type QuestionType = 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select';
+type QuestionType = 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
 type GradingType = 'ACCURACY' | 'COMPLETENESS';
 
 interface Question {
@@ -68,6 +77,27 @@ function buildFibPayload(answers: FibAnswer[], editDistance: number) {
   };
 }
 
+function hotspotFromQuestion(q: Question): { config: HotspotEditorConfig; target: HotspotEditorTarget } {
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const config: HotspotEditorConfig = {};
+  const imageId = num(q.config['imageId']);
+  const aspectRatio = num(q.config['aspectRatio']);
+  if (imageId !== undefined) config.imageId = imageId;
+  if (aspectRatio !== undefined) config.aspectRatio = aspectRatio;
+  // A COMPLETENESS question may have stored no target; missing keys take the defaults.
+  const target = { ...HOTSPOT_DEFAULT_TARGET };
+  for (const key of Object.keys(target) as (keyof HotspotEditorTarget)[]) {
+    target[key] = num(q.answer_data[key]) ?? target[key];
+  }
+  return { config, target };
+}
+
+/** Save needs the image loaded (aspectRatio is only sent then, §13.2 G4) and in range. */
+function hotspotReady(config: HotspotEditorConfig): boolean {
+  const a = config.aspectRatio;
+  return typeof a === 'number' && a >= HOTSPOT_ASPECT_MIN && a <= HOTSPOT_ASPECT_MAX;
+}
+
 // ---- QuestionForm subcomponent ----
 
 interface FormState {
@@ -86,6 +116,9 @@ interface FormState {
   fibEditDistance: number;
   // multi_select
   msOptions: McOption[];
+  // hotspot
+  hsConfig: HotspotEditorConfig;
+  hsTarget: HotspotEditorTarget;
 }
 
 const defaultForm = (): FormState => ({
@@ -100,6 +133,8 @@ const defaultForm = (): FormState => ({
   fibAnswers: [{ text: '', points: 1 }],
   fibEditDistance: 0,
   msOptions: [{ text: '', points: 1 }, { text: '', points: 1 }],
+  hsConfig: {},
+  hsTarget: { ...HOTSPOT_DEFAULT_TARGET },
 });
 
 function questionToForm(q: Question): FormState {
@@ -132,6 +167,10 @@ function questionToForm(q: Question): FormState {
     base.msOptions = opts.length
       ? opts.map((text, i) => ({ text, points: pts[i] ?? 1 }))
       : [{ text: '', points: 1 }, { text: '', points: 1 }];
+  } else if (q.type === 'hotspot') {
+    const { config, target } = hotspotFromQuestion(q);
+    base.hsConfig = config;
+    base.hsTarget = target;
   }
   return base;
 }
@@ -151,13 +190,18 @@ function formToPayload(form: FormState) {
     const p = buildMsPayload(form.msOptions.filter((o) => o.text.trim()));
     config = p.config;
     answer_data = p.answer_data;
+  } else if (form.type === 'hotspot') {
+    // The target is sent under COMPLETENESS too (unchecked there), so switching grading
+    // back and forth keeps it (§13.2 G5).
+    config = { ...form.hsConfig };
+    answer_data = { ...form.hsTarget };
   } else {
     const p = buildFibPayload(form.fibAnswers.filter((a) => a.text.trim()), form.fibEditDistance);
     config = p.config;
     answer_data = p.answer_data;
   }
   const points_value =
-    form.grading === 'COMPLETENESS'
+    form.grading === 'COMPLETENESS' || form.type === 'hotspot'
       ? form.pointsValue
       : form.type === 'multiple_choice'
       ? Math.max(0, ...form.mcOptions.map((o) => o.points))
@@ -189,6 +233,9 @@ function QuestionForm({
   saving: boolean;
 }) {
   const [form, setForm] = useState<FormState>(initial);
+  // Hotspot points have no per-option source, so the field shows under both gradings (§13.2 G3).
+  const showPoints = form.grading === 'COMPLETENESS' || form.type === 'hotspot';
+  const blockedByImage = form.type === 'hotspot' && !hotspotReady(form.hsConfig);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -209,6 +256,7 @@ function QuestionForm({
             <option value="true_false">True / False</option>
             <option value="fill_in_the_blank">Fill in the Blank</option>
             <option value="multi_select">Multi-Select (Select All That Apply)</option>
+            <option value="hotspot">Hotspot (tap the image)</option>
           </select>
         </div>
         <div className="flex-1">
@@ -466,6 +514,22 @@ function QuestionForm({
         </div>
       )}
 
+      {form.type === 'hotspot' && (
+        <div>
+          <label className="block text-xs text-slate-400 mb-2">Image and target</label>
+          <HotspotEditor
+            config={form.hsConfig}
+            answerData={form.hsTarget}
+            onChange={(config, target) => setForm((prev) => ({ ...prev, hsConfig: config, hsTarget: target }))}
+          />
+          {form.grading === 'COMPLETENESS' && (
+            <p className="text-slate-500 text-xs mt-2">
+              Target is ignored under Completeness grading: any tap earns full points.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Time + points */}
       <div className="flex gap-4">
         <div>
@@ -479,7 +543,7 @@ function QuestionForm({
             max="300"
           />
         </div>
-        {form.grading === 'COMPLETENESS' && (
+        {showPoints && (
           <div>
             <label className="block text-xs text-slate-400 mb-1">Points value</label>
             <Input
@@ -496,10 +560,13 @@ function QuestionForm({
       </div>
 
       <div className="flex gap-3">
-        <Button type="button" onClick={() => onSave(formToPayload(form))} disabled={saving}>
+        <Button type="button" onClick={() => onSave(formToPayload(form))} disabled={saving || blockedByImage}>
           {saving ? 'Saving\u2026' : 'Save Question'}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+        {blockedByImage && (
+          <span className="self-center text-xs text-slate-500">Save needs a loaded image with a supported aspect ratio.</span>
+        )}
       </div>
     </div>
   );
@@ -672,6 +739,7 @@ export default function QuestionEditorPage() {
     true_false: 'T/F',
     fill_in_the_blank: 'Fill',
     multi_select: 'Multi',
+    hotspot: 'Hotspot',
   };
 
   if (loading) return <div className="text-slate-400">Loading…</div>;
@@ -817,6 +885,23 @@ export default function QuestionEditorPage() {
                       )}
                     </div>
                   )}
+
+                  {q.type === 'hotspot' && (() => {
+                    const { config, target } = hotspotFromQuestion(q);
+                    const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+                    return (
+                      <div className="mt-2 text-xs text-slate-400">
+                        Image {config.imageId ?? '?'}
+                        {q.grading_type === 'ACCURACY' && (
+                          <span>
+                            {' \u00b7 '}target ({target.x.toFixed(2)}, {target.y.toFixed(2)}){' \u00b7 '}rings{' '}
+                            {pct(target.innerRadius)} / {pct(target.outerRadius)}{' \u00b7 '}partial{' '}
+                            {Math.round(target.partialFraction * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {q.type === 'multi_select' && (
                     <div className="mt-2 space-y-1">

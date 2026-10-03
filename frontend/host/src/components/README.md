@@ -1,10 +1,10 @@
 # frontend/host/src/components/
 
-Presentational building blocks for the Host app: generic primitives in `ui/`, plus one
-game-specific component, `HotspotView.tsx`. Other game-specific pieces (charts, word cloud,
-histogram, question cards) are defined inline inside the page files in
-`frontend/host/src/pages/game/`. None of the `ui/` components touch the network, sockets, or
-global state; `HotspotView` fetches its image via `lib/images.ts`.
+Presentational building blocks for the Host app: generic primitives in `ui/`, plus two
+hotspot components, `HotspotView.tsx` (display) and `HotspotEditor.tsx` (authoring). Other
+game-specific pieces (charts, word cloud, histogram, question cards) are defined inline inside
+the page files in `frontend/host/src/pages/game/`. None of the `ui/` components touch the
+network, sockets, or global state; both hotspot components fetch their image via `lib/images.ts`.
 
 ## Files
 
@@ -15,6 +15,7 @@ global state; `HotspotView` fetches its image via `lib/images.ts`.
 | `ui/input.tsx` | `Input` — a styled `<input>`. |
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
 | `HotspotView.tsx` | `HotspotView` — display-only hotspot `<canvas>` (`docs/plans/t7-hotspot.md` §7.8): image, optional rings, optional taps coloured by band, optional legend; `ringsFromReveal(reveal)` helper. |
+| `HotspotEditor.tsx` | `HotspotEditor` — hotspot authoring panel (§7.9, §13.2): Image ID field (or T8 picker slot), canvas preview with live rings, click to place the centre, sliders for the radii and partial fraction. Exports `HOTSPOT_DEFAULT_TARGET`, `HOTSPOT_ASPECT_MIN`/`MAX` and its prop types. |
 
 ## Key entry points
 
@@ -38,26 +39,44 @@ global state; `HotspotView` fetches its image via `lib/images.ts`.
     (COMPLETENESS) "N taps", or "500+ taps" at the server's cap.
   - Colours from CSS variables `--hotspot-inner|outer|miss|neutral` (fallbacks until T9).
 
+- `HotspotEditor({ config, answerData, onChange, renderImagePicker? })`
+  - Controlled: every edit calls `onChange(config, answerData)`; the parent holds the state.
+  - **Image-ready signal:** `config.aspectRatio` is sent only once the current `imageId`'s image
+    has loaded (`naturalWidth / naturalHeight`) and is dropped whenever `imageId` changes,
+    including on mount for a stored question. A parent enables Save on "`aspectRatio` is a number
+    in [`HOTSPOT_ASPECT_MIN`, `HOTSPOT_ASPECT_MAX`]" (§13.2 G4). An in-flight load is cancelled
+    when the ID changes.
+  - Clicks map to fractions of the drawn image, rounded to 4 decimal places; clicks in the
+    letterbox bars, or before the image has loaded, are ignored.
+  - Inner radius 0.02–0.5 (raising it past the outer radius pushes the outer one up), outer
+    radius inner–1, partial fraction 0–1 in steps of 0.05.
+  - Imports only `lib/images.ts`, `lib/utils.ts` and `components/ui/*` (H9), so the admin copy
+    differs only in import paths.
+
 ## Depends on
 
-- `frontend/host/src/lib/utils.ts` — `cn()` (`clsx` + `tailwind-merge`), used by `button`, `card`, `input`.
+- `frontend/host/src/lib/utils.ts` — `cn()` (`clsx` + `tailwind-merge`), used by `button`, `card`, `input`, `HotspotEditor`.
+- `frontend/host/src/lib/images.ts` — `loadImageUrl`, used by `HotspotView` and `HotspotEditor`.
 - npm: `react` (`TimerBar` only). Styling is Tailwind utility classes only.
 
 ## Depended on by
 
 - `frontend/host/src/pages/`:
-  - `LoginPage.tsx` — `Button`, `Input`, `Card*`
-  - `HomePage.tsx` — `Button`, `Card*`
-  - `game/LobbyPage.tsx`, `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`
-  - `game/QuestionPage.tsx` — `Button`, `TimerBar`
+  - `LoginPage.tsx`, `CoursePage.tsx`, `RosterPage.tsx` — `Button`, `Input`, `Card*`
+  - `HomePage.tsx`, `SessionsPage.tsx` — `Button`, `Card*`
+  - `QuestionEditorPage.tsx` — `HotspotEditor`, `Button`, `Input`, `Card*`
+  - `game/LobbyPage.tsx` — `Button`
+  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`
+  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`
 - Nothing outside the host app imports these; the player and admin apps have their own copies.
 
 ## Gotchas found while reading
 
-- **Hotspot drawing exists twice.** `HotspotView.tsx` repeats the layout/ring maths of
-  `frontend/player/src/components/HotspotCanvas.tsx` (the apps share no code). Change both
-  together. The same will apply to `HotspotEditor` (T7 stage B), which gets an admin copy in
-  T4 phase 3 — keep that copy in sync too.
+- **Hotspot drawing exists three times, soon four.** `HotspotView.tsx` repeats the layout/ring
+  maths of `frontend/player/src/components/HotspotCanvas.tsx` (the apps share no code), and
+  `HotspotEditor.tsx` repeats `HotspotView`'s image loading and letterbox maths, because the
+  editor may import only `lib/images`, `lib/utils` and `ui/` (§13.2). `HotspotEditor` gets an
+  admin copy in T4 phase 3. A change to the layout rule must be made in every copy.
 
 - **Copies in each app:** `button`, `card` and `input` are byte-identical to the copies in
   `frontend/admin/src/components/ui/`. They differ from `frontend/player/src/components/ui/`

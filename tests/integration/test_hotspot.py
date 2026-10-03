@@ -6,6 +6,11 @@ placeholder `imageId` and are created through `POST /api/admin/games/{g}/questio
 not check that the image exists until T4 phase 3. Stage C moves tests 6–10 to the host route and
 a real T8 image (§10). Test 18 is a unit test (`tests/unit/test_hotspot.py`).
 
+Stage B (§13.2) adds the host-route tests at the end: the image-existence check (test 2, and
+stage-B versions of tests 3–5 against the dev image `frontend/dev-images/1.png`, which the
+backend sees through a dev-only mount), the v1-bundle hotspot rejection (test 13b) and the
+sample-game import through the host route (test 14). Stage C switches them to real T8 images.
+
 Socket tests advance to results with no pause after the last answer: `on_submit_answer`
 commits before it emits `answer_received` (fix/commit-before-emit), so the results query
 always sees every acknowledged answer.
@@ -19,7 +24,8 @@ import json
 import httpx
 import pytest
 
-from .conftest import create_guest_tokens, create_room
+from .conftest import _REPO_ROOT, create_guest_tokens, create_room
+from .host_helpers import hapi  # noqa: F401 — fixture
 
 # Aliased so pytest doesn't try to collect the Test-prefixed class from this module.
 from .engine.socket_client import TestSocketClient as SocketClient
@@ -381,3 +387,169 @@ async def test_new_question_payload_has_no_target(game_setup, base_url, admin_to
             assert "x" not in payload and "y" not in payload
         await g.results()
         await g.finish()
+
+
+# ---------------------------------------------------------------------------
+# Stage B — host routes (§7.3, §6.3.3, §13.2). DEV_IMAGE exists in frontend/dev-images;
+# UNKNOWN_IMAGE doesn't. Stage C: real T8 images instead.
+# ---------------------------------------------------------------------------
+
+DEV_IMAGE = 1
+UNKNOWN_IMAGE = 999_999
+
+
+def _host_game(hapi) -> tuple[str, int, int]:  # noqa: F811
+    """A host with an empty game of their own → (token, course_id, game_id)."""
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    return token, course, hapi.host_game(token, course, questions=0)
+
+
+def _host_body(image_id: int = DEV_IMAGE, **overrides) -> dict:
+    return _question_body(config={**CONFIG, "imageId": image_id}, **overrides)
+
+
+def _image_error(r: httpx.Response, image_id: int) -> None:
+    assert r.status_code == 422, r.text
+    body = r.json()
+    assert body["error"] == "VALIDATION_ERROR"
+    assert body["detail"] == [
+        {
+            "type": "value_error",
+            "loc": ["body", "config", "imageId"],
+            "msg": f"Image {image_id} does not exist",
+            "input": image_id,
+        }
+    ]
+
+
+def test_host_create_unknown_image_is_422(hapi):  # noqa: F811
+    """§10 test 2."""
+    token, _, game = _host_game(hapi)
+    r = hapi.req(
+        "POST", f"/host/games/{game}/questions", token, json=_host_body(UNKNOWN_IMAGE)
+    )
+    _image_error(r, UNKNOWN_IMAGE)
+    assert hapi.req("GET", f"/host/games/{game}/questions", token).json() == []
+
+
+def test_host_create_with_dev_image(hapi):  # noqa: F811
+    """Stage-B version of §10 test 3."""
+    token, _, game = _host_game(hapi)
+    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=_host_body())
+    assert r.status_code == 201, r.text
+    [listed] = hapi.req("GET", f"/host/games/{game}/questions", token).json()
+    assert listed["config"] == {**CONFIG, "imageId": DEV_IMAGE}
+    assert listed["answer_data"] == TARGET
+
+
+def test_structural_error_is_reported_before_image_lookup(hapi):  # noqa: F811
+    token, _, game = _host_game(hapi)
+    body = _host_body(UNKNOWN_IMAGE)
+    body["config"]["aspectRatio"] = 6
+    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=body)
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert all(e["loc"][-1] != "imageId" for e in detail), detail
+    assert any("aspectRatio" in e["msg"] for e in detail), detail
+
+
+_UPDATE_VIOLATIONS = {
+    "aspectRatio 6": {"config": {**CONFIG, "imageId": DEV_IMAGE, "aspectRatio": 6}},
+    "innerRadius > outerRadius": {"answer_data": {**TARGET, "innerRadius": 0.3}},
+    "extra answer_data key": {"answer_data": {**TARGET, "z": 0}},
+}
+
+
+@pytest.mark.parametrize(
+    "patch", _UPDATE_VIOLATIONS.values(), ids=_UPDATE_VIOLATIONS.keys()
+)
+def test_host_update_revalidates_hotspot(hapi, patch):  # noqa: F811
+    """Stage-B version of §10 test 4: the merged question is validated (T4 D8)."""
+    token, _, game = _host_game(hapi)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body())
+    r = hapi.req("PUT", f"/host/games/{game}/questions/{q['id']}", token, json=patch)
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "VALIDATION_ERROR"
+    [stored] = hapi.req("GET", f"/host/games/{game}/questions", token).json()
+    assert stored == q
+
+
+def test_host_update_to_unknown_image_is_422(hapi):  # noqa: F811
+    """Stage-B version of §10 test 5."""
+    token, _, game = _host_game(hapi)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body())
+    r = hapi.req(
+        "PUT",
+        f"/host/games/{game}/questions/{q['id']}",
+        token,
+        json={"config": {**CONFIG, "imageId": UNKNOWN_IMAGE}},
+    )
+    _image_error(r, UNKNOWN_IMAGE)
+    [stored] = hapi.req("GET", f"/host/games/{game}/questions", token).json()
+    assert stored == q
+
+
+def test_host_update_checks_image_even_when_patch_omits_it(hapi):  # noqa: F811
+    """§13.2 G7: a question with a dangling imageId (possible through the admin route
+    until T4 phase 3) can't be edited through the host route until the image is fixed."""
+    token, _, game = _host_game(hapi)
+    q = hapi.ok(
+        "POST", f"/admin/games/{game}/questions", json=_host_body(UNKNOWN_IMAGE)
+    )
+    url = f"/host/games/{game}/questions/{q['id']}"
+    _image_error(hapi.req("PUT", url, token, json={"prompt": "Edited"}), UNKNOWN_IMAGE)
+    r = hapi.req("PUT", url, token, json={"config": {**CONFIG, "imageId": DEV_IMAGE}})
+    assert r.status_code == 200, r.text
+
+
+def test_v1_bundle_with_hotspot_question_is_rejected(hapi):  # noqa: F811
+    """§10 test 13b (§6.3.3): the second question is hotspot; nothing is created."""
+    token, course, _ = _host_game(hapi)
+    before = hapi.req("GET", f"/host/courses/{course}/games", token).json()
+    mc = {
+        "type": "multiple_choice",
+        "grading_type": "ACCURACY",
+        "prompt": "Pick A",
+        "config": {"options": ["A", "B"]},
+        "answer_data": {"answer_points": [1, 0]},
+        "time_limit_seconds": 30,
+        "points_value": 1,
+    }
+    bundle = {
+        "format": "buzzer/game",
+        "version": 1,
+        "game": {"title": "v1 with hotspot"},
+        "questions": [mc, _host_body()],
+    }
+    r = hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", json.dumps(bundle).encode())},
+        data={"course_id": str(course)},
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["msg"] == (
+        "Question 2: hotspot questions require a version 2 bundle"
+    )
+    assert hapi.req("GET", f"/host/courses/{course}/games", token).json() == before
+
+
+_SAMPLE_GAMES = sorted((_REPO_ROOT / "sample_games").glob("*.json"))
+
+
+@pytest.mark.parametrize("path", _SAMPLE_GAMES, ids=[p.name for p in _SAMPLE_GAMES])
+def test_sample_game_imports_through_host_route(hapi, path):  # noqa: F811
+    """§10 test 14 (§13.1 g): every unmodified v1 sample game imports via /api/host."""
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    r = hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": (path.name, path.read_bytes())},
+        data={"course_id": str(course)},
+    )
+    assert r.status_code == 201, r.text
+    hapi.track_game(r.json()["game_id"])

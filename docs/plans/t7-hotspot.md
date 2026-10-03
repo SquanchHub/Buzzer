@@ -645,3 +645,40 @@ was decided by the owner and **overrides the section it names**.
 | i | §5.1's rules would be implemented twice: in the Pydantic validator and in `hotspot_target`. | **One checker, in `backend/app/schemas/admin.py`:** `hotspot_config_error(config) -> str \| None`, `hotspot_answer_error(answer_data) -> str \| None`, and `is_hotspot_aspect_ratio(value) -> bool`. `QuestionCreate.validate_structure` raises with their messages; `game_service.hotspot_target` calls `is_hotspot_aspect_ratio` and `hotspot_answer_error` (not the `imageId` check — a bad `imageId` is the clients' "Image unavailable" path, §5.4). `game_service` already imports from `schemas`, so no new dependency direction. Refines §5.2 / §7.1. |
 | j | §7.6 names no CSS variables for canvas colours. | `--hotspot-inner`, `--hotspot-outer`, `--hotspot-miss`, `--hotspot-neutral`, read with `getComputedStyle`; fixed fallbacks until T9. |
 | k | The simulator could aim using `--game-json`, but §7.10 says uniform; the engine's `compute_question_score` returns `int`, but partial credit is fractional. | Simulator stays uniform as specified. Engine return type becomes `float`. |
+
+### 13.2 Stage B decisions (2026-10-02)
+
+Planning stage B (§7.3, §7.9) against the T4 phase 2 code surfaced the gaps below. Each was
+decided by the owner and **overrides or refines the section it names**.
+
+| # | Gap | Decision |
+|---|---|---|
+| G1 | §9 puts the §7.3 image-existence check in stage B and wiring C4 in stage C, but says nothing about what the check consults before T8; test 2 is marked runnable in stage B, so something must be able to say "no". | A stage-B stand-in, `content_service._image_exists(image_id)`, keyed **only** off `APP_ENV` (`settings.is_development`), never off the folder being present: in development an image exists iff `{id}.png` is in `frontend/dev-images/`, mounted read-only into the backend container at `/dev-images` by `docker-compose.yml`; in any other environment no image exists (nothing can serve one before T8). The backend and the Vite dev route (§13.1 e) read the same folder, so they agree. Private to `content_service`, so no file is created in T8's namespace. The repo's only compose file is development-only (no production profile), so the mount never reaches production. Stub, mount and unit test are removed in stage C (`frontend/dev-images/README.md` lists every piece). |
+| G2 | §9 places §6 in stage C, but test 13b ("hotspot in a v1 bundle → 422") is marked as needing only T4 phase 2, and the host import accepted a v1 hotspot question whose `imageId` points at an arbitrary local image. | §6.3.3's v1 rejection ships in stage B, before any image lookup. The import path needs no existence check in stage B (v1 can't carry hotspot; v2 is stage C). See the Known Issue below. |
+| G3 | §7.9 doesn't say how `points_value` is entered: the ported editor shows the points field only under COMPLETENESS (other types derive points from per-option values), so an ACCURACY hotspot had no way to set it. | The points field shows for hotspot under **both** gradings; `points_value` is taken from it. |
+| G4 | §7.9 disables Save "while a hotspot question has no loaded image", but its prop list (`config`, `answerData`, `onChange`, `renderImagePicker`) has no way to report that. | No extra prop: `HotspotEditor` sends `config.aspectRatio` only once the current `imageId`'s image has loaded, and drops it whenever `imageId` changes (including on mount for a stored question). The page enables Save iff `aspectRatio` is a number in [0.2, 5] (§5.1's range, so a too-wide or too-tall image is caught before the server's 422). Consequence: a stored question's `aspectRatio` is re-measured on every save (identical under C1). |
+| G5 | §7.9 doesn't say whether the target controls show under COMPLETENESS. | `HotspotEditor` is unchanged (no grading prop); the page adds the note "Target is ignored under Completeness grading: any tap earns full points." `answer_data` is still sent (unchecked there, §5.1), so switching grading back keeps the target. |
+| G7 | §7.3 says "if the resulting question is hotspot, call C4" without saying whether an update that doesn't touch `imageId` is checked. | Checked on **every** host update after the D8 merge validates, consistent with D8 validating the merged question as a whole. A question with a dangling `imageId` (possible through the admin route until stage D) can't be edited through the host route until its image is fixed. |
+
+Smaller refinements, same authority:
+- **Click coordinates are rounded to 4 decimal places** (under a pixel at any plausible preview
+  size); slider radii likewise to 4, `partialFraction` to 2. Clicks in the letterbox bars, or
+  before the image has loaded, are ignored.
+- **Stage-B versions of tests 3–5** run against the dev image (`imageId` 1) through the host
+  routes, plus "structural errors before the image lookup" and the G7 rule; stage C switches them
+  to real T8 images, as §13.1 f does for tests 6–10. Test 2, 13b and 14 run in stage B.
+
+**Rejected alternative — extracting the hotspot layout maths into `lib/`.** `HotspotEditor`
+repeats `HotspotView`'s image loading and letterbox/ring maths, so the layout rule now lives in
+three places (player `HotspotCanvas`, host `HotspotView`, host `HotspotEditor`) and a fourth in
+phase 3 (admin `HotspotEditor`). Moving the pure maths into a `lib/hotspot.ts` would cut that down,
+but it breaks §7.9's rule that the editor imports only `lib/images.ts`, `lib/utils.ts` and
+`components/ui/*` (the H9 "copy with import-path changes only" handoff), and every app would still
+need its own copy of the new file. Kept as specified; the drift risk is the accepted one in §12,
+and each copy's README gotcha names the others.
+
+**Known Issue (until stage C) — a hotspot game's export does not re-import.** Export is unchanged
+in stage B, so a game containing a hotspot question still exports as a version 1 bundle with its
+`imageId`; G2 makes import reject exactly that ("Question N: hotspot questions require a version 2
+bundle"). Export → import round trips therefore fail for hotspot games until stage C adds the
+version 2 bundle (§6). Image-free games are unaffected.
