@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate, NavLink } from 'react-router-dom';
+import { tokenRole } from './lib/utils';
 import { BookOpen, Users, Gamepad2, UserX, LogOut, History } from 'lucide-react';
 import LoginPage from './pages/LoginPage';
 import CoursesPage from './pages/CoursesPage';
@@ -13,6 +14,17 @@ import SessionsPage from './pages/SessionsPage';
 function RequireAdmin() {
   const token = localStorage.getItem('token');
   if (!token) return <Navigate to="/login" replace />;
+  // UX only: the server enforces require_admin on every request. The token is
+  // shared with the host and player apps (same origin), so it is left in place.
+  if (tokenRole(token) !== 'ADMIN') {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ message: 'Your session has expired or this account is not an admin. Sign in with an admin account.' }}
+      />
+    );
+  }
   return <Outlet />;
 }
 
