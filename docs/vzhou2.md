@@ -16,3 +16,7 @@
 ### Branch: `feat/t4-ui-restructuring`
 
 - **2026-10-01, 15:20–15:50** — Deleted the merged local branches, then implemented T4 phase 1 test-first: migration 004 (`games.course_id` with backfill), course-required game create/import, the both-grants host rule, the room/game course match, the admin grant and course-move 409s, the admin Games page course picker, 45 integration tests (100% coverage of changed backend lines), and README/design-doc updates; found a pre-existing commit-after-response race to fix separately.
+
+### Branch: `fix/get-db-commit-timing`
+
+- **2026-10-02, 19:35–19:52** — Summarized Arjun's merged T4 phase 2 and planned phase 3; then fixed the commit-after-response race test-first (`DbSession` declares `get_db` with `scope="function"` so the commit lands before the response), removed phase 2's interim handler commits, and added a write-then-read regression test (66/100 stale reads before, 0 after; full suite 130 passed).
