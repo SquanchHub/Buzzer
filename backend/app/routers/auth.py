@@ -7,14 +7,13 @@ import structlog
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse
 from jose import JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.dependencies import _token_from_request, get_refresh_token
 from ..common.exceptions import UnauthorizedError
 from ..common.rate_limit import limiter
 from ..redis_client import get_redis
 from ..config import settings
-from ..database import get_db
+from ..database import DbSession
 from ..schemas.auth import (
     GuestJoinRequest,
     LoginRequest,
@@ -67,7 +66,7 @@ async def login(
     request: Request,
     body: LoginRequest,
     response: Response,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> TokenResponse | TempTokenResponse:
     # --- Dev fallback: accept {netid} directly ---
     if body.netid:
@@ -101,7 +100,7 @@ _ALLOWED_REDIRECT_PATHS = {"/host/login", "/player/login"}
 @router.get("/oauth2-callback", response_class=HTMLResponse)
 async def oauth2_callback(
     request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redirect_to: str = "/host/login",
 ) -> HTMLResponse:
     if redirect_to not in _ALLOWED_REDIRECT_PATHS:
@@ -156,7 +155,7 @@ async def exchange_temp(
     request: Request,
     token: Annotated[str | None, Depends(_token_from_request)],
     response: Response,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> TokenResponse:
     """Exchange a temp token (from OAuth2 callback) for a full access + refresh token pair."""
     if not token:
@@ -190,7 +189,7 @@ async def guest_join(
     request: Request,
     body: GuestJoinRequest,
     response: Response,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redis=Depends(get_redis),
 ) -> TokenResponse:
     from ..services.state_service import get_room_state
@@ -226,7 +225,7 @@ async def guest_join(
 async def refresh_token(
     response: Response,
     token: Annotated[str, Depends(get_refresh_token)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> RefreshResponse:
     try:
         payload = decode_token(token)

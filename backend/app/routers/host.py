@@ -5,11 +5,6 @@ Every endpoint is gated by a course/game dependency from common/dependencies.py 
 require_user plus assert_host_can_use_course for the two that take the course in the
 body); none uses require_admin, and admins pass every check. Handlers only translate
 content_service / roster_service calls to HTTP.
-
-INTERIM (T4 §6.2.5 k): every mutating handler commits before it returns. get_db's own commit
-runs only after the response has been sent (FastAPI 0.142), so a client that reads right
-after a write could miss it. Services still only flush. Once fix/get-db-commit-timing makes
-get_db commit before the response, these commits are harmless no-ops (nothing left to flush).
 """
 
 from __future__ import annotations
@@ -20,7 +15,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.dependencies import (
     require_course_host,
@@ -28,7 +22,7 @@ from ..common.dependencies import (
     require_user,
 )
 from ..common.exceptions import NotFoundError
-from ..database import get_db
+from ..database import DbSession
 from ..models.course import CourseRoster
 from ..models.game import Game, Question
 from ..models.user import User
@@ -55,7 +49,7 @@ router = APIRouter(prefix="/host", tags=["host"])
 
 CourseHost = Annotated[User, Depends(require_course_host)]
 GameAccess = Annotated[User, Depends(require_game_access)]
-Db = Annotated[AsyncSession, Depends(get_db)]
+Db = DbSession
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +77,6 @@ async def import_roster(
         for r in payload.rows
     ]
     result = await process_roster_rows(db, course_id, rows)
-    await db.commit()  # interim, see module docstring
     return result
 
 
@@ -113,7 +106,6 @@ async def patch_roster_entry(
         entry.full_name = body.full_name.strip()
     if body.email is not None:
         entry.email = str(body.email).lower()
-    await db.commit()  # interim, see module docstring
     return entry
 
 
@@ -138,7 +130,6 @@ async def create_game(
     await game_service.assert_host_can_use_course(db, user, body.course_id)
     meta = GameMeta(**body.model_dump(exclude={"course_id"}))
     game = await content_service.create_game(db, user, meta, body.course_id)
-    await db.commit()  # interim, see module docstring
     return game
 
 
@@ -151,7 +142,6 @@ async def import_game(
 ) -> dict:
     await game_service.assert_host_can_use_course(db, user, course_id)
     game = await content_service.import_game(db, user, await file.read(), course_id)
-    await db.commit()  # interim, see module docstring
     return {"game_id": game.id}
 
 
@@ -169,7 +159,6 @@ async def update_game(
     redis=Depends(get_redis),
 ) -> Game:
     game = await content_service.update_game(db, redis, user, game_id, body)
-    await db.commit()  # interim, see module docstring
     return game
 
 
@@ -178,7 +167,6 @@ async def delete_game(
     game_id: int, user: GameAccess, db: Db, redis=Depends(get_redis)
 ) -> None:
     await content_service.delete_game(db, redis, user, game_id)
-    await db.commit()  # interim, see module docstring
 
 
 @router.get("/games/{game_id}/export")
@@ -212,7 +200,6 @@ async def create_question(
     redis=Depends(get_redis),
 ) -> Question:
     question = await content_service.create_question(db, redis, game_id, body)
-    await db.commit()  # interim, see module docstring
     return question
 
 
@@ -228,7 +215,6 @@ async def update_question(
     question = await content_service.update_question(
         db, redis, game_id, question_id, body
     )
-    await db.commit()  # interim, see module docstring
     return question
 
 
@@ -241,7 +227,6 @@ async def delete_question(
     redis=Depends(get_redis),
 ) -> None:
     await content_service.delete_question(db, redis, game_id, question_id)
-    await db.commit()  # interim, see module docstring
 
 
 @router.post("/games/{game_id}/questions/reorder", status_code=204)
@@ -253,4 +238,3 @@ async def reorder_questions(
     redis=Depends(get_redis),
 ) -> None:
     await content_service.reorder_questions(db, redis, game_id, body.order)
-    await db.commit()  # interim, see module docstring
