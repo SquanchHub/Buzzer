@@ -3,6 +3,7 @@ import { tokenRole } from './lib/utils';
 import { BookOpen, Users, Gamepad2, UserX, LogOut, History, MonitorPlay, Smartphone } from 'lucide-react';
 import LoginPage from './pages/LoginPage';
 import CoursesPage from './pages/CoursesPage';
+import CourseDetailPage from './pages/CourseDetailPage';
 import RosterPage from './pages/RosterPage';
 import UsersPage from './pages/UsersPage';
 import UserDetailPage from './pages/UserDetailPage';
@@ -119,6 +120,7 @@ export default function App() {
         <Route element={<RequireAdmin />}>
           <Route element={<AdminLayout />}>
             <Route path="/courses" element={<CoursesPage />} />
+            <Route path="/courses/:courseId" element={<CourseDetailPage />} />
             <Route path="/courses/:courseId/roster" element={<RosterPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/users/:userId" element={<UserDetailPage />} />
