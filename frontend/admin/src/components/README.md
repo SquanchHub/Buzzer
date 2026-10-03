@@ -2,8 +2,8 @@
 
 Reusable UI primitives for the Admin app, in the shadcn/ui style: small typed wrappers around
 native elements that apply a fixed set of Tailwind classes and accept `className` overrides
-(merged with `cn` from `lib/utils.ts`). Everything here lives under `ui/`; there are no
-admin-specific composite components — pages build their own tables, forms and panels inline.
+(merged with `cn` from `lib/utils.ts`), plus one composite: `HotspotEditor`, an unchanged copy of
+the host app's component. Pages otherwise build their own tables, forms and panels inline.
 
 ## Files
 
@@ -12,6 +12,7 @@ admin-specific composite components — pages build their own tables, forms and 
 | `ui/button.tsx` | `Button` — `<button>` with `variant` (`default` indigo, `outline`, `ghost`, `destructive` red) and `size` (`sm`, `md`, `lg`). |
 | `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — bordered, rounded, semi-transparent slate panels with padding presets. |
 | `ui/input.tsx` | `Input` — full-width text input with slate border/background and an indigo focus ring. |
+| `HotspotEditor.tsx` | Hotspot authoring panel (image id, click to place the target, radii, partial credit). **Copy** of `frontend/host/src/components/HotspotEditor.tsx` (T7 H9), identical apart from its header note — keep both in sync. See the host components README for its props and image-ready signal. |
 
 ## Key entry points
 
