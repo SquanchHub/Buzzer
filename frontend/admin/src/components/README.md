@@ -2,7 +2,7 @@
 
 Reusable UI primitives for the Admin app, in the shadcn/ui style: small typed wrappers around
 native elements that apply a fixed set of Tailwind classes and accept `className` overrides
-(merged with `cn` from `lib/utils.ts`), plus one composite: `HotspotEditor`, an unchanged copy of
+(merged with `cn` from `lib/utils.ts`), plus composites: `ImageThumb` and `ImagePicker` (T8), and `HotspotEditor`, an unchanged copy of
 the host app's component. Pages otherwise build their own tables, forms and panels inline.
 
 ## Files
@@ -13,6 +13,8 @@ the host app's component. Pages otherwise build their own tables, forms and pane
 | `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — bordered, rounded, semi-transparent slate panels with padding presets. |
 | `ui/input.tsx` | `Input` — full-width text input with slate border/background and an indigo focus ring. |
 | `HotspotEditor.tsx` | Hotspot authoring panel (image id, click to place the target, radii, partial credit). **Copy** of `frontend/host/src/components/HotspotEditor.tsx` (T7 H9), identical apart from its header note — keep both in sync. See the host components README for its props and image-ready signal. |
+| `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin and host — keep in sync. |
+| `ImagePicker.tsx` | `ImagePicker({courseId, value, onChange, label?})` — choose a question image (T8 §3 contract): the chosen thumbnail with Choose / Change / Remove, and a dialog listing the course's images 24 per page (`listImages`) with **Upload new** (`uploadImage`, selected straight away). Returns only the id; `null` = no image. Escape or a backdrop click closes it. Copied between admin and host — keep in sync. |
 
 ## Key entry points
 
