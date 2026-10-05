@@ -24,3 +24,7 @@
 ### Branch: `feat/t4_ui_restructuring_phase_3`
 
 - **2026-10-02, 19:52–20:37** — Implemented T4 phase 3 on top of the commit-timing fix: admin game/question/import/export routes now delegate to `content_service`, new `GET /admin/courses/{id}/access`, `RequireAdmin` role check, admin-first sidebar, course detail page, Games course filter and course move, course-grouped game-access picker, and the admin `HotspotEditor` copy (T7 stage D); 13 new integration tests (full suite 143 passed, 100% of changed backend lines covered), one hotspot test re-planted via MySQL, READMEs and design doc §6.5.1 updated.
+
+### Branch: `feat/t8-image-support`
+
+- **2026-10-04, 21:30–22:57** — Merged T4 phase 3 into a new T8 branch, then wrote the T8 image-support design (`docs/plans/t8-image-support.md`): first draft, the remaining design decisions, revisions after a Goldfish test, and a test-first implementation order split by owner.
