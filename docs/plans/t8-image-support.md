@@ -469,7 +469,9 @@ and the host loads the prompt image the same way, so loading overlaps reading.
 
 **Question fields** (`schemas/admin.py`, `QuestionCreate`; `QuestionUpdate` via the D8 merge):
 
-- `prompt_image_id`: optional positive integer or `null`. Accepted for every type.
+- `prompt_image_id`: optional positive integer or `null`. Accepted for every type. On an
+  update it is the **one field where an explicit `null` is allowed** (T4 D8 refuses `null` for
+  every other field): it removes the prompt image. Omitting it keeps the current value.
 - `config.optionImageIds` (`multiple_choice`, `multi_select` only): optional; if present, a list
   of the same length as `config.options`, each entry a positive integer or `null`; booleans
   rejected (as in the hotspot checker). Any other type carrying it → 422.
