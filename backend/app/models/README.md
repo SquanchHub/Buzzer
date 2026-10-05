@@ -13,6 +13,7 @@ model here does nothing to the database until a matching migration is written an
 | `user.py` | `User` — one table for all identities: admins, local accounts, OAuth2/NetID users and guests. |
 | `course.py` | `Course`, `CourseRoster` (imported student list per course), `UserCourseAccess` (per-course HOST/PLAYER grant). |
 | `game.py` | `Game`, `Question` (ordered, typed, JSON config/answer data), `UserGameAccess` (per-user game grant). |
+| `image.py` | `Image` — an uploaded question image (T8): bytes in MySQL, owned by one course. |
 | `session.py` | `GameSession` (one played instance of a game, keyed by room code) and `SessionScore` (one row per player answer). |
 
 ## Tables and key columns
@@ -28,7 +29,13 @@ model here does nothing to the database until a matching migration is written an
   NULL means an unassigned legacy game that only admins can see or run.
 - **`questions`** — `game_id`, `type` (free `String(50)`), `grading_type`
   (`ACCURACY | COMPLETENESS`), `prompt`, `config` (JSON, sent to clients),
-  `answer_data` (JSON, server-only), `time_limit_seconds`, `points_value` (float), `order_index`.
+  `answer_data` (JSON, server-only), `time_limit_seconds`, `points_value` (float), `order_index`,
+  `prompt_image_id` (nullable FK → `images`, `ON DELETE RESTRICT`; migration 005, T8).
+- **`images`** (T8, migration 005) — `course_id` (FK → `courses`, RESTRICT), `content_type`,
+  `data` (MEDIUMBLOB, a `deferred` column so metadata queries never load bytes), `byte_size`,
+  `width`, `height`, `sha256` (unique per course), `uploaded_by` (FK → `users`, SET NULL),
+  `created_at`. The bytes under an ID never change (`docs/plans/t8-image-support.md` C1).
+  Option and hotspot images are referenced from `questions.config`, not by a foreign key.
 - **`user_game_access`** — composite PK `(user_id, game_id)`. A non-admin host can use a game
   only with this grant **and** a `HOST` row in `user_course_access` for the game's course
   (`game_service.assert_host_can_use_game`).
