@@ -484,7 +484,8 @@ engine are untouched.
 
 ## 6. Implementation outline (files touched)
 
-Preliminary — the spec will order these into atomic, test-first steps.
+The tables below list every file each owner touches; §6.1 orders the work into atomic,
+test-first steps.
 
 **Vincent**
 
@@ -519,6 +520,55 @@ Preliminary — the spec will order these into atomic, test-first steps.
 
 Each owner updates the READMEs of the directories they touch in the same branch
 (`.claude/rules/context-sync.md`).
+
+### 6.1 Ordered steps
+
+**Rules for every step**
+
+- One step = one atomic commit (or a short run of them) with an imperative message, authored as
+  `<netid>@wisc.edu` (T1).
+- **Backend steps are test-first:** write the step's integration tests (§7 numbers), run them
+  against the live stack and see them fail for the right reason, implement, then run the **full**
+  integration suite. Existing tests are never deleted or weakened (T5).
+- Before each commit: `ruff check backend/ scripts/` and `ruff format --check backend/ scripts/`.
+  Frontend steps: `npx tsc --noEmit` in every touched app, then a manual check on the nginx build
+  (`npm run build`, `localhost:8080`), where auth and the shared origin match production.
+- Every step updates the READMEs of the directories it touches.
+- If a step shows this doc is wrong, update the doc first, in its own commit, then the code (T3
+  step 6).
+
+**Branches.** Vincent works on `feat/t8-image-support`. Arjun branches `feat/t8-image-display`
+from it once V3 is pushed, and merges `main` into his branch after Vincent's MR lands, so his MR
+shows only his own commits. Each MR is approved by the other member (T2).
+
+**Vincent — `feat/t8-image-support`**
+
+| Step | What | Tests first | Done when |
+|---|---|---|---|
+| V0 | Update `t7-hotspot.md` §4 (real function names, link to this doc) and §9 stage C (pointer to this doc's §3). Docs only | — | Arjun has seen it in the MR |
+| V1 | Migration 005 and models: `images` (D1, unique `(course_id, sha256)`), `questions.prompt_image_id` (FK RESTRICT, index); `Image` model; `Question.prompt_image_id` | — (no route yet) | `alembic upgrade head` then `downgrade -1` then `upgrade head` all succeed on the live stack; full suite still passes |
+| V2 | Pillow in `requirements.txt` (rebuild the backend image); nginx `client_max_body_size 25m`; `image_service.create_image` (D2: sniff, limits, capped read, re-save-on-metadata, savepoint duplicate handling), `get_image`, `image_exists`; `routers/images.py` with `POST /api/images` and `GET /api/images/{id}`; `schemas/image.py` `ImageItem` | 1, 2, 3, 4, 5, 22, and the upload/fetch rows of 6 | Tests pass through nginx (`localhost:8080`), not only on port 8000, so the 25 MB limit is exercised |
+| V3 | Question fields (§5) in `schemas/admin.py`; `question_image_ids`; `content_service` existence + course check replacing `_image_exists` / its use in `_check_hotspot_image`, with `FOR SHARE` ascending-ID locks; `QuestionResponse.prompt_image_id`. **Same commit:** remove the backend dev-image stand-in (`docker-compose.yml` `/dev-images` mount, `tests/unit/test_hotspot_image_check.py`), and switch the stage-B tests in `tests/integration/test_hotspot.py` that use dev image `1` to an image uploaded in their setup — every assertion kept | 9; the switched hotspot tests | Full suite passes with no dev-image folder mounted |
+| V4 | `find_references` (D5 SQL); `GET /api/images` list with batched `reference_count`, `unused` filter, paging, `uploaded_by_name` (`ImagePage`); `DELETE /api/images/{id}` with `FOR UPDATE` locks and the C7 409 | 7, 8, 19, and the list/delete rows of 6 | — |
+| V5 | `POST /api/images/{id}/replace` exactly as D6 steps 1–9 (`ReplaceResult`) | 10, 11, 12, and the replace row of 6 | — |
+| V6 | Game-move image copy in `content_service.update_game` (D3) | 20 | — |
+| V7 | v2 export/import in `content_service` (D7) | 13, 14, 15, 21 | Every `sample_games/*.json` still imports through both the admin and host import routes |
+| V8 | Admin and host `lib/api.ts` image calls; `ImagePicker` (§3 contract) in both apps | — | `tsc` clean; picker lists, uploads and returns an ID on the nginx build |
+| V9 | `ImagesPage` at `/courses/:courseId/images` in both apps; **Images** buttons on admin `CourseDetailPage` and host `CoursePage` | — | Manual check: upload, replace (including a refused case), delete (refused while used), unused filter, as admin and as a course HOST |
+| V10 | Session-log entry, pre-push checks, push, open the MR | — | MR description links this doc and lists §7 test numbers |
+
+**Arjun — `feat/t8-image-display`** (starts after V3 is pushed; A5 needs V8)
+
+| Step | What | Tests first | Done when |
+|---|---|---|---|
+| A1 | `promptImageId` in `_question_payload`; `promptImageId` / `optionImageIds` in both `types/game.ts` | 16 | — |
+| A2 | `QuestionImage` component (player + host copy); host question screen shows the prompt image; option tiles with images on player and host (D8) | — | Manual round on the nginx build with an image prompt and image options, one player and one guest |
+| A3 | Results and game-over thumbnails; "(image)" labels for image-only options (D8) | — | Manual check incl. an image-only option |
+| A4 | `report_service`: hotspot image via C5 (replacing the `_hotspot_image_data_uri` stub), prompt and option images as data URIs, "(image)" labels | 17 | — |
+| A5 | Question editors (admin + host): prompt-image and per-option pickers via `ImagePicker`; hotspot adapter; disabled pickers for unassigned games; admin `Game` type gains `course_id` | — | Manual: author each kind in both apps, then play it |
+| A6 | Remove the Vite `devImages` plugins and `frontend/dev-images/` (checklist in its README) | — | Hotspot authoring and play work in `npm run dev` with uploaded images |
+| A7 | Hotspot tests marked **T8** in `t7-hotspot.md` §10 | 18 | — |
+| A8 | Stage E: hotspot questions in his two T6 games as v2 bundles (after V7) | 15's second half | Both files import through the admin and host routes |
 
 ## 7. Integration tests (T5)
 
@@ -620,7 +670,7 @@ sessions and games first (existing helpers, which already clear Redis), then its
 
 1. Settle §12 → agreed (done 2026-10-04).
 2. Goldfish test in a fresh session → revised (§13, done 2026-10-04).
-3. Turn it into the precise spec (`write-spec`): ordered, test-first steps per owner.
+3. Turn it into the precise spec (`write-spec`): ordered, test-first steps per owner (§6.1, done 2026-10-04).
 4. Implement against it; update the doc first if implementation diverges.
 
 ## 12. Decisions (all settled 2026-10-04)
