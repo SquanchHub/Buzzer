@@ -622,3 +622,186 @@ def test_reference_count_and_delete_check_agree(hapi):
             assert r.json()["message"] == f"Image is used by {n} {word}"
         else:
             assert r.status_code == 204
+
+
+# ── 10–12. Replace (D6) ─────────────────────────────────────────────────────
+
+
+def _replace(hapi, image_id: int, data: bytes, token: str | None = None):
+    return hapi.req(
+        "POST",
+        f"/images/{image_id}/replace",
+        token,
+        files={"file": ("new.png", data, "application/octet-stream")},
+    )
+
+
+def _questions(hapi, game: int, token: str) -> list[dict]:
+    return hapi.ok("GET", f"/host/games/{game}/questions", token)
+
+
+def _hotspot_2to1(image_id: int) -> dict:
+    return {**_hotspot(image_id), "config": {"imageId": image_id, "aspectRatio": 2.0}}
+
+
+def test_replace_repoints_every_kind_and_deletes_the_old_image(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((40, 20), (200, 0, 0)), token)
+    url = f"/host/games/{game}/questions"
+    hapi.ok("POST", url, token, json=_mc(prompt_image_id=old))
+    hapi.ok(
+        "POST",
+        url,
+        token,
+        json=_mc(config={"options": ["", "B"], "optionImageIds": [old, None]}),
+    )
+    hapi.ok("POST", url, token, json=_hotspot_2to1(old))
+
+    r = _replace(hapi, old, png((80, 40), (0, 0, 200)), token)
+    assert r.status_code == 200, r.text
+    result = r.json()
+    new = result["id"]
+    hapi._images.append(new)
+    assert result == {
+        "id": new,
+        "replaced_id": old,
+        "repointed_questions": 3,
+        "old_deleted": True,
+    }
+    assert new != old
+    prompt_q, option_q, hotspot_q = _questions(hapi, game, token)
+    assert prompt_q["prompt_image_id"] == new
+    assert option_q["config"]["optionImageIds"] == [new, None]
+    assert hotspot_q["config"] == {"imageId": new, "aspectRatio": 2.0}
+    assert hapi.req("GET", f"/images/{old}", token).status_code == 404
+
+
+def test_replace_keeps_the_old_image_for_games_the_caller_cannot_edit(hapi):
+    course = hapi.course()
+    _, host1 = hapi.host_of(course)
+    _, host2 = hapi.host_of(course)
+    old = hapi.image(course, png((30, 30), (1, 1, 1)), host1)
+    g1 = hapi.host_game(host1, course, questions=0)
+    g2 = hapi.host_game(host2, course, questions=0)
+    hapi.ok("POST", f"/host/games/{g1}/questions", host1, json=_mc(prompt_image_id=old))
+    hapi.ok("POST", f"/host/games/{g2}/questions", host2, json=_mc(prompt_image_id=old))
+
+    r = _replace(hapi, old, png((30, 30), (2, 2, 2)), host1)
+    assert r.status_code == 200, r.text
+    hapi._images.append(r.json()["id"])
+    assert r.json()["repointed_questions"] == 1
+    assert r.json()["old_deleted"] is False
+    assert _questions(hapi, g1, host1)[0]["prompt_image_id"] == r.json()["id"]
+    assert _questions(hapi, g2, host2)[0]["prompt_image_id"] == old
+
+
+def test_replace_an_unused_image(hapi):
+    course = hapi.course()
+    old = hapi.image(course, png((12, 12), (3, 3, 3)))
+    r = _replace(hapi, old, png((12, 12), (4, 4, 4)))
+    assert r.status_code == 200, r.text
+    hapi._images.append(r.json()["id"])
+    assert r.json()["repointed_questions"] == 0
+    assert r.json()["old_deleted"] is True
+    assert hapi.req("GET", f"/images/{old}").status_code == 404
+
+
+def _image_count(course: int) -> str:
+    return mysql(f"SELECT COUNT(*) FROM images WHERE course_id = {course}").strip()
+
+
+def test_replace_refused_while_a_game_is_live(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((20, 20), (5, 5, 5)), token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=old)
+    )
+    hapi.room(token, course, game)
+    before = _image_count(course)
+    r = _replace(hapi, old, png((20, 20), (6, 6, 6)), token)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "This game has a live session"
+    assert _image_count(course) == before
+    assert _questions(hapi, game, token)[0]["prompt_image_id"] == old
+
+
+def test_replace_refused_when_hotspot_shape_changes(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((40, 20), (7, 7, 7)), token)
+    hapi.ok("POST", f"/host/games/{game}/questions", token, json=_hotspot_2to1(old))
+    before = _image_count(course)
+    r = _replace(hapi, old, png((40, 40), (8, 8, 8)), token)
+    assert r.status_code == 409, r.text
+    assert "hotspot" in r.json()["message"]
+    assert _image_count(course) == before
+    assert _questions(hapi, game, token)[0]["config"]["imageId"] == old
+
+
+def test_replace_with_identical_bytes_is_422(hapi):
+    course = hapi.course()
+    data = png((9, 9), (9, 9, 9))
+    old = hapi.image(course, data)
+    r = _replace(hapi, old, data)
+    assert r.status_code == 422, r.text
+    assert _detail_msg(r) == "The new file is identical to the current image"
+
+
+def test_replace_refused_when_caller_can_edit_none_of_the_uses(hapi):
+    course = hapi.course()
+    _, owner = hapi.host_of(course)
+    _, cohost = hapi.host_of(course)
+    old = hapi.image(course, png((14, 14), (10, 10, 10)), owner)
+    game = hapi.host_game(owner, course, questions=0)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", owner, json=_mc(prompt_image_id=old)
+    )
+    before = _image_count(course)
+    r = _replace(hapi, old, png((14, 14), (11, 11, 11)), cohost)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "You can't edit the question that uses this image"
+    assert _image_count(course) == before
+
+
+def test_replace_invalid_file_is_422(hapi):
+    old = hapi.image(hapi.course(), png((15, 15), (12, 12, 12)))
+    r = _replace(hapi, old, b"not an image")
+    assert r.status_code == 422
+    assert _detail_msg(r) == "File is not a PNG, JPEG or WebP image"
+
+
+def test_replace_with_a_duplicate_of_another_image_reuses_it(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((16, 16), (13, 13, 13)), token)
+    other_bytes = png((16, 16), (14, 14, 14))
+    other = hapi.image(course, other_bytes, token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=old)
+    )
+    before = int(_image_count(course))
+    r = _replace(hapi, old, other_bytes, token)
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == other
+    assert r.json()["old_deleted"] is True
+    assert int(_image_count(course)) == before - 1  # old gone, nothing new
+    assert _questions(hapi, game, token)[0]["prompt_image_id"] == other
+
+
+def test_replace_refused_for_non_hosts_and_unknown_images(hapi):
+    course, other = hapi.course(), hapi.course()
+    old = hapi.image(course, png((17, 17), (15, 15, 15)))
+    player_id, player = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    _, other_host = hapi.host_of(other)
+    for token in (player, other_host):
+        assert (
+            _replace(hapi, old, png((17, 17), (16, 16, 16)), token).status_code == 403
+        )
+    assert _replace(hapi, 999999999, png()).status_code == 404

@@ -27,6 +27,7 @@ from ..common.exceptions import ConflictError, RequestBodyInvalidError
 from ..models.game import Game, Question
 from ..models.image import Image
 from ..models.user import User
+from ..schemas.admin import OPTION_IMAGE_TYPES
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_SIDE = 4096
@@ -184,7 +185,7 @@ def question_image_fields(
 
     add(("prompt_image_id",), prompt_image_id)
     if isinstance(config, dict):
-        if question_type in ("multiple_choice", "multi_select"):
+        if question_type in OPTION_IMAGE_TYPES:
             ids = config.get("optionImageIds")
             if isinstance(ids, list):
                 for i, value in enumerate(ids):

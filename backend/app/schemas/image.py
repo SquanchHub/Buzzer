@@ -24,3 +24,10 @@ class ImagePage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ReplaceResult(BaseModel):
+    id: int  # the image the questions now use
+    replaced_id: int
+    repointed_questions: int
+    old_deleted: bool

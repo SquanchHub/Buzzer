@@ -18,8 +18,9 @@ from ..common.exceptions import NotFoundError
 from ..database import DbSession
 from ..models.image import Image
 from ..models.user import User
-from ..schemas.image import ImageItem, ImagePage
-from ..services import game_service, image_service
+from ..redis_client import get_redis
+from ..schemas.image import ImageItem, ImagePage, ReplaceResult
+from ..services import content_service, game_service, image_service
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -106,3 +107,16 @@ async def delete_image(
     image = await _managed_image(db, user, image_id)
     await image_service.delete_image(db, image)
     return Response(status_code=204)
+
+
+@router.post("/{image_id}/replace", response_model=ReplaceResult)
+async def replace_image(
+    image_id: int,
+    file: Annotated[UploadFile, File(description="PNG, JPEG or WebP, at most 2 MB")],
+    user: Annotated[User, Depends(require_user)],
+    db: DbSession,
+    redis=Depends(get_redis),
+) -> dict:
+    image = await _managed_image(db, user, image_id)
+    data = await file.read(image_service.MAX_BYTES + 1)
+    return await content_service.replace_image(db, redis, user, image, data)

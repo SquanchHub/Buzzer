@@ -12,6 +12,7 @@ Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over t
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import bleach
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..common.exceptions import ConflictError, NotFoundError, RequestBodyInvalidError
 from ..models.course import Course, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
+from ..models.image import Image
 from ..models.session import GameSession, SessionScore
 from ..models.user import User
 from ..schemas.admin import (
@@ -515,3 +517,108 @@ async def import_game(
     await db.flush()
     logger.info("game_imported", game_id=game.id, questions=len(questions), by=actor.id)
     return game
+
+
+# ---------------------------------------------------------------------------
+# Image replace (docs/plans/t8-image-support.md D6) — here, not in image_service,
+# because it needs games, questions and the live check.
+# ---------------------------------------------------------------------------
+
+# Hotspot targets are fractions of the image, so they only stay put if the new image
+# has the same shape (relative aspect-ratio difference at most this).
+_HOTSPOT_SHAPE_TOLERANCE = 0.01
+
+
+async def _editable_game_ids(
+    db: AsyncSession, actor: User, course_id: int, game_ids: set[int]
+) -> set[int]:
+    """The games among `game_ids` the actor may edit: all of them for an admin; for a host
+    the T4 rule — a game grant and HOST of the game's course (the caller checked HOST of
+    `course_id`, and a question may only use its own course's images)."""
+    if actor.role == "ADMIN" or not game_ids:
+        return set(game_ids)
+    rows = await db.execute(
+        select(Game.id)
+        .join(UserGameAccess, UserGameAccess.game_id == Game.id)
+        .where(
+            Game.id.in_(game_ids),
+            Game.course_id == course_id,
+            UserGameAccess.user_id == actor.id,
+        )
+    )
+    return {gid for (gid,) in rows}
+
+
+def _repointed(question: Question, old: int, new: int, aspect: float) -> dict:
+    """A new config dict with `old` replaced by `new` (never mutate the loaded JSON)."""
+    config = dict(question.config or {})
+    if question.type in image_service.OPTION_IMAGE_TYPES and isinstance(
+        config.get("optionImageIds"), list
+    ):
+        config["optionImageIds"] = [
+            new if v == old else v for v in config["optionImageIds"]
+        ]
+    if question.type == "hotspot" and config.get("imageId") == old:
+        config["imageId"] = new
+        config["aspectRatio"] = aspect
+    return config
+
+
+async def replace_image(
+    db: AsyncSession, redis: Redis, actor: User, old: Image, data: bytes
+) -> dict:
+    """D6 steps 2–9. `old` is locked and the actor may manage it. Any refusal raises
+    before anything is written, and get_db rolls back the transaction anyway."""
+    stored, _, width, height = image_service.normalize(data)
+    if hashlib.sha256(stored).hexdigest() == old.sha256:
+        raise RequestBodyInvalidError.for_field(
+            "file", "The new file is identical to the current image"
+        )
+
+    references = await image_service.find_references(db, old.id)
+    editable = await _editable_game_ids(
+        db, actor, old.course_id, {gid for _, gid in references}
+    )
+    mine = [qid for qid, gid in references if gid in editable]
+    if references and not mine:
+        n = len(references)
+        raise ConflictError(
+            "You can't edit the question that uses this image"
+            if n == 1
+            else f"You can't edit any of the {n} questions that use this image"
+        )
+    for game_id in sorted(editable):
+        await _assert_not_live(db, redis, game_id)
+
+    questions = list(
+        (await db.execute(select(Question).where(Question.id.in_(mine)))).scalars()
+    )
+    old_ratio, new_ratio = old.width / old.height, width / height
+    if any(q.type == "hotspot" for q in questions) and (
+        abs(new_ratio - old_ratio) / old_ratio > _HOTSPOT_SHAPE_TOLERANCE
+    ):
+        raise ConflictError(
+            "A hotspot question uses this image, and the new image has a different "
+            "shape: its target would move"
+        )
+
+    target, _ = await image_service.create_image(db, old.course_id, data, actor.id)
+    for q in questions:
+        if q.prompt_image_id == old.id:
+            q.prompt_image_id = target.id
+        q.config = _repointed(q, old.id, target.id, target.width / target.height)
+    await db.flush()
+
+    old_deleted = not await image_service.find_references(db, old.id)
+    if old_deleted:
+        await db.delete(old)
+        await db.flush()
+    logger.info(
+        "image_replaced", old=old.id, new=target.id, questions=len(mine), by=actor.id
+    )
+    return {
+        "id": target.id,
+        "replaced_id": old.id,
+        "repointed_questions": len(mine),
+        "old_deleted": old_deleted,
+    }

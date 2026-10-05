@@ -29,7 +29,9 @@ Other code only touches the module-level `router` object in each file
   `Cache-Control: private, max-age=31536000, immutable` and `nosniff`, neither on a 404);
   `GET /images?course_id=&page=&unused=` (same access as upload; `ImagePage` with each image's
   `reference_count`); `DELETE /images/{id}` (admin or HOST of the image's course, else 403; 404
-  unknown; 409 while any question uses it). Upload responses also carry `reference_count`.
+  unknown; 409 while any question uses it); `POST /images/{id}/replace` (same access; multipart
+  `file` → `ReplaceResult`, via `content_service.replace_image`). Upload responses also carry
+  `reference_count`.
 
 - **auth.py** — `POST /login` (username/password → access token + `refresh_token` cookie;
   `{netid}` dev-only fallback → temp token), `GET /oauth2-callback` (reads Traefik's

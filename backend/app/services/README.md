@@ -119,6 +119,12 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     every structural problem is a 422 `RequestBodyInvalidError` on `body.file` with the old admin
     route's message text (§6.2.5 b), raised before anything is written; then `create_game`
     (same auto-grant) and the questions in bundle order, prompts sanitized.
+  - `replace_image(db, redis, actor, old, data)` (T8 D6): never changes bytes under an id — the
+    new file becomes a new (or an identical existing) row in the same course, the questions in
+    games the actor may edit are repointed (prompt, options, hotspot with its `aspectRatio`), and
+    the old row is deleted once unused. 422 identical bytes; 409 if the actor can edit none of the
+    using questions, if one of those games is live, or if a hotspot uses it and the shape changes
+    by more than 1%.
 
 ## Depends on
 
