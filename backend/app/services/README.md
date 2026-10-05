@@ -96,11 +96,10 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     `QuestionCreate` (`RequestBodyInvalidError` → 422 `VALIDATION_ERROR`); `delete_question` is 409
     if any answer was recorded for it, then re-packs `order_index` to 0..n-1;
     `reorder_questions` (409 unless exactly the game's ids) is the **only** way to move a question.
-  - `sanitize_prompt` / `PROMPT_TAGS` — bleach, keeping `b i br u`. `routers/admin.py` still has
-    its own copy until phase 3.
-  - `export_game(db, game_id)` → `(filename, bytes)`: the version-1 bundle, byte-identical to the
-    admin route's export. `import_game(db, actor, raw, course_id)` → `Game`: 404 unknown course;
-    every structural problem is a 422 `RequestBodyInvalidError` on `body.file` with the admin
+  - `sanitize_prompt` / `PROMPT_TAGS` — bleach, keeping `b i br u`; the only sanitizer.
+  - `export_game(db, game_id)` → `(filename, bytes)`: the version-1 bundle, used by both routers.
+    `import_game(db, actor, raw, course_id)` → `Game`: 404 unknown course;
+    every structural problem is a 422 `RequestBodyInvalidError` on `body.file` with the old admin
     route's message text (§6.2.5 b), raised before anything is written; then `create_game`
     (same auto-grant) and the questions in bundle order, prompts sanitized.
 
@@ -124,8 +123,8 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   `middleware.py` (`auth_service`).
 - `backend/app/common/dependencies.py` — `auth_service.decode_token`, `get_user_by_id`;
   `game_service.assert_host_can_use_course` / `assert_host_can_use_game`.
-- `backend/app/routers/admin.py` — `content_service.has_live_session` (phase 3 switches the
-  rest of the admin game/question handlers to `content_service`).
+- `backend/app/routers/admin.py` — `content_service` for every game, question, import and
+  export handler (T4 phase 3), like `routers/host.py`.
 - `backend/app/main.py` — `bootstrap.bootstrap_admin` in the lifespan hook.
 - `tests/unit/test_auth.py` — token creation functions.
 

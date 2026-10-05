@@ -9,7 +9,8 @@ a Tailwind class-name helper. The admin app has no Socket.io connection at all.
 | File | Purpose |
 |---|---|
 | `api.ts` | `api.get/post/put/patch/delete` JSON wrappers, `api.postForm` for multipart uploads, `api.download` for file downloads; all prefix `/api`, attach the bearer token, and throw readable errors. |
-| `utils.ts` | `cn(...classes)` — `clsx` + `tailwind-merge`. Identical to the host app's copy. |
+| `utils.ts` | `cn(...classes)` — `clsx` + `tailwind-merge`, as in the host app; plus `tokenRole(token)`, the JWT's `role` claim (null if missing, malformed or expired), decoded unverified for `RequireAdmin` / `LoginPage`. |
+| `images.ts` | `loadImageUrl(id)` → blob URL for `GET /api/images/{id}` with the bearer token, for `HotspotEditor`. Copy of the host/player `lib/images.ts` — keep all three in sync. |
 
 ## Key entry points
 
@@ -25,7 +26,7 @@ a Tailwind class-name helper. The admin app has no Socket.io connection at all.
   Used for game export, session CSV export and the HTML session report. (Plain `<a href>` links
   wouldn't work because they can't carry the bearer header.)
 - `errorMessage(body, status)` (internal) — turns any backend error body into a message, in order:
-  `message` (app errors) → string `detail` (`HTTPException`) → array `detail` joined as
+  `message` (app errors) → string `detail` (FastAPI's own `HTTPException`s) → array `detail` joined as
   `field: msg; …` (422 validation) → `error` code → `HTTP <status>`.
   See `backend/app/common/README.md` for the shapes.
 

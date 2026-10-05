@@ -25,7 +25,7 @@ import httpx
 import pytest
 
 from .conftest import _REPO_ROOT, create_guest_tokens, create_room
-from .host_helpers import hapi  # noqa: F401 — fixture
+from .host_helpers import hapi, mysql  # noqa: F401 — fixture
 
 # Aliased so pytest doesn't try to collect the Test-prefixed class from this module.
 from .engine.socket_client import TestSocketClient as SocketClient
@@ -491,11 +491,22 @@ def test_host_update_to_unknown_image_is_422(hapi):  # noqa: F811
 
 
 def test_host_update_checks_image_even_when_patch_omits_it(hapi):  # noqa: F811
-    """§13.2 G7: a question with a dangling imageId (possible through the admin route
-    until T4 phase 3) can't be edited through the host route until the image is fixed."""
+    """§13.2 G7: a question with a dangling imageId can't be edited through the host
+    route until the image is fixed. Since T4 phase 3 the admin route runs the same image
+    check, so the API can't create one; it is made to dangle in MySQL instead, as when
+    a stored image is later deleted."""
     token, _, game = _host_game(hapi)
-    q = hapi.ok(
-        "POST", f"/admin/games/{game}/questions", json=_host_body(UNKNOWN_IMAGE)
+    # The admin route now refuses a missing image too (T4 phase 3, content_service).
+    _image_error(
+        hapi.req(
+            "POST", f"/admin/games/{game}/questions", json=_host_body(UNKNOWN_IMAGE)
+        ),
+        UNKNOWN_IMAGE,
+    )
+    q = hapi.ok("POST", f"/admin/games/{game}/questions", json=_host_body(DEV_IMAGE))
+    mysql(
+        "UPDATE questions SET config = JSON_SET(config, '$.imageId', "
+        f"{UNKNOWN_IMAGE}) WHERE id = {q['id']};"
     )
     url = f"/host/games/{game}/questions/{q['id']}"
     _image_error(hapi.req("PUT", url, token, json={"prompt": "Edited"}), UNKNOWN_IMAGE)

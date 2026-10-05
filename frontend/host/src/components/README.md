@@ -72,11 +72,12 @@ network, sockets, or global state; both hotspot components fetch their image via
 
 ## Gotchas found while reading
 
-- **Hotspot drawing exists three times, soon four.** `HotspotView.tsx` repeats the layout/ring
+- **Hotspot drawing exists four times.** `HotspotView.tsx` repeats the layout/ring
   maths of `frontend/player/src/components/HotspotCanvas.tsx` (the apps share no code), and
   `HotspotEditor.tsx` repeats `HotspotView`'s image loading and letterbox maths, because the
-  editor may import only `lib/images`, `lib/utils` and `ui/` (§13.2). `HotspotEditor` gets an
-  admin copy in T4 phase 3. A change to the layout rule must be made in every copy.
+  editor may import only `lib/images`, `lib/utils` and `ui/` (§13.2). `HotspotEditor` has an
+  identical admin copy (`frontend/admin/src/components/`, T4 phase 3). A change to the layout
+  rule must be made in every copy.
 
 - **Copies in each app:** `button`, `card` and `input` are byte-identical to the copies in
   `frontend/admin/src/components/ui/`. They differ from `frontend/player/src/components/ui/`

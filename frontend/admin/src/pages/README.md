@@ -1,8 +1,9 @@
 # frontend/admin/src/pages/
 
 One React component per Admin app screen. `frontend/admin/src/App.tsx` wraps every route except
-`/login` in `RequireAdmin` (token present) and `AdminLayout` (left sidebar: Courses, Users, Games,
-Guests, Sessions, Logout). Pages fetch on mount with `api` from `lib/api.ts`, keep everything in
+`/login` in `RequireAdmin` (token present **and** its `role` claim is ADMIN) and `AdminLayout`
+(admin-first sidebar: **Administration** — Users, Courses, Guests; then a smaller **Content &
+hosting** group — Games, Sessions; footer links to the Host and Player apps, then Logout). Pages fetch on mount with `api` from `lib/api.ts`, keep everything in
 local `useState`, and re-fetch after each mutation. There is no shared store, no socket, and no
 pagination.
 
@@ -10,17 +11,18 @@ pagination.
 
 | File | Route | Purpose |
 |---|---|---|
-| `LoginPage.tsx` | `/login` | Username/password form → `POST /auth/login`, stores `token`, goes to `/courses`. |
-| `CoursesPage.tsx` | `/courses` | List, create and rename courses; link to each course's roster. |
+| `LoginPage.tsx` | `/login` | Username/password form → `POST /auth/login`; stores `token` and goes to `/users` only for an ADMIN token (a non-admin login is refused without storing it, so the shared token isn't replaced). Shows `RequireAdmin`'s redirect message. |
+| `CoursesPage.tsx` | `/courses` | List, create and rename courses; each name links to its detail page; link to each course's roster. |
+| `CourseDetailPage.tsx` | `/courses/:courseId` | Rename; HOST/PLAYER members from `GET /admin/courses/:id/access` with role change, removal (confirms when a HOST loses the role, since their game grants stop working) and an add-user form (USER accounts only); roster link; the course's games (`/admin/games` filtered by `course_id` in the browser). |
 | `RosterPage.tsx` | `/courses/:courseId/roster` | Roster table with inline edit (name, netid, email, active), plus a client-side CSV column-mapping import wizard. |
 | `UsersPage.tsx` | `/users` | List non-guest users; create local accounts. Row click → user detail. |
-| `UserDetailPage.tsx` | `/users/:userId` | Edit a user (username, display name, email, password, role USER/ADMIN), delete, grant/revoke course access (HOST or PLAYER) and game access. |
+| `UserDetailPage.tsx` | `/users/:userId` | Edit a user (username, display name, email, password, role USER/ADMIN), delete, grant/revoke course access (HOST or PLAYER) and game access. The game picker groups games by course and disables courses the user doesn't HOST (and unassigned games), since a grant there would be refused (409) or dead (D1); granted games whose course they no longer host are marked inactive. Game grants are posted one at a time and failures are listed per game. |
 | `GuestsPage.tsx` | `/guests` | List guest accounts, merge a guest into a netid, delete guests. |
-| `GamesPage.tsx` | `/games` | List, create, edit and delete games; import a game JSON file. Create requires a course; Import needs a target course picked first (sent as the `course_id` form field). Rows show the game's course or "Unassigned". The edit form cannot move a game yet (the API supports it). |
-| `QuestionEditorPage.tsx` | `/games/:gameId/questions` | Add, edit, delete and reorder a game's questions; export the game as JSON. |
+| `GamesPage.tsx` | `/games` | List, create, edit and delete games; import a game JSON file. Create requires a course; Import needs a target course picked first (sent as the `course_id` form field). A filter shows all games, one course's, or Unassigned ones; each row links its course (unassigned games are highlighted). The edit form has a course picker (sends `course_id` only when it changes; the live-session 409 shows inside the form). |
+| `QuestionEditorPage.tsx` | `/games/:gameId/questions` | Add, edit, delete and reorder a game's questions, including hotspot questions via `components/HotspotEditor` (T7 stage D, ported from the host editor's stage B branches); export the game as JSON. |
 | `SessionsPage.tsx` | `/sessions` | All sessions with a status filter; per-session HTML report, CSV export (Canvas or raw options), delete. |
 
-Unknown routes redirect to `/courses`.
+Unknown routes redirect to `/users`.
 
 ## Key entry points
 
@@ -53,10 +55,14 @@ Unknown routes redirect to `/courses`.
 
 ## Gotchas found while reading
 
-- **`RequireAdmin` doesn't check the role.** It only checks that a token exists, so a USER-role
-  account can log in and see the full sidebar; every request then fails with 403.
+- **`RequireAdmin`'s role check is UX only.** It decodes the JWT's `role` claim without verifying
+  it (`lib/utils.ts` `tokenRole`), so a role changed after login shows up only at the next login;
+  the server's `require_admin` is what enforces access.
+- **"Open Player app" can sign the admin out.** All apps share `localStorage.token` under nginx;
+  the player app's "Play Again" removes it. In `npm run dev` the footer links don't resolve (each
+  app has its own port).
 - **Literal `…` / `·` on screen.** JSX text and string attributes don't process JS
-  escapes, so `Loading…` (UsersPage, GuestsPage, GamesPage, QuestionEditorPage),
+  escapes, so `Loading…` (UsersPage, GuestsPage, QuestionEditorPage),
   `placeholder="Question text…"`, and `{…}s · {…}pts` / `(±{…} edit distance)` in
   the question list render the backslash sequence literally. Escapes inside `{'…'}` expressions are fine.
 - **Question editor quirks:** blank multiple-choice options are sent as-is (the backend accepts empty
@@ -64,9 +70,9 @@ Unknown routes redirect to `/courses`.
   summed over the unfiltered list. Switching `type` while editing keeps the other types' hidden state.
   Each new question type (T7) needs a form branch, a `build*Payload`, `questionToForm` and
   `formToPayload` cases, a `typeLabel` entry, and a list-view preview.
-- **Delete paths that can fail:** deleting a question that has already been played errors at the DB
-  (see `backend/app/models/README.md`); deleting a game wipes all its sessions and scores after a
-  single `confirm()`.
+- **Delete paths:** deleting a played question is refused (409 "Question has recorded answers");
+  deleting a game is refused while it has a live session (409), and otherwise wipes all its
+  sessions and scores after a single `confirm()`. Question edits are also 409 while the game is live.
 - **Raw CSV export ignores `per_question`** — the page sends it, but the backend's raw format always
   emits per-question columns.
 - **T4 overlap:** roster, game and question management and session downloads are exactly the host

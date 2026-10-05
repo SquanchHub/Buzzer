@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Users, Pencil } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
@@ -154,7 +154,9 @@ export default function CoursesPage() {
           {courses.map((c) => (
             <Card key={c.id} className="flex items-center justify-between px-6 py-4">
               <div>
-                <p className="font-semibold text-slate-100">{c.name}</p>
+                <Link to={`/courses/${c.id}`} className="font-semibold text-slate-100 hover:underline">
+                  {c.name}
+                </Link>
                 <p className="text-slate-400 text-sm">{c.semester}</p>
               </div>
               <div className="flex gap-2">

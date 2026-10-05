@@ -15,7 +15,7 @@ from ..common.dependencies import (
 )
 from ..common.exceptions import ConflictError, NotFoundError
 from ..config import settings
-from ..database import get_db
+from ..database import DbSession
 from ..models.course import Course, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
@@ -45,7 +45,7 @@ logger = structlog.get_logger()
 @router.get("/my-courses", response_model=list[MyCourseItem])
 async def my_courses(
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[dict]:
     """
     Returns courses the authenticated user can host.
@@ -78,7 +78,7 @@ async def my_courses(
 @router.get("/my-games", response_model=list[MyGameItem])
 async def my_games(
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[Game]:
     """
     Returns games the authenticated user can run.
@@ -108,7 +108,7 @@ async def my_games(
 @router.get("/my-active-sessions", response_model=list[ActiveSessionItem])
 async def my_active_sessions(
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[dict]:
     """Returns LOBBY/IN_PROGRESS sessions hosted by the current user."""
     result = await db.execute(
@@ -141,7 +141,7 @@ async def my_active_sessions(
 @router.get("/my-sessions", response_model=list[MySessionItem])
 async def my_sessions(
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[dict]:
     """COMPLETED sessions hosted by the current user, newest first (T4 §6.2.4) — the
     host app's Sessions page lists them with their downloads."""
@@ -187,7 +187,7 @@ async def my_sessions(
 async def delete_session(
     session_id: str,
     user: Annotated[User, Depends(require_session_host)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redis=Depends(get_redis),
 ) -> None:
     """Permanently delete a session and all associated scores. Host or admin only."""
@@ -212,7 +212,7 @@ async def delete_session(
 async def create_room(
     body: RoomCreateRequest,
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redis=Depends(get_redis),
 ) -> dict:
     session = await game_service.create_room(
@@ -247,7 +247,7 @@ async def ping_room(
 async def get_room(
     room_code: str,
     _: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redis=Depends(get_redis),
 ) -> dict:
     """Get session metadata for reconnection. Any authenticated user can call this."""
@@ -283,7 +283,7 @@ async def get_room(
 async def list_session_guests(
     session_id: str,
     _: Annotated[User, Depends(require_session_host)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[dict]:
     """List unmerged guest players from a completed session."""
     from ..models.session import SessionScore
@@ -314,7 +314,7 @@ async def merge_guest_for_session(
     session_id: str,
     body: dict,
     _: Annotated[User, Depends(require_session_host)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     """Host-initiated guest merge, scoped to THIS session: re-attribute the guest's answers
     in this session to the real account with `target_netid`.
@@ -387,9 +387,6 @@ async def merge_guest_for_session(
     )
     if not remaining:
         await db.delete(guest)
-    # Commit here rather than in get_db, whose commit runs after the response is sent:
-    # a failure there would turn this merge into a silent no-op behind a 204.
-    await db.commit()
     logger.info(
         "guest_merged_by_host",
         guest_id=guest_user_id,
@@ -409,7 +406,7 @@ async def merge_guest_for_session(
 async def export_session_scores(
     session_id: str,
     _: Annotated[User, Depends(require_session_host)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> StreamingResponse:
     """Download session scores as a CSV. Accessible by the session host or an admin,
     once the session is COMPLETED (T4 D9)."""
@@ -430,7 +427,7 @@ async def export_session_scores(
 async def session_report(
     session_id: str,
     _: Annotated[User, Depends(require_session_host)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Response:
     """Download the standalone, PII-free HTML report of a COMPLETED session (T4 D9)."""
     from ..services.report_service import build_session_report

@@ -58,9 +58,8 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
   `QuestionEditorPage.tsx` are ports of `frontend/admin/src/pages/` files; each
   starts with a comment listing what changed. A fix in one copy must be repeated in the other.
   Inherited from admin: after a roster import the result card must be dismissed with its icon-only
-  ✕ (no accessible label) before "Upload CSV" appears again. The hotspot type is the exception
-  running the other way: it exists only in the host copy until T4 phase 3 copies `HotspotEditor`
-  and the page's hotspot branches into admin.
+  ✕ (no accessible label) before "Upload CSV" appears again. The hotspot branches (T7 stage B) were
+  copied into the admin editor in T4 phase 3, so they are now in both copies too.
 - **A hotspot question can't be saved (or edited) without a loadable image.** In dev that means
   `frontend/dev-images/{id}.png` (served by Vite, and checked by the backend through a dev-only
   mount); on nginx/builds no image exists before T8, so the editor keeps Save disabled. A stored
