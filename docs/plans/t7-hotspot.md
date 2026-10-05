@@ -135,8 +135,16 @@ implements against it.
 | **C7** | **Refuse deleting a referenced image:** deleting an image that any question references is a 409. For hotspot, "references" means a `questions` row with `type = 'hotspot'` and `config.imageId` equal to the image's ID (a MySQL JSON lookup, e.g. `JSON_EXTRACT(config, '$.imageId') = :id`). Filter on `type`: other types' `config` may contain integers that are not image IDs. T8 adds its own image fields to the same check. | Otherwise a hotspot question breaks mid-game or in a later session, the same class of problem as T4 D6. |
 | **C8** | **Request size:** nginx (`nginx/nginx.dev.conf`) sets no `client_max_body_size`, so `/api/` uploads are capped at nginx's 1 MB default. T8 picks the limit; please set it so a v2 bundle containing images up to your max size (× ~1.37 for base64) still passes, or tell me the cap and I'll document it. | v2 bundles are uploaded through the same proxy. T8's per-image size cap is also what H11 relies on to keep a single image load sub-second; tell me the number so H11 can cite it. |
 
-Names in C4–C6 are suggestions; the spec only depends on the behaviour. When T8's design is
-written, link it here and replace "e.g." names with the real ones.
+**T8's answer** (`docs/plans/t8-image-support.md`, which now specifies all image support,
+including this design's stage C image parts):
+- C4 → `image_service.image_exists(db, image_id) -> bool`; `content_service` additionally checks
+  the image belongs to the game's course (T8 D3: images belong to a course).
+- C5 → `image_service.get_image(db, image_id) -> (content_type, bytes) | None`.
+- C6 → `image_service.create_image(db, course_id, data, uploaded_by) -> (Image, created)`: no
+  `content_type` parameter (the bytes decide), and it needs the course (T8 D2, D4).
+- C7 → deleting a referenced image is a 409; references also include T8's prompt and option
+  images (T8 D5).
+- C8 → per-image cap **2 MB**; nginx `client_max_body_size 25m` (T8 D2). H11 can cite 2 MB.
 
 **Not required from T8:** an image picker UI is welcome (HotspotEditor will accept one, §7.9),
 but HotspotEditor ships with a fallback numeric "Image ID" field so hotspot doesn't block on it.
@@ -514,7 +522,7 @@ undesigned). Order of work:
 |---|---|---|
 | **A — builds now** | Immediately, on a branch from `main` | §7.1 schema branch; §7.2 `hotspot_band`, scoring, distribution, summaries; §7.4 gateway reveal, answer check, results `taps`; §7.5 report renderer (image part stubbed to "image unavailable"); §7.6–7.8 player/host canvases and types; §7.10 simulator and engine scoring. Front-end canvases can be developed against any locally served test image. |
 | **B — waits on T4 phase 2** | After T4 phase 2's `content_service` and host editor exist (same owner; may be done in the same branch series) | §7.3 image-existence checks in create/update; §7.9 HotspotEditor in the host editor. |
-| **C — waits on T8** | After T8 merges with C1–C8 satisfied | Wire C3 into `images.ts`, C4 into §7.3, C5 into the report and export, C6 into import; §6 v2 export/import; every integration test that needs a real hotspot question (§10, marked **T8**). Sample games stay version 1 (§8). |
+| **C — waits on T8** | After T8 merges with C1–C8 satisfied | **Superseded by `docs/plans/t8-image-support.md` §3 and §6.1**: Vincent's T8 work does C4 in §7.3 (the real existence check), C6 into import and §6 v2 export/import (T8 V3, V7); Arjun does C5 into the report, removing the dev-image stand-ins, and every integration test that needs a real hotspot question (§10, marked **T8**) (T8 A4, A6, A7). C3 in `images.ts` is already done. Sample games stay version 1 (§8). |
 | **D — T4 phase 3 (Vincent)** | After stage B | Copy HotspotEditor into the admin editor; admin router delegating to `content_service` gives admins the hotspot existence check, update re-validation, and version 2 import/export. |
 | **E — sample games** | After **both** C and D | §8: add the hotspot question to Arjun's two games and convert them to version 2; §10 test 14's second half. |
 
