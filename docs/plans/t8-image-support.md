@@ -1,7 +1,6 @@
 # T8 — Image support in questions
 
-Status: **draft under design discussion — not agreed, not goldfish-tested.** §12 lists what is
-decided and what is still open. Owners: **Vincent Zhou** (image storage, upload, management,
+Status: **agreed design, pre-Goldfish** (all decisions in §12 settled 2026-10-04). Owners: **Vincent Zhou** (image storage, upload, management,
 export/import) and **Arjun Kaneriya** (canvas and putting images into questions) — §3 draws the
 line and the contract between the two halves.
 
@@ -195,8 +194,8 @@ course's HOSTs manage it; a question may only use images from its game's course.
   **copies** every image the game uses into the new course (reusing an identical image already
   there, D2) and repoints the game's questions, all in the move's transaction. The originals stay
   in the old course. The move is already refused while the game is live (T4 D7), so no player is
-  mid-question. Alternative: refuse the move while the game uses images — simpler, but it takes
-  away an admin feature T4 just shipped (open question §12 Q5).
+  mid-question. **Decided (§12 Q5).** Rejected alternative: refuse the move while the game uses
+  images — simpler, but it takes away an admin feature T4 just shipped.
 - **Reading bytes** stays open to every logged-in token (C3); course ownership controls only
   management and which questions may use an image.
 
@@ -327,9 +326,10 @@ of `{ref, content_type, data_base64}`, and refs instead of IDs — extended to T
   transaction. Any error → 422 naming the 1-based question or image, and nothing is created.
 - Unmodified version-1 files in `sample_games/` keep importing (T6 requirement).
 
-This changes Arjun's §9 stage C: the existence check and v2 move to T8; he keeps the report image,
-removing the dev-image stand-ins, and the hotspot tests (§3). `t7-hotspot.md` §9 should be updated
-to point here once this doc is agreed.
+**All image support is specified here (§12 Q6).** This doc supersedes the image parts of
+`t7-hotspot.md` §9 stage C: the existence check and v2 are Vincent's; the report image, removing
+the dev-image stand-ins and the hotspot tests that need real images are Arjun's, under T8 (§3).
+`t7-hotspot.md` §9 stage C should be updated to point here.
 
 ## 5. Data shapes and validation
 
@@ -480,7 +480,7 @@ New files under `tests/integration/`, run against the live stack.
 
 ## 11. Process
 
-1. Settle §12 → mark this doc "agreed"; Arjun reviews §3 and D7.
+1. Settle §12 → mark this doc "agreed" (done 2026-10-04).
 2. Turn it into the precise spec (`write-spec`): ordered, test-first steps per owner.
 3. Goldfish test in a fresh session; revise; record what changed in a "Goldfish revisions" section.
 4. Commit the doc, then implement against it; update the doc first if implementation diverges.
@@ -496,10 +496,5 @@ New files under `tests/integration/`, run against the live stack.
 | Q3 | How does "replace" work? | Upload-and-repoint (D6 option A) |
 | Q4 | Re-save uploads that carry metadata? | Yes (D2) |
 | — | Who builds what? | Vincent: image upload and management; Arjun: canvas and image integration (§3) |
-
-**Open:**
-
-| # | Question | Recommendation | Main alternative |
-|---|---|---|---|
-| Q5 | What happens to a game's images when an admin moves it to another course? | Copy them into the new course and repoint (D3) | Refuse the move while the game uses images: simpler, but removes part of T4's admin move |
-| Q6 | Does Arjun agree to §3's split and D7 taking v2 and the existence check out of his stage C? | Confirm before either of us implements | Adjust §3 to whatever he proposes |
+| Q5 | What happens to a game's images when an admin moves it to another course? | Copy them into the new course and repoint (D3) |
+| Q6 | Where is image work specified? | All image support is handled by T8 (this doc), including the image parts of hotspot stage C (D7, §3) |
