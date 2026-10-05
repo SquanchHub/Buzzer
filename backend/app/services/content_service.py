@@ -33,6 +33,7 @@ from ..schemas.admin import (
     GameResponse,
     GameUpdate,
     HostGameItem,
+    OPTION_IMAGE_TYPES,
     HostGameUpdate,
     QuestionCreate,
     QuestionUpdate,
@@ -152,6 +153,7 @@ async def update_game(
         # room would end up running in a course that no longer owns the game.
         if await has_live_session(db, redis, game_id):
             raise ConflictError("This game has a live session")
+        await _move_images(db, game_id, new_course)
         game.course_id = new_course
     if patch.title is not None:
         game.title = patch.title
@@ -519,6 +521,38 @@ async def import_game(
     return game
 
 
+async def _move_images(db: AsyncSession, game_id: int, course_id: int) -> None:
+    """A question may only use its game's course's images (T8 D3), so a game moving to
+    another course takes copies of every image it uses, and its questions are repointed.
+    The originals stay in the old course."""
+    questions = await _questions(db, game_id)
+    used: set[int] = set()
+    for q in questions:
+        used |= image_service.question_image_ids(q.type, q.config, q.prompt_image_id)
+    mapping = await image_service.copy_to_course(db, used, course_id)
+    for q in questions:
+        if q.prompt_image_id in mapping:
+            q.prompt_image_id = mapping[q.prompt_image_id]
+        q.config = _remapped(q, mapping)
+    await db.flush()
+
+
+def _remapped(question: Question, mapping: dict[int, int]) -> dict:
+    """A new config dict with option and hotspot image ids mapped (never mutate the
+    loaded JSON in place)."""
+    config = dict(question.config or {})
+    if question.type in OPTION_IMAGE_TYPES and isinstance(
+        config.get("optionImageIds"), list
+    ):
+        config["optionImageIds"] = [
+            mapping.get(v, v) if v is not None else None
+            for v in config["optionImageIds"]
+        ]
+    if question.type == "hotspot" and config.get("imageId") in mapping:
+        config["imageId"] = mapping[config["imageId"]]
+    return config
+
+
 # ---------------------------------------------------------------------------
 # Image replace (docs/plans/t8-image-support.md D6) — here, not in image_service,
 # because it needs games, questions and the live check.
@@ -550,16 +584,9 @@ async def _editable_game_ids(
 
 
 def _repointed(question: Question, old: int, new: int, aspect: float) -> dict:
-    """A new config dict with `old` replaced by `new` (never mutate the loaded JSON)."""
-    config = dict(question.config or {})
-    if question.type in image_service.OPTION_IMAGE_TYPES and isinstance(
-        config.get("optionImageIds"), list
-    ):
-        config["optionImageIds"] = [
-            new if v == old else v for v in config["optionImageIds"]
-        ]
-    if question.type == "hotspot" and config.get("imageId") == old:
-        config["imageId"] = new
+    """Like _remapped for one image; a repointed hotspot also takes the new aspect ratio."""
+    config = _remapped(question, {old: new})
+    if question.type == "hotspot" and config.get("imageId") == new:
         config["aspectRatio"] = aspect
     return config
 

@@ -21,6 +21,7 @@ from PIL import Image as PILImage
 from PIL import ImageOps, UnidentifiedImageError
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import undefer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.exceptions import ConflictError, RequestBodyInvalidError
@@ -136,6 +137,19 @@ async def create_image(
     raises the 422 error type, flushes, never commits. Identical stored bytes already
     in the course return the existing row with created=False."""
     stored, content_type, width, height = normalize(data, field)
+    return await _store(db, course_id, stored, content_type, width, height, uploaded_by)
+
+
+async def _store(
+    db: AsyncSession,
+    course_id: int,
+    stored: bytes,
+    content_type: str,
+    width: int,
+    height: int,
+    uploaded_by: str | None,
+) -> tuple[Image, bool]:
+    """Insert already-validated bytes, or return the course's row with the same bytes."""
     sha = hashlib.sha256(stored).hexdigest()
     existing = await _same_bytes(db, course_id, sha)
     if existing:
@@ -368,3 +382,39 @@ async def delete_image(db: AsyncSession, image: Image) -> None:
 
 async def reference_count(db: AsyncSession, image_id: int) -> int:
     return len(await find_references(db, image_id))
+
+
+async def copy_to_course(
+    db: AsyncSession, image_ids: set[int], course_id: int
+) -> dict[int, int]:
+    """Copy images into `course_id` for a game move (D3) → {old id: new id}. The stored
+    bytes and metadata are reused as they are (validated on upload, so no Pillow pass);
+    an identical image already in the course is reused. Sources are locked FOR SHARE in
+    id order, like assert_usable."""
+    if not image_ids:
+        return {}
+    sources = (
+        await db.execute(
+            select(Image)
+            .options(undefer(Image.data))
+            .where(Image.id.in_(sorted(image_ids)))
+            .order_by(Image.id)
+            .with_for_update(read=True)
+        )
+    ).scalars()
+    mapping: dict[int, int] = {}
+    for src in sources:
+        if src.course_id == course_id:
+            mapping[src.id] = src.id
+            continue
+        copy, _ = await _store(
+            db,
+            course_id,
+            src.data,
+            src.content_type,
+            src.width,
+            src.height,
+            src.uploaded_by,
+        )
+        mapping[src.id] = copy.id
+    return mapping

@@ -90,6 +90,8 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   counts with `question_image_ids` over one course's questions (one query, for the list);
   `list_images(db, course_id, page, unused_only)` (24 per page, newest first);
   `lock_image` (`FOR UPDATE`) and `delete_image` (409 "Image is used by N questions", C7).
+  `copy_to_course(db, ids, course_id)` → `{old id: new id}` for a game move: copies stored bytes
+  as they are (no Pillow pass), sources locked `FOR SHARE` in id order.
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.
@@ -102,7 +104,10 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   - `create_game(db, actor, meta, course_id)` — 404 unknown course; a non-admin creator is
     auto-granted the game (D1).
   - `update_game(db, redis, actor, game_id, patch)` — metadata; `course_id` (admin schema only)
-    404 unknown / 409 while live. Takes `redis` for that live check (§6.2.2 omits it).
+    404 unknown / 409 while live. Takes `redis` for that live check (§6.2.2 omits it). A move
+    to another course copies every image the game uses into the new course
+    (`image_service.copy_to_course`, reusing an identical image already there) and repoints its
+    questions; the originals stay behind (T8 D3).
   - `delete_game(db, redis, actor, game_id)` — D6: 409 while live; a non-admin also 409 if any
     session has another or a NULL host; deletes scores, sessions and the game, then clears each
     session's Redis state.

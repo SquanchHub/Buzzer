@@ -708,6 +708,16 @@ def test_replace_an_unused_image(hapi):
     assert hapi.req("GET", f"/images/{old}").status_code == 404
 
 
+def _course_of(hapi, image_id: int) -> int:
+    return int(mysql(f"SELECT course_id FROM images WHERE id = {image_id}").strip())
+
+
+def _course_of(image_id: int) -> int:
+    return int(
+        mysql(f"SELECT course_id FROM images WHERE id = {int(image_id)}").strip()
+    )
+
+
 def _image_count(course: int) -> str:
     return mysql(f"SELECT COUNT(*) FROM images WHERE course_id = {course}").strip()
 
@@ -805,3 +815,62 @@ def test_replace_refused_for_non_hosts_and_unknown_images(hapi):
             _replace(hapi, old, png((17, 17), (16, 16, 16)), token).status_code == 403
         )
     assert _replace(hapi, 999999999, png()).status_code == 404
+
+
+# ── 20. An admin moves a game with images to another course (D3) ───────────
+
+
+def test_moving_a_game_copies_its_images(hapi):
+    course_a, course_b = hapi.course(), hapi.course()
+    a1 = hapi.image(course_a, png((40, 20), (20, 0, 0)))
+    a2 = hapi.image(course_a, png((40, 20), (21, 0, 0)))
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Mover", "course_id": course_a})[
+            "id"
+        ]
+    )
+    url = f"/admin/games/{game}/questions"
+    hapi.ok("POST", url, json=_mc(prompt_image_id=a1))
+    hapi.ok(
+        "POST",
+        url,
+        json=_mc(config={"options": ["", "B"], "optionImageIds": [a2, None]}),
+    )
+    hapi.ok("POST", url, json=_hotspot_2to1(a1))
+    # The same bytes as a2 already exist in course B: the move reuses that row.
+    b2 = hapi.image(course_b, hapi.req("GET", f"/images/{a2}").content)
+
+    hapi.ok("PUT", f"/admin/games/{game}", json={"course_id": course_b})
+
+    prompt_q, option_q, hotspot_q = hapi.ok("GET", url)
+    b1 = prompt_q["prompt_image_id"]
+    assert b1 not in (a1, a2)
+    hapi._images.append(b1)
+    assert _course_of(b1) == course_b
+    assert (
+        hapi.req("GET", f"/images/{b1}").content
+        == hapi.req("GET", f"/images/{a1}").content
+    )
+    assert option_q["config"]["optionImageIds"] == [b2, None]
+    assert hotspot_q["config"] == {"imageId": b1, "aspectRatio": 2.0}
+    # Originals stay in course A, now unused.
+    page = _list(hapi, course_a).json()
+    assert {i["id"]: i["reference_count"] for i in page["items"]} == {a1: 0, a2: 0}
+    assert int(_image_count(course_b)) == 2
+
+
+def test_moving_a_game_to_its_own_course_changes_nothing(hapi):
+    course = hapi.course()
+    image = hapi.image(course, png((22, 22), (22, 22, 22)))
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Stay", "course_id": course})[
+            "id"
+        ]
+    )
+    hapi.ok("POST", f"/admin/games/{game}/questions", json=_mc(prompt_image_id=image))
+    hapi.ok("PUT", f"/admin/games/{game}", json={"course_id": course})
+    assert (
+        hapi.ok("GET", f"/admin/games/{game}/questions")[0]["prompt_image_id"] == image
+    )
+    assert _image_count(course) == "1"
+
