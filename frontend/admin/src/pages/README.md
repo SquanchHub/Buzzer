@@ -3,7 +3,8 @@
 One React component per Admin app screen. `frontend/admin/src/App.tsx` wraps every route except
 `/login` in `RequireAdmin` (token present **and** its `role` claim is ADMIN) and `AdminLayout`
 (admin-first sidebar: **Administration** — Users, Courses, Guests; then a smaller **Content &
-hosting** group — Games, Sessions; footer links to the Host and Player apps, then Logout). Pages fetch on mount with `api` from `lib/api.ts`, keep everything in
+hosting** group — Games, Sessions; footer links to the Host app's `/host/home` — its root always shows the login form — and
+the Player app, then Logout). Pages fetch on mount with `api` from `lib/api.ts`, keep everything in
 local `useState`, and re-fetch after each mutation. There is no shared store, no socket, and no
 pagination.
 
