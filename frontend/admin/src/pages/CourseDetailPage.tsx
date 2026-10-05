@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Gamepad2, Trash2, UserPlus, Users } from 'lucide-react';
+import { ArrowLeft, Gamepad2, Image as ImageIcon, Trash2, UserPlus, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -163,9 +163,14 @@ export default function CourseDetailPage() {
           <h2 className="text-2xl font-bold text-slate-100">
             {course.name} <span className="text-slate-400 font-normal">({course.semester})</span>
           </h2>
-          <Link to={`/courses/${course.id}/roster`}>
-            <Button variant="outline" size="sm"><Users size={14} className="mr-1" /> Roster</Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link to={`/courses/${course.id}/images`}>
+              <Button variant="outline" size="sm"><ImageIcon size={14} className="mr-1" /> Images</Button>
+            </Link>
+            <Link to={`/courses/${course.id}/roster`}>
+              <Button variant="outline" size="sm"><Users size={14} className="mr-1" /> Roster</Button>
+            </Link>
+          </div>
         </div>
       </div>
 

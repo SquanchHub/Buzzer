@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage';
 import ManagementLayout from './pages/ManagementLayout';
 import CoursePage from './pages/CoursePage';
 import RosterPage from './pages/RosterPage';
+import ImagesPage from './pages/ImagesPage';
 import QuestionEditorPage from './pages/QuestionEditorPage';
 import SessionsPage from './pages/SessionsPage';
 import GameLayout from './pages/game/GameLayout';
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="/home" element={<HomePage />} />
           <Route path="/courses/:courseId" element={<CoursePage />} />
           <Route path="/courses/:courseId/roster" element={<RosterPage />} />
+          <Route path="/courses/:courseId/images" element={<ImagesPage />} />
           <Route path="/games/:gameId/edit" element={<QuestionEditorPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
         </Route>

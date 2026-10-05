@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import RosterPage from './pages/RosterPage';
+import ImagesPage from './pages/ImagesPage';
 import UsersPage from './pages/UsersPage';
 import UserDetailPage from './pages/UserDetailPage';
 import GuestsPage from './pages/GuestsPage';
@@ -123,6 +124,7 @@ export default function App() {
             <Route path="/courses" element={<CoursesPage />} />
             <Route path="/courses/:courseId" element={<CourseDetailPage />} />
             <Route path="/courses/:courseId/roster" element={<RosterPage />} />
+            <Route path="/courses/:courseId/images" element={<ImagesPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/users/:userId" element={<UserDetailPage />} />
             <Route path="/guests" element={<GuestsPage />} />
