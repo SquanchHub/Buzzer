@@ -26,7 +26,10 @@ Other code only touches the module-level `router` object in each file
   `course_id` form field; `require_user` + `assert_host_can_use_course`, so an unknown course is
   404 for an admin and 403 for a host; 201, or 200 with the existing row for identical bytes);
   `GET /images/{id}` (`get_current_user`, guests included; raw bytes with
-  `Cache-Control: private, max-age=31536000, immutable` and `nosniff`, neither on a 404).
+  `Cache-Control: private, max-age=31536000, immutable` and `nosniff`, neither on a 404);
+  `GET /images?course_id=&page=&unused=` (same access as upload; `ImagePage` with each image's
+  `reference_count`); `DELETE /images/{id}` (admin or HOST of the image's course, else 403; 404
+  unknown; 409 while any question uses it). Upload responses also carry `reference_count`.
 
 - **auth.py** — `POST /login` (username/password → access token + `refresh_token` cookie;
   `{netid}` dev-only fallback → temp token), `GET /oauth2-callback` (reads Traefik's

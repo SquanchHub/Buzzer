@@ -19,12 +19,14 @@ import warnings
 
 from PIL import Image as PILImage
 from PIL import ImageOps, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..common.exceptions import RequestBodyInvalidError
+from ..common.exceptions import ConflictError, RequestBodyInvalidError
+from ..models.game import Game, Question
 from ..models.image import Image
+from ..models.user import User
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_SIDE = 4096
@@ -33,6 +35,8 @@ CONTENT_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}
 # Decoding is refused well before a "decompression bomb" could exhaust memory; the
 # per-side check below is the real limit, this is the backstop for odd headers.
 PILImage.MAX_IMAGE_PIXELS = MAX_SIDE * MAX_SIDE
+
+PAGE_SIZE = 24
 
 _METADATA_KEYS = ("exif", "xmp", "XML:com.adobe.xmp", "comment")
 
@@ -254,3 +258,112 @@ async def image_exists(db: AsyncSession, image_id: int) -> bool:
     return (
         await db.execute(select(Image.id).where(Image.id == image_id))
     ).scalar_one_or_none() is not None
+
+
+# ---------------------------------------------------------------------------
+# References, listing and deletion (D4, D5, contract C7)
+# ---------------------------------------------------------------------------
+
+# Reverse of question_image_fields, across every question (not only the image's course)
+# as a safety net. The type filters matter: other types' config may hold integers that
+# are not image ids. tests/integration test 19 checks the two agree.
+_REFERENCES_SQL = text(
+    """
+    SELECT id, game_id FROM questions
+    WHERE prompt_image_id = :id
+       OR (type = 'hotspot' AND JSON_EXTRACT(config, '$.imageId') = :id)
+       OR (type IN ('multiple_choice', 'multi_select')
+           AND JSON_CONTAINS(JSON_EXTRACT(config, '$.optionImageIds'), CAST(:id AS JSON)))
+    """
+)
+
+
+async def find_references(db: AsyncSession, image_id: int) -> list[tuple[int, int]]:
+    """(question_id, game_id) of every question that uses the image."""
+    rows = await db.execute(_REFERENCES_SQL, {"id": image_id})
+    return [(r.id, r.game_id) for r in rows]
+
+
+async def course_reference_counts(db: AsyncSession, course_id: int) -> dict[int, int]:
+    """How many questions use each image, for the questions of one course's games — all
+    the questions that may use the course's images (D3). One query, not one per image."""
+    rows = await db.execute(
+        select(Question.type, Question.config, Question.prompt_image_id)
+        .join(Game, Game.id == Question.game_id)
+        .where(Game.course_id == course_id)
+    )
+    counts: dict[int, int] = {}
+    for r in rows:
+        for image_id in question_image_ids(r.type, r.config, r.prompt_image_id):
+            counts[image_id] = counts.get(image_id, 0) + 1
+    return counts
+
+
+def display_name(user: User | None) -> str | None:
+    if user is None:
+        return None
+    return user.display_name or user.username or user.netid or user.email
+
+
+def item(image: Image, uploader: User | None, reference_count: int) -> dict:
+    return {
+        "id": image.id,
+        "course_id": image.course_id,
+        "content_type": image.content_type,
+        "width": image.width,
+        "height": image.height,
+        "byte_size": image.byte_size,
+        "created_at": image.created_at,
+        "uploaded_by_name": display_name(uploader),
+        "reference_count": reference_count,
+    }
+
+
+async def list_images(
+    db: AsyncSession, course_id: int, page: int, unused_only: bool
+) -> dict:
+    """One page of a course's images, newest first, each with its reference count."""
+    counts = await course_reference_counts(db, course_id)
+    rows = (
+        await db.execute(
+            select(Image, User)
+            .outerjoin(User, User.id == Image.uploaded_by)
+            .where(Image.course_id == course_id)
+            .order_by(Image.created_at.desc(), Image.id.desc())
+        )
+    ).all()
+    items = [item(image, user, counts.get(image.id, 0)) for image, user in rows]
+    if unused_only:
+        items = [i for i in items if i["reference_count"] == 0]
+    start = (page - 1) * PAGE_SIZE
+    return {
+        "items": items[start : start + PAGE_SIZE],
+        "total": len(items),
+        "page": page,
+        "page_size": PAGE_SIZE,
+    }
+
+
+async def lock_image(db: AsyncSession, image_id: int) -> Image | None:
+    """The image row, locked FOR UPDATE: a concurrent question save that uses it
+    (assert_usable, FOR SHARE) waits until this transaction ends."""
+    return (
+        await db.execute(select(Image).where(Image.id == image_id).with_for_update())
+    ).scalar_one_or_none()
+
+
+def used_by(n: int) -> ConflictError:
+    return ConflictError(f"Image is used by {n} question{'' if n == 1 else 's'}")
+
+
+async def delete_image(db: AsyncSession, image: Image) -> None:
+    """Contract C7: 409 while any question uses the image. Call with a locked row."""
+    references = await find_references(db, image.id)
+    if references:
+        raise used_by(len(references))
+    await db.delete(image)
+    await db.flush()
+
+
+async def reference_count(db: AsyncSession, image_id: int) -> int:
+    return len(await find_references(db, image_id))

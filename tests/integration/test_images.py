@@ -442,3 +442,183 @@ def test_v1_bundle_with_image_ids_is_rejected(hapi, question):
         "version 2 file"
     )
     assert hapi.ok("GET", f"/host/courses/{course}/games", token) == []
+
+
+# ── 7. Listing a course's images ────────────────────────────────────────────
+
+
+def _list(hapi, course: int, token: str | None = None, **params) -> httpx.Response:
+    return hapi.req("GET", "/images", token, params={"course_id": course, **params})
+
+
+def test_list_counts_references_and_filters_unused(hapi):
+    token, course, game, (used, unused) = _host_with_images(hapi)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=used)
+    )
+    page = hapi.ok("GET", "/images", token, params={"course_id": course})
+    assert page["total"] == 2 and page["page"] == 1 and page["page_size"] == 24
+    by_id = {i["id"]: i for i in page["items"]}
+    assert by_id[used]["reference_count"] == 1
+    assert by_id[unused]["reference_count"] == 0
+    assert by_id[used]["uploaded_by_name"]  # the host's display name
+    assert [i["id"] for i in page["items"]] == [unused, used]  # newest first
+
+    only_unused = _list(hapi, course, token, unused="true").json()
+    assert [i["id"] for i in only_unused["items"]] == [unused]
+    assert only_unused["total"] == 1
+
+
+def test_list_pages_24_at_a_time(hapi):
+    course = hapi.course()
+    ids = [hapi.image(course, png((5 + i, 5))) for i in range(26)]
+    first = _list(hapi, course).json()
+    second = _list(hapi, course, page=2).json()
+    assert first["total"] == second["total"] == 26
+    assert len(first["items"]) == 24 and len(second["items"]) == 2
+    listed = [i["id"] for i in first["items"] + second["items"]]
+    assert sorted(listed) == sorted(ids)
+
+
+def test_list_unknown_course(hapi):
+    _, user = hapi.user()
+    assert _list(hapi, 999999999).status_code == 404  # admin
+    assert _list(hapi, 999999999, user).status_code == 403  # T4: hosts get 403
+
+
+def test_reused_upload_reports_its_reference_count(hapi):
+    token, course, game, _ = _host_with_images(hapi, 0)
+    data = png((40, 41))
+    image = hapi.image(course, data, token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=image)
+    )
+    again = hapi.upload(course, data, token)
+    assert again.status_code == 200
+    assert again.json()["reference_count"] == 1
+
+
+# ── 6 (continued). Who may list and delete ──────────────────────────────────
+
+
+def test_list_and_delete_refused_for_non_hosts(hapi):
+    course, other = hapi.course(), hapi.course()
+    image = hapi.image(course, png((61, 6)))
+    player_id, player = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    _, other_host = hapi.host_of(other)
+    room_course = hapi.course()
+    _, host = hapi.host_of(room_course)
+    code, _ = hapi.room(host, room_course, hapi.host_game(host, room_course))
+    guest = hapi.guest(code)
+    for token in (player, other_host, guest):
+        assert _list(hapi, course, token).status_code == 403
+        assert hapi.req("DELETE", f"/images/{image}", token).status_code == 403
+    assert hapi.req("GET", f"/images/{image}").status_code == 200  # still there
+
+
+def test_delete_unknown_image_is_404(hapi):
+    assert hapi.req("DELETE", "/images/999999999").status_code == 404
+
+
+# ── 8. Deleting an image that is in use ─────────────────────────────────────
+
+
+def _hotspot(image_id: int) -> dict:
+    return {
+        "type": "hotspot",
+        "grading_type": "COMPLETENESS",
+        "prompt": "Tap anywhere",
+        "config": {"imageId": image_id, "aspectRatio": 1.1},
+        "answer_data": {},
+        "time_limit_seconds": 30,
+        "points_value": 10,
+    }
+
+
+@pytest.mark.parametrize("kind", ["prompt", "option", "hotspot"])
+def test_delete_refused_while_used(hapi, kind):
+    token, _, game, (image, _) = _host_with_images(hapi)
+    body = {
+        "prompt": _mc(prompt_image_id=image),
+        "option": _mc(config={"options": ["", "B"], "optionImageIds": [image, None]}),
+        "hotspot": _hotspot(image),
+    }[kind]
+    url = f"/host/games/{game}/questions"
+    q = hapi.ok("POST", url, token, json=body)
+
+    r = hapi.req("DELETE", f"/images/{image}", token)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "Image is used by 1 question"
+    assert hapi.req("GET", f"/images/{image}", token).status_code == 200
+
+    hapi.ok("DELETE", f"{url}/{q['id']}", token)
+    assert hapi.req("DELETE", f"/images/{image}", token).status_code == 204
+    assert hapi.req("GET", f"/images/{image}", token).status_code == 404
+
+
+def test_delete_counts_every_using_question(hapi):
+    token, _, game, (image, _) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    hapi.ok("POST", url, token, json=_mc(prompt_image_id=image))
+    hapi.ok("POST", url, token, json=_hotspot(image))
+    r = hapi.req("DELETE", f"/images/{image}", token)
+    assert r.json()["message"] == "Image is used by 2 questions"
+
+
+# ── 19. The forward lookup and the reverse SQL agree ────────────────────────
+
+
+def test_reference_count_and_delete_check_agree(hapi):
+    """The list's reference_count comes from question_image_ids (Python); the delete 409
+    comes from find_references (SQL). They must agree for every type, including null
+    option entries and integers in config that are not image references."""
+    token, course, game, ids = _host_with_images(hapi, 5)
+    a, b, c, d, decoy = ids
+    url = f"/host/games/{game}/questions"
+    for body in [
+        _mc(
+            config={"options": ["", "x", "y"], "optionImageIds": [a, None, b]},
+            answer_data={"answer_points": [10, 0, 0]},
+        ),
+        _mc(
+            type="multi_select",
+            config={"options": ["p", ""], "optionImageIds": [None, a]},
+            answer_data={"answer_points": [1, 1]},
+        ),
+        _hotspot(c),
+        {
+            "type": "true_false",
+            "grading_type": "COMPLETENESS",
+            "prompt": "Yes?",
+            "prompt_image_id": d,
+            "config": {
+                "imageId": decoy
+            },  # not a reference: true_false has no image config
+            "time_limit_seconds": 30,
+            "points_value": 1,
+        },
+        {
+            "type": "fill_in_the_blank",
+            "grading_type": "COMPLETENESS",
+            "prompt": "Type it",
+            "config": {"maxLength": decoy},
+            "time_limit_seconds": 30,
+            "points_value": 1,
+        },
+    ]:
+        hapi.ok("POST", url, token, json=body)
+
+    counts = {
+        i["id"]: i["reference_count"]
+        for i in _list(hapi, course, token).json()["items"]
+    }
+    assert counts == {a: 2, b: 1, c: 1, d: 1, decoy: 0}
+    for image, n in counts.items():
+        r = hapi.req("DELETE", f"/images/{image}", token)
+        if n:
+            assert r.status_code == 409
+            word = "question" if n == 1 else "questions"
+            assert r.json()["message"] == f"Image is used by {n} {word}"
+        else:
+            assert r.status_code == 204

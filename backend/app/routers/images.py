@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 
 from ..common.dependencies import get_current_user, require_user
 from ..common.exceptions import NotFoundError
 from ..database import DbSession
 from ..models.image import Image
 from ..models.user import User
-from ..schemas.image import ImageItem
+from ..schemas.image import ImageItem, ImagePage
 from ..services import game_service, image_service
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -28,24 +28,35 @@ router = APIRouter(prefix="/images", tags=["images"])
 _CACHE = "private, max-age=31536000, immutable"
 
 
-def _display_name(user: User | None) -> str | None:
-    if user is None:
-        return None
-    return user.display_name or user.username or user.netid or user.email
-
-
 async def _item(db: DbSession, image: Image) -> ImageItem:
     uploader = await db.get(User, image.uploaded_by) if image.uploaded_by else None
     return ImageItem(
-        id=image.id,
-        course_id=image.course_id,
-        content_type=image.content_type,
-        width=image.width,
-        height=image.height,
-        byte_size=image.byte_size,
-        created_at=image.created_at,
-        uploaded_by_name=_display_name(uploader),
+        **image_service.item(
+            image, uploader, await image_service.reference_count(db, image.id)
+        )
     )
+
+
+async def _managed_image(db: DbSession, user: User, image_id: int) -> Image:
+    """The image, locked FOR UPDATE, if `user` may manage it (admin or HOST of its
+    course): 404 unknown, 403 otherwise."""
+    image = await image_service.lock_image(db, image_id)
+    if image is None:
+        raise NotFoundError(f"Image {image_id} not found")
+    await game_service.assert_host_can_use_course(db, user, image.course_id)
+    return image
+
+
+@router.get("", response_model=ImagePage)
+async def list_images(
+    course_id: Annotated[int, Query(gt=0)],
+    user: Annotated[User, Depends(require_user)],
+    db: DbSession,
+    page: Annotated[int, Query(ge=1)] = 1,
+    unused: bool = False,
+) -> dict:
+    await game_service.assert_host_can_use_course(db, user, course_id)
+    return await image_service.list_images(db, course_id, page, unused)
 
 
 @router.post("", status_code=201, response_model=ImageItem)
@@ -84,3 +95,14 @@ async def get_image(
         media_type=content_type,
         headers={"Cache-Control": _CACHE, "X-Content-Type-Options": "nosniff"},
     )
+
+
+@router.delete("/{image_id}", status_code=204)
+async def delete_image(
+    image_id: int,
+    user: Annotated[User, Depends(require_user)],
+    db: DbSession,
+) -> Response:
+    image = await _managed_image(db, user, image_id)
+    await image_service.delete_image(db, image)
+    return Response(status_code=204)

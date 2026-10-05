@@ -85,6 +85,11 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   place that knows which fields hold images** (prompt, `optionImageIds`, hotspot `imageId`);
   `question_image_ids` is its id set; `assert_usable(db, course_id, fields)` → 422 per field for a
   missing image, another course's image, or a game with no course.
+  `find_references(db, id)` — the reverse lookup in SQL across **all** questions (prompt column,
+  hotspot `JSON_EXTRACT`, option `JSON_CONTAINS`, each type-filtered); `course_reference_counts`
+  counts with `question_image_ids` over one course's questions (one query, for the list);
+  `list_images(db, course_id, page, unused_only)` (24 per page, newest first);
+  `lock_image` (`FOR UPDATE`) and `delete_image` (409 "Image is used by N questions", C7).
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.

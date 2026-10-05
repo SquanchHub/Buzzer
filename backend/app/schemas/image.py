@@ -16,3 +16,11 @@ class ImageItem(BaseModel):
     byte_size: int
     created_at: datetime | None
     uploaded_by_name: str | None
+    reference_count: int
+
+
+class ImagePage(BaseModel):
+    items: list[ImageItem]
+    total: int
+    page: int
+    page_size: int
