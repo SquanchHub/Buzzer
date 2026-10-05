@@ -47,6 +47,7 @@ export default function GamesPage() {
   // 'all', 'unassigned', or a course id.
   const [filter, setFilter] = useState('all');
   const fileRef = useRef<HTMLInputElement>(null);
+  const editRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   async function load() {
@@ -65,6 +66,13 @@ export default function GamesPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  // The edit form sits above the list, so bring it into view (the list can be long).
+  useEffect(() => {
+    if (!editingGame) return;
+    editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editRef.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, [editingGame]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -238,6 +246,7 @@ export default function GamesPage() {
       )}
 
       {editingGame && (
+        <div ref={editRef} className="scroll-mt-4">
         <Card className="mb-6">
           <CardHeader><h3 className="text-lg font-semibold text-slate-100">Edit Game</h3></CardHeader>
           <CardContent>
@@ -285,6 +294,7 @@ export default function GamesPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       )}
 
       <div className="flex items-center gap-2 mb-4">
