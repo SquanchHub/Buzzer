@@ -87,9 +87,10 @@ function AdminLayout() {
           </div>
         </nav>
         <div className="p-3 border-t border-slate-700 space-y-1">
-          {/* Same origin under nginx, so the admin arrives signed in. In `npm run dev`
-              each app has its own port and these paths don't resolve. */}
-          <a href="/host/" className={secondaryLinkClass({ isActive: false })}>
+          {/* Same origin under nginx, so the admin arrives signed in. The host link targets
+              /host/home: the host app's root redirects to its login form even with a token.
+              In `npm run dev` each app has its own port and these paths don't resolve. */}
+          <a href="/host/home" className={secondaryLinkClass({ isActive: false })}>
             <MonitorPlay size={14} /> Open Host app
           </a>
           <a href="/player/" className={secondaryLinkClass({ isActive: false })}>

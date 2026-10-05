@@ -476,6 +476,10 @@ Frontend (`frontend/admin/src/`):
   token like a non-admin one; it never removes the shared token. `LoginPage` refuses a non-admin
   login *without* storing the token, so signing in to the admin app with a host account doesn't
   replace that browser's host/player session.
+- **"Open Host app" links to `/host/home`, not `/host/`** (found in manual testing): the host
+  app's root falls through to its catch-all route, which shows the login form even when a valid
+  token is stored, so `/host/` made the admin look signed out. `/home` is behind `RequireAuth`,
+  which accepts the shared token.
 - **User detail game picker** sends grants one at a time and lists failures per game rather than
   failing the whole batch on the first 409; it disables games the user couldn't use under D1.
 - **T7 stage D** (`t7-hotspot.md` H9, §8) is part of this phase: `HotspotEditor` and
