@@ -15,6 +15,7 @@ Test numbers refer to the design doc's §7. Behaviour under test:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 
@@ -874,3 +875,271 @@ def test_moving_a_game_to_its_own_course_changes_nothing(hapi):
     )
     assert _image_count(course) == "1"
 
+
+# ── 13–15, 21. Version 2 export / import (D7) ───────────────────────────────
+
+
+def _import(hapi, course: int, bundle: dict | bytes, token: str | None = None):
+    raw = bundle if isinstance(bundle, bytes) else json.dumps(bundle).encode()
+    return hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", raw, "application/json")},
+        data={"course_id": str(course)},
+    )
+
+
+def _games(hapi, course: int) -> list[dict]:
+    return hapi.ok("GET", f"/host/courses/{course}/games")
+
+
+def _image_game(hapi) -> tuple[int, int, dict[str, int]]:
+    """A game in a new course using all three image kinds → (course, game, images)."""
+    course = hapi.course()
+    game = hapi.track_game(
+        hapi.ok(
+            "POST", "/admin/games", json={"title": "Pictures", "course_id": course}
+        )["id"]
+    )
+    imgs = {
+        "prompt": hapi.image(course, png((30, 30), (30, 0, 0))),
+        "option": hapi.image(course, image_bytes("JPEG", (20, 20), (0, 30, 0))),
+        "map": hapi.image(course, png((40, 20), (0, 0, 30))),
+    }
+    url = f"/admin/games/{game}/questions"
+    hapi.ok("POST", url, json=_mc(prompt_image_id=imgs["prompt"]))
+    hapi.ok(
+        "POST",
+        url,
+        json=_mc(
+            config={"options": ["", "Text"], "optionImageIds": [imgs["option"], None]}
+        ),
+    )
+    hapi.ok("POST", url, json=_hotspot_2to1(imgs["map"]))
+    hapi.ok(
+        "POST", url, json=_mc(prompt_image_id=imgs["prompt"])
+    )  # reused: exported once
+    return course, game, imgs
+
+
+def test_export_with_images_is_version_2(hapi):
+    _, game, imgs = _image_game(hapi)
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    assert bundle["version"] == 2
+    assert [i["ref"] for i in bundle["images"]] == ["img1", "img2", "img3"]
+    assert [i["content_type"] for i in bundle["images"]] == [
+        "image/png",
+        "image/jpeg",
+        "image/png",
+    ]
+    q1, q2, q3, q4 = bundle["questions"]
+    assert q1["prompt_image_ref"] == "img1" and "prompt_image_id" not in q1
+    assert q2["config"] == {"options": ["", "Text"], "optionImageRefs": ["img2", None]}
+    assert q3["config"] == {"imageRef": "img3", "aspectRatio": 2.0}
+    assert q4["prompt_image_ref"] == "img1"
+    assert "imageId" not in json.dumps(bundle) and "optionImageIds" not in json.dumps(
+        bundle
+    )
+
+
+def test_export_without_images_stays_version_1(hapi):
+    course = hapi.course()
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Plain", "course_id": course})[
+            "id"
+        ]
+    )
+    hapi.ok("POST", f"/admin/games/{game}/questions", json=_mc())
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    assert bundle["version"] == 1
+    assert "images" not in bundle
+    assert "prompt_image_ref" not in bundle["questions"][0]
+
+
+def test_version_2_round_trip_into_another_course(hapi):
+    _, game, imgs = _image_game(hapi)
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    target = hapi.course()
+    _, host = hapi.host_of(target)
+
+    r = _import(hapi, target, bundle, host)
+    assert r.status_code in (200, 201), r.text
+    new_game = hapi.track_game(r.json()["game_id"])
+    q1, q2, q3, q4 = hapi.ok("GET", f"/host/games/{new_game}/questions", host)
+    new = {
+        "prompt": q1["prompt_image_id"],
+        "option": q2["config"]["optionImageIds"][0],
+        "map": q3["config"]["imageId"],
+    }
+    hapi._images.extend(new.values())
+    assert q4["prompt_image_id"] == new["prompt"]
+    assert q2["config"]["optionImageIds"][1] is None
+    assert q3["config"]["aspectRatio"] == 2.0
+    for kind, image_id in new.items():
+        assert image_id != imgs[kind]
+        assert _course_of(image_id) == target
+        assert (
+            hapi.req("GET", f"/images/{image_id}").content
+            == hapi.req("GET", f"/images/{imgs[kind]}").content
+        )
+
+    # Importing the same file again into the same course reuses the images.
+    before = _image_count(target)
+    again = _import(hapi, target, bundle, host)
+    assert again.status_code in (200, 201), again.text
+    hapi.track_game(again.json()["game_id"])
+    assert _image_count(target) == before
+
+
+def _v2(questions: list[dict], images: list[dict] | None = None) -> dict:
+    return {
+        "format": "buzzer/game",
+        "version": 2,
+        "game": {"title": "v2 test"},
+        "images": images
+        if images is not None
+        else [
+            {
+                "ref": "img1",
+                "content_type": "image/png",
+                "data_base64": base64.b64encode(png((8, 8))).decode(),
+            }
+        ],
+        "questions": questions,
+    }
+
+
+_REF_Q = _mc(prompt_image_ref="img1")
+
+
+@pytest.mark.parametrize(
+    "bundle, msg",
+    [
+        (
+            _v2([_mc(prompt_image_ref="nope")]),
+            "Question 1: unknown image reference 'nope'",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [
+                    {"ref": "img1", "content_type": "image/png", "data_base64": "aaaa"},
+                    {"ref": "img1", "content_type": "image/png", "data_base64": "aaaa"},
+                ],
+            ),
+            "Image 2: duplicate ref 'img1'",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [{"ref": "img1", "content_type": "image/png", "data_base64": "%%%"}],
+            ),
+            "Image 1: data_base64 is not valid base64",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [
+                    {
+                        "ref": "img1",
+                        "content_type": "image/png",
+                        "data_base64": base64.b64encode(b"not an image").decode(),
+                    }
+                ],
+            ),
+            "Image 1: File is not a PNG, JPEG or WebP image",
+        ),
+        (
+            _v2([_mc(prompt_image_id=5)]),
+            "Question 1: image IDs can't be imported; export the game again to get a "
+            "version 2 file",
+        ),
+        (
+            {**_v2([_REF_Q]), "version": 1},
+            "Question 1: image references require a version 2 bundle",
+        ),
+        (
+            _v2([_mc(prompt_image_ref="img1", prompt_image_id=5)]),
+            "Question 1: image IDs can't be imported; export the game again to get a "
+            "version 2 file",
+        ),
+        (
+            _v2(
+                [
+                    _mc(
+                        config={
+                            "options": ["A", "B"],
+                            "optionImageRefs": ["img1"],
+                        }
+                    )
+                ]
+            ),
+            "Question 1: optionImageRefs must be a list the same length as options",
+        ),
+        (
+            {**_v2([_REF_Q]), "version": 3},
+            "Unsupported version 3; server supports versions 1 and 2",
+        ),
+    ],
+    ids=[
+        "unknown-ref",
+        "duplicate-ref",
+        "bad-base64",
+        "bad-bytes",
+        "raw-id-v2",
+        "ref-in-v1",
+        "id-and-ref",
+        "option-ref-length",
+        "version-3",
+    ],
+)
+def test_broken_bundles_create_nothing(hapi, bundle, msg):
+    course = hapi.course()
+    _, host = hapi.host_of(course)
+    r = _import(hapi, course, bundle, host)
+    assert r.status_code == 422, r.text
+    assert _detail_msg(r) == msg
+    assert _games(hapi, course) == []
+    assert _image_count(course) == "0"
+
+
+def test_a_late_question_error_rolls_back_created_images(hapi):
+    """Images are created before the questions; a structural error in a later question is
+    caught by pre-validation, so no image is ever written."""
+    course = hapi.course()
+    bad = _mc(config={"options": ["only one"]}, answer_data={"answer_points": [1]})
+    r = _import(hapi, course, _v2([_REF_Q, bad]))
+    assert r.status_code == 422, r.text
+    assert _image_count(course) == "0"
+
+
+def test_bundle_content_type_is_not_trusted(hapi):
+    course = hapi.course()
+    jpeg = image_bytes("JPEG", (12, 12), (40, 40, 40))
+    bundle = _v2(
+        [_REF_Q],
+        [
+            {
+                "ref": "img1",
+                "content_type": "image/png",  # wrong: the bytes are a JPEG
+                "data_base64": base64.b64encode(jpeg).decode(),
+            }
+        ],
+    )
+    r = _import(hapi, course, bundle)
+    assert r.status_code in (200, 201), r.text
+    game = hapi.track_game(r.json()["game_id"])
+    [q] = hapi.ok("GET", f"/admin/games/{game}/questions")
+    hapi._images.append(q["prompt_image_id"])
+    got = hapi.req("GET", f"/images/{q['prompt_image_id']}")
+    assert got.headers["content-type"] == "image/jpeg"
+    assert got.content == jpeg
+
+
+def test_unreferenced_bundle_images_are_ignored(hapi):
+    course = hapi.course()
+    r = _import(hapi, course, _v2([_mc()]))
+    assert r.status_code in (200, 201), r.text
+    hapi.track_game(r.json()["game_id"])
+    assert _image_count(course) == "0"

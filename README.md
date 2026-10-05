@@ -395,6 +395,42 @@ The file format is:
 
 Question order is determined by array position; `order_index` is assigned automatically on import.
 
+**Games with images use version 2.** Image IDs only mean something in the database that created
+them, so a game whose questions use images exports as `"version": 2`: the image bytes travel in a
+top-level `images` list, and questions refer to them by a name local to the file
+(`docs/plans/t8-image-support.md` D7). Version-1 files keep importing unchanged.
+
+```json
+{
+  "format": "buzzer/game",
+  "version": 2,
+  "game": { "title": "...", "description": "...", "max_players": 150 },
+  "images": [
+    { "ref": "img1", "content_type": "image/png", "data_base64": "iVBORw0KGgo..." }
+  ],
+  "questions": [
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "Which organelle is this?",
+      "prompt_image_ref": "img1",
+      "time_limit_seconds": 30,
+      "points_value": 1000,
+      "config": { "options": ["Nucleus", ""], "optionImageRefs": [null, "img1"] },
+      "answer_data": { "answer_points": [0, 1000] }
+    }
+  ]
+}
+```
+
+- `prompt_image_ref` (any type), `config.optionImageRefs` (multiple choice and multi-select; same
+  length as `options`, `null` for a text-only option; an option's text may be empty only when it
+  has an image) and a hotspot's `config.imageRef` must each name an `images` entry.
+- Images are PNG, JPEG or WebP, at most 2 MB and 4096 px per side; the bytes decide the type.
+- Raw `prompt_image_id`, `optionImageIds` or hotspot `imageId` values are refused in every version.
+- Importing creates the referenced images in the target course; importing the same file into
+  the same course again reuses them.
+
 ### Export session scores
 
 After a game session completes, the host (or an admin) can download a CSV of all player scores:

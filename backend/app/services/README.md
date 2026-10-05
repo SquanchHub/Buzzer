@@ -18,7 +18,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
 | `image_service.py` | Question images (T8): validates uploads by their bytes with Pillow (PNG/JPEG/WebP, ≤ 2 MB, ≤ 4096 px per side), strips metadata with rotation applied, stores them per course with duplicate reuse, and serves contract calls C4–C6. |
-| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing, game import/export (bundle format v1, never `course_id`). |
+| `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing, game import/export (bundle format v1, or v2 with embedded images — T8; never `course_id`), image replace and the image copy on game move (T8). |
 
 ## Key entry points
 
@@ -119,11 +119,18 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     if any answer was recorded for it, then re-packs `order_index` to 0..n-1;
     `reorder_questions` (409 unless exactly the game's ids) is the **only** way to move a question.
   - `sanitize_prompt` / `PROMPT_TAGS` — bleach, keeping `b i br u`; the only sanitizer.
-  - `export_game(db, game_id)` → `(filename, bytes)`: the version-1 bundle, used by both routers.
-    `import_game(db, actor, raw, course_id)` → `Game`: 404 unknown course;
-    every structural problem is a 422 `RequestBodyInvalidError` on `body.file` with the old admin
-    route's message text (§6.2.5 b), raised before anything is written; then `create_game`
-    (same auto-grant) and the questions in bundle order, prompts sanitized.
+  - `export_game(db, game_id)` → `(filename, bytes)`, used by both routers: a game using no
+    images is the version-1 bundle exactly as before T8; otherwise **version 2** — a top-level
+    `images` list (`ref`, `content_type`, `data_base64`) and refs instead of ids
+    (`prompt_image_ref`, `config.optionImageRefs`, hotspot `config.imageRef`; refs `img1`, … in
+    first-use order). `import_game(db, actor, raw, course_id)` → `Game`: 404 unknown course;
+    versions 1 and 2; every structural problem is a 422 `RequestBodyInvalidError` on `body.file`
+    with the old admin route's message text (§6.2.5 b), raised before anything is written — raw
+    image ids are refused in every version, refs only exist in v2, each question is validated
+    with a placeholder id per ref. Then the **referenced** images are created in the target course
+    (`create_image`; a bad image is "Image K: …" and rolls the import back), then `create_game`
+    (same auto-grant) and the questions in bundle order, prompts sanitized. The bundle's
+    `content_type` is not trusted: the bytes decide.
   - `replace_image(db, redis, actor, old, data)` (T8 D6): never changes bytes under an id — the
     new file becomes a new (or an identical existing) row in the same course, the questions in
     games the actor may edit are repointed (prompt, options, hotspot with its `aspectRatio`), and
@@ -166,8 +173,8 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   the stage-B dev stand-in): `content_service._check_images` runs on create and on every update
   (after `QuestionCreate`, so structural errors win) via `image_service.assert_usable`, which
   locks the rows `FOR SHARE` in id order. A game with no course can't use images. `import_game`
-  rejects a v1 bundle carrying a hotspot question or a raw `prompt_image_id` / `optionImageIds`;
-  until T8 V7 (version 2) a game with images exports as v1 and does not re-import.
+  rejects a v1 bundle carrying a hotspot question, and any bundle carrying a raw image id; games
+  with images round-trip through version 2.
 - Only `room:{code}` has a TTL (90 min). The `session:{id}:*` keys never expire; they are only
   removed by `delete_room_state` (abandon or host delete). Completed games leave them behind.
 - `update_player_score` is read-modify-write on a JSON blob, so concurrent updates can lose one.

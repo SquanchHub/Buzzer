@@ -12,6 +12,8 @@ Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over t
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 
@@ -412,37 +414,81 @@ async def reorder_questions(
 
 
 # ---------------------------------------------------------------------------
-# Import / export (D10: bundles never carry course_id)
+# Import / export (D10: bundles never carry course_id; T8 D7: images travel as bytes)
 # ---------------------------------------------------------------------------
 
 BUNDLE_FORMAT = "buzzer/game"
-BUNDLE_VERSION = 1
+# Version 1: no images. Version 2 (docs/plans/t7-hotspot.md §6, docs/plans/
+# t8-image-support.md D7): a top-level `images` list, and questions refer to its entries
+# by `ref` — `prompt_image_ref`, `config.optionImageRefs`, hotspot `config.imageRef` —
+# never by image id, which only means something in the database that wrote it.
+BUNDLE_VERSIONS = (1, 2)
+_PLACEHOLDER_IMAGE_ID = 1  # stands in for a ref during structural validation
+
+
+def _exported_question(q: Question, ref) -> dict:
+    """One question as a bundle entry; `ref(image_id)` names an image (version 2)."""
+    config = dict(q.config or {})
+    if q.type in OPTION_IMAGE_TYPES and isinstance(config.get("optionImageIds"), list):
+        config["optionImageRefs"] = [
+            None if v is None else ref(v) for v in config.pop("optionImageIds")
+        ]
+    if q.type == "hotspot" and "imageId" in config:
+        config = {"imageRef": ref(config["imageId"]), **_without(config, "imageId")}
+    item = {
+        "type": q.type,
+        "grading_type": q.grading_type,
+        "prompt": q.prompt,
+        "config": config,
+        "answer_data": q.answer_data,
+        "time_limit_seconds": q.time_limit_seconds,
+        "points_value": q.points_value,
+    }
+    if q.prompt_image_id is not None:
+        item["prompt_image_ref"] = ref(q.prompt_image_id)
+    return item
+
+
+def _without(d: dict, key: str) -> dict:
+    return {k: v for k, v in d.items() if k != key}
 
 
 async def export_game(db: AsyncSession, game_id: int) -> tuple[str, bytes]:
-    """The game as a version-1 bundle: (filename, JSON bytes). No course_id."""
+    """The game as a bundle: (filename, JSON bytes). No course_id. A game using no
+    images is a version-1 bundle exactly as before T8; otherwise version 2, with refs
+    img1, img2, … in first-use order (prompt, options, hotspot, question by question)."""
     game = await _get_game(db, game_id)
-    bundle = {
+    refs: dict[int, str] = {}
+
+    def ref(image_id: int) -> str:
+        return refs.setdefault(image_id, f"img{len(refs) + 1}")
+
+    questions = [_exported_question(q, ref) for q in await _questions(db, game_id)]
+    bundle: dict = {
         "format": BUNDLE_FORMAT,
-        "version": BUNDLE_VERSION,
+        "version": 2 if refs else 1,
         "game": {
             "title": game.title,
             "description": game.description,
             "max_players": game.max_players,
         },
-        "questions": [
-            {
-                "type": q.type,
-                "grading_type": q.grading_type,
-                "prompt": q.prompt,
-                "config": q.config,
-                "answer_data": q.answer_data,
-                "time_limit_seconds": q.time_limit_seconds,
-                "points_value": q.points_value,
-            }
-            for q in await _questions(db, game_id)
-        ],
     }
+    if refs:
+        images = []
+        for image_id, name in refs.items():
+            found = await image_service.get_image(db, image_id)
+            if found is None:  # impossible while deletes are refused (C7)
+                raise ConflictError(f"A question references missing image {image_id}")
+            content_type, data = found
+            images.append(
+                {
+                    "ref": name,
+                    "content_type": content_type,
+                    "data_base64": base64.b64encode(data).decode("ascii"),
+                }
+            )
+        bundle["images"] = images
+    bundle["questions"] = questions
     safe_title = "".join(c if c.isalnum() or c in " _-" else "_" for c in game.title)
     return f"{safe_title}.json", json.dumps(
         bundle, indent=2, ensure_ascii=False
@@ -454,12 +500,108 @@ def _invalid_file(msg: str) -> RequestBodyInvalidError:
     return RequestBodyInvalidError.for_field("file", msg)
 
 
+def _bundle_images(raw_images: object) -> dict[str, tuple[int, bytes]]:
+    """Check a v2 `images` list (t7-hotspot.md §6.3.4.1) → {ref: (1-based K, bytes)}.
+    `content_type` must be a string but is not trusted: the bytes decide (T8 D7)."""
+    if not isinstance(raw_images, list):
+        raise _invalid_file("images must be a list")
+    images: dict[str, tuple[int, bytes]] = {}
+    for k, entry in enumerate(raw_images, start=1):
+        if not isinstance(entry, dict):
+            raise _invalid_file(f"Image {k}: must be an object")
+        name = entry.get("ref")
+        if not isinstance(name, str) or not name:
+            raise _invalid_file(f"Image {k}: ref must be a non-empty string")
+        if name in images:
+            raise _invalid_file(f"Image {k}: duplicate ref {name!r}")
+        if not isinstance(entry.get("content_type"), str):
+            raise _invalid_file(f"Image {k}: content_type must be a string")
+        data = entry.get("data_base64")
+        try:
+            if not isinstance(data, str):
+                raise ValueError
+            decoded = base64.b64decode(data, validate=True)
+        except (ValueError, binascii.Error):
+            raise _invalid_file(f"Image {k}: data_base64 is not valid base64")
+        images[name] = (k, decoded)
+    return images
+
+
+def _bundle_refs(n: int, q: dict, version: int, images: dict) -> dict:
+    """Check one question's image fields (T8 D7) → {location: ref} for its refs, where a
+    location is "prompt", ("option", i) or "hotspot". Raw image ids are refused in every
+    version; refs only exist in version 2 and must name an `images` entry."""
+    config = q.get("config") if isinstance(q.get("config"), dict) else {}
+    hotspot = q.get("type") == "hotspot"
+    if (
+        q.get("prompt_image_id") is not None
+        or "optionImageIds" in config
+        or (version == 2 and hotspot and "imageId" in config)
+    ):
+        raise _invalid_file(
+            f"Question {n}: image IDs can't be imported; export the game "
+            "again to get a version 2 file"
+        )
+    found: dict = {}
+    if q.get("prompt_image_ref") is not None:
+        found["prompt"] = q["prompt_image_ref"]
+    if "optionImageRefs" in config:
+        option_refs, options = config["optionImageRefs"], config.get("options")
+        if (
+            not isinstance(option_refs, list)
+            or not isinstance(options, list)
+            or len(option_refs) != len(options)
+        ):
+            raise _invalid_file(
+                f"Question {n}: optionImageRefs must be a list the same length as options"
+            )
+        for i, name in enumerate(option_refs):
+            if name is not None:
+                found[("option", i)] = name
+    if hotspot and "imageRef" in config:
+        found["hotspot"] = config["imageRef"]
+    if found and version == 1:
+        raise _invalid_file(
+            f"Question {n}: image references require a version 2 bundle"
+        )
+    for name in found.values():
+        if not isinstance(name, str) or name not in images:
+            raise _invalid_file(f"Question {n}: unknown image reference {name!r}")
+    return found
+
+
+def _with_image_ids(q: dict, found: dict, image_ids: dict) -> dict:
+    """The question with each ref replaced by an image id (`image_ids[ref]`, or the
+    placeholder when validating before any image exists)."""
+    q = _without(q, "prompt_image_ref")
+    if not found:
+        return q
+    config = dict(q.get("config") or {})
+
+    def image_id(name: str) -> int:
+        return image_ids.get(name, _PLACEHOLDER_IMAGE_ID)
+
+    if "prompt" in found:
+        q["prompt_image_id"] = image_id(found["prompt"])
+    if "optionImageRefs" in config:
+        config["optionImageIds"] = [
+            None if name is None else image_id(name)
+            for name in config.pop("optionImageRefs")
+        ]
+    if "hotspot" in found:
+        config = {"imageId": image_id(found["hotspot"]), **_without(config, "imageRef")}
+    q["config"] = config
+    return q
+
+
 async def import_game(
     db: AsyncSession, actor: User, raw: bytes, course_id: int
 ) -> Game:
-    """Create a new game in `course_id` from a bundle (never overwrites). 404 for an
-    unknown course; every structural problem is a 422 RequestBodyInvalidError raised
-    before anything is written. Same auto-grant rule as create_game."""
+    """Create a new game in `course_id` from a version 1 or 2 bundle (never overwrites).
+    404 for an unknown course; every structural problem is a 422 RequestBodyInvalidError
+    raised before anything is written; a bad image (checked when it is created) raises
+    after, and get_db rolls the whole import back. Referenced images are created in the
+    target course, reusing identical ones (T8 D2). Same auto-grant rule as create_game."""
     if not await db.get(Course, course_id):
         raise NotFoundError(f"Course {course_id} not found")
     try:
@@ -469,55 +611,73 @@ async def import_game(
     if not isinstance(bundle, dict) or bundle.get("format") != BUNDLE_FORMAT:
         raise _invalid_file("Unrecognised file format")
     version = bundle.get("version")
-    if version != BUNDLE_VERSION:
+    if isinstance(version, bool) or version not in BUNDLE_VERSIONS:
         raise _invalid_file(
-            f"Unsupported version {version!r}; server supports version {BUNDLE_VERSION}"
+            f"Unsupported version {version!r}; server supports versions 1 and 2"
         )
     try:
         meta = GameMeta(**bundle.get("game", {}))
     except (ValidationError, TypeError) as exc:
         raise _invalid_file(f"Invalid game metadata: {exc}") from exc
+    images = _bundle_images(bundle.get("images", [])) if version == 2 else {}
     questions_raw = bundle.get("questions", [])
     if not isinstance(questions_raw, list):
         raise _invalid_file("questions must be a list")
-    questions: list[QuestionCreate] = []
+
+    checked: list[tuple[dict, dict]] = []
     for i, q in enumerate(questions_raw):
+        if not isinstance(q, dict):
+            raise _invalid_file(f"Question {i + 1} invalid: must be an object")
         # A v1 bundle's imageId would point at an arbitrary image on this server
-        # (t7-hotspot.md §6.3.3); the same goes for T8's prompt and option images (D7).
-        if isinstance(q, dict) and q.get("type") == "hotspot":
+        # (t7-hotspot.md §6.3.3).
+        if version == 1 and q.get("type") == "hotspot":
             raise _invalid_file(
                 f"Question {i + 1}: hotspot questions require a version 2 bundle"
             )
-        if isinstance(q, dict) and (
-            q.get("prompt_image_id") is not None
-            or (isinstance(q.get("config"), dict) and "optionImageIds" in q["config"])
-        ):
-            raise _invalid_file(
-                f"Question {i + 1}: image IDs can't be imported; export the game "
-                "again to get a version 2 file"
-            )
+        found = _bundle_refs(i + 1, q, version, images)
         try:
-            questions.append(QuestionCreate(**q))
+            QuestionCreate(**_with_image_ids(q, found, {}))  # schema only
         except (ValidationError, TypeError) as exc:
             raise _invalid_file(f"Question {i + 1} invalid: {exc}") from exc
+        checked.append((q, found))
+
+    # Create only the referenced images, in bundle order.
+    used = {name for _, found in checked for name in found.values()}
+    image_ids: dict[str, int] = {}
+    for name, (k, data) in images.items():
+        if name not in used:
+            continue
+        try:
+            image, _ = await image_service.create_image(db, course_id, data, actor.id)
+        except RequestBodyInvalidError as exc:
+            raise _invalid_file(f"Image {k}: {exc.errors[0]['msg']}") from exc
+        image_ids[name] = image.id
 
     game = await create_game(db, actor, meta, course_id)
-    for index, q in enumerate(questions):
+    for index, (q, found) in enumerate(checked):
+        valid = QuestionCreate(**_with_image_ids(q, found, image_ids))
         db.add(
             Question(
                 game_id=game.id,
-                type=q.type,
-                grading_type=q.grading_type,
-                prompt=sanitize_prompt(q.prompt),
-                config=q.config,
-                answer_data=q.answer_data,
-                time_limit_seconds=q.time_limit_seconds,
-                points_value=q.points_value,
+                type=valid.type,
+                grading_type=valid.grading_type,
+                prompt=sanitize_prompt(valid.prompt),
+                config=valid.config,
+                answer_data=valid.answer_data,
+                time_limit_seconds=valid.time_limit_seconds,
+                points_value=valid.points_value,
                 order_index=index,
+                prompt_image_id=valid.prompt_image_id,
             )
         )
     await db.flush()
-    logger.info("game_imported", game_id=game.id, questions=len(questions), by=actor.id)
+    logger.info(
+        "game_imported",
+        game_id=game.id,
+        questions=len(checked),
+        images=len(image_ids),
+        by=actor.id,
+    )
     return game
 
 
