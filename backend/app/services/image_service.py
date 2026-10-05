@@ -158,6 +158,87 @@ async def create_image(
     return image, True
 
 
+# ---------------------------------------------------------------------------
+# Which images a question uses (D5) — the one place that knows the image fields
+# ---------------------------------------------------------------------------
+
+ImageField = tuple[tuple, int]  # (location under "body", image id)
+
+
+def question_image_fields(
+    question_type: str, config: object, prompt_image_id: object
+) -> list[ImageField]:
+    """Every image a question uses, with the request-body location of each: the prompt
+    image, option images (multiple_choice / multi_select) and the hotspot image. Never
+    raises — malformed data contributes nothing. A new question type with image fields
+    registers them here and nowhere else."""
+    fields: list[ImageField] = []
+
+    def add(loc: tuple, value: object) -> None:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            fields.append((loc, value))
+
+    add(("prompt_image_id",), prompt_image_id)
+    if isinstance(config, dict):
+        if question_type in ("multiple_choice", "multi_select"):
+            ids = config.get("optionImageIds")
+            if isinstance(ids, list):
+                for i, value in enumerate(ids):
+                    add(("config", "optionImageIds", i), value)
+        elif question_type == "hotspot":
+            add(("config", "imageId"), config.get("imageId"))
+    return fields
+
+
+def question_image_ids(
+    question_type: str, config: object, prompt_image_id: object
+) -> set[int]:
+    return {
+        image_id
+        for _, image_id in question_image_fields(question_type, config, prompt_image_id)
+    }
+
+
+async def assert_usable(
+    db: AsyncSession, course_id: int | None, fields: list[ImageField]
+) -> None:
+    """422 unless every image in `fields` exists (contract C4) and belongs to
+    `course_id`, the game's course (D3). Locks the image rows FOR SHARE in ascending id
+    order, so a concurrent delete or replace of one of them waits for this transaction
+    (and two transactions can't each hold a lock the other wants)."""
+    if not fields:
+        return
+    if course_id is None:
+        loc, image_id = fields[0]
+        raise _field_error(
+            loc, "Assign the game to a course before adding images", image_id
+        )
+    ids = sorted({image_id for _, image_id in fields})
+    owners = dict(
+        (
+            await db.execute(
+                select(Image.id, Image.course_id)
+                .where(Image.id.in_(ids))
+                .order_by(Image.id)
+                .with_for_update(read=True)
+            )
+        ).all()
+    )
+    for loc, image_id in fields:
+        if image_id not in owners:
+            raise _field_error(loc, f"Image {image_id} does not exist", image_id)
+        if owners[image_id] != course_id:
+            raise _field_error(
+                loc, f"Image {image_id} belongs to a different course", image_id
+            )
+
+
+def _field_error(loc: tuple, msg: str, value: object) -> RequestBodyInvalidError:
+    return RequestBodyInvalidError(
+        [{"type": "value_error", "loc": ("body", *loc), "msg": msg, "input": value}]
+    )
+
+
 async def get_image(db: AsyncSession, image_id: int) -> tuple[str, bytes] | None:
     """Contract C5: (content_type, bytes), or None if there is no such image."""
     row = (

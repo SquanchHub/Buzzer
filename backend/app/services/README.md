@@ -81,6 +81,10 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   savepoint + `IntegrityError` and re-read with `FOR SHARE` — the pre-check must stay a plain read,
   or two uploads deadlock on gap locks); `get_image(db, id)` → `(content_type, bytes) | None`
   (C5); `image_exists(db, id)` (C4). Re-saved images keep their ICC colour profile.
+  `question_image_fields(type, config, prompt_image_id)` → `[(body loc, image id)]` — **the one
+  place that knows which fields hold images** (prompt, `optionImageIds`, hotspot `imageId`);
+  `question_image_ids` is its id set; `assert_usable(db, course_id, fields)` → 422 per field for a
+  missing image, another course's image, or a game with no course.
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.
@@ -142,13 +146,12 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   *before* they are sanitized, so e.g. `<script></script>` passes validation and is saved as
   `""` — on the admin path and in `content_service`. Kept as is (T4 §6.2.5 h); validate the
   sanitized text if empty prompts ever matter.
-- **Hotspot image check is a dev stand-in until T7 stage C.** `content_service._image_exists`
-  keys off `APP_ENV` only: in development an image exists iff `/dev-images/{id}.png` does
-  (`frontend/dev-images`, mounted read-only by `docker-compose.yml`); in any other environment
-  no image exists, so host create/update of a hotspot question is a 422 on `config.imageId`.
-  Stage C replaces it with T8's check and removes the mount (`docs/plans/t7-hotspot.md` §13.2).
-  `import_game` also rejects a hotspot question in a v1 bundle (§6.3.3), so until stage C a
-  hotspot game's export (still v1, with `imageId`) does not re-import.
+- **Every image a question uses must exist and belong to its game's course** (T8 V3, replacing
+  the stage-B dev stand-in): `content_service._check_images` runs on create and on every update
+  (after `QuestionCreate`, so structural errors win) via `image_service.assert_usable`, which
+  locks the rows `FOR SHARE` in id order. A game with no course can't use images. `import_game`
+  rejects a v1 bundle carrying a hotspot question or a raw `prompt_image_id` / `optionImageIds`;
+  until T8 V7 (version 2) a game with images exports as v1 and does not re-import.
 - Only `room:{code}` has a TTL (90 min). The `session:{id}:*` keys never expire; they are only
   removed by `delete_room_state` (abandon or host delete). Completed games leave them behind.
 - `update_player_score` is read-modify-write on a JSON blob, so concurrent updates can lose one.

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 
 import httpx
 import pytest
@@ -253,3 +254,191 @@ def test_large_upload_passes_nginx(hapi, admin_token):
     )
     assert r.status_code == 201, r.text
     hapi._images.append(r.json()["id"])
+
+
+# ── 9. Questions using images (§5, D3, D5) ──────────────────────────────────
+
+
+def _mc(**overrides) -> dict:
+    body = {
+        "type": "multiple_choice",
+        "grading_type": "ACCURACY",
+        "prompt": "Which one?",
+        "config": {"options": ["A", "B"]},
+        "answer_data": {"answer_points": [10, 0]},
+        "time_limit_seconds": 30,
+        "points_value": 10,
+    }
+    body.update(overrides)
+    return body
+
+
+def _host_with_images(hapi, n: int = 2) -> tuple[str, int, int, list[int]]:
+    """A HOST's empty game and `n` images in its course → (token, course, game, ids)."""
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    ids = [hapi.image(course, png((10 + i, 10)), token) for i in range(n)]
+    return token, course, game, ids
+
+
+def _err(r: httpx.Response) -> tuple[list, str]:
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "VALIDATION_ERROR"
+    first = r.json()["detail"][0]
+    return first["loc"], first["msg"]
+
+
+def test_prompt_and_option_images_round_trip(hapi):
+    token, _, game, (a, b) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    body = _mc(
+        prompt_image_id=a,
+        config={"options": ["", "Beta"], "optionImageIds": [b, None]},
+    )
+    q = hapi.ok("POST", url, token, json=body)
+    assert q["prompt_image_id"] == a
+    assert q["config"] == {"options": ["", "Beta"], "optionImageIds": [b, None]}
+    [listed] = hapi.ok("GET", url, token)
+    assert listed == q
+
+    # Updates: swap the prompt image, then remove it with an explicit null.
+    swapped = hapi.ok("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": b})
+    assert swapped["prompt_image_id"] == b
+    removed = hapi.ok("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": None})
+    assert removed["prompt_image_id"] is None
+    assert removed["config"]["optionImageIds"] == [b, None]  # untouched
+
+
+def test_question_without_images_has_null_prompt_image(hapi):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_mc())
+    assert q["prompt_image_id"] is None
+
+
+def test_multi_select_option_images(hapi):
+    token, _, game, (a, _) = _host_with_images(hapi)
+    body = _mc(
+        type="multi_select",
+        config={"options": ["One", "Two"], "optionImageIds": [None, a]},
+        answer_data={"answer_points": [5, 5]},
+    )
+    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_unknown_image_ids_are_422_per_field(hapi):
+    token, _, game, (a, _) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    loc, msg = _err(hapi.req("POST", url, token, json=_mc(prompt_image_id=999999999)))
+    assert (loc, msg) == (["body", "prompt_image_id"], "Image 999999999 does not exist")
+    body = _mc(config={"options": ["A", "B"], "optionImageIds": [a, 999999999]})
+    loc, msg = _err(hapi.req("POST", url, token, json=body))
+    assert loc == ["body", "config", "optionImageIds", 1]
+    assert hapi.ok("GET", url, token) == []
+
+
+def test_other_course_image_is_refused(hapi):
+    token, course, game, _ = _host_with_images(hapi, 0)
+    other = hapi.course()
+    foreign = hapi.image(other, png((77, 7)))
+    r = hapi.req(
+        "POST",
+        f"/host/games/{game}/questions",
+        token,
+        json=_mc(prompt_image_id=foreign),
+    )
+    loc, msg = _err(r)
+    assert msg == f"Image {foreign} belongs to a different course"
+
+
+def test_update_to_other_course_image_is_refused(hapi):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    foreign = hapi.image(hapi.course(), png((78, 7)))
+    url = f"/host/games/{game}/questions"
+    q = hapi.ok("POST", url, token, json=_mc())
+    _, msg = _err(
+        hapi.req("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": foreign})
+    )
+    assert msg == f"Image {foreign} belongs to a different course"
+    assert hapi.ok("GET", url, token)[0]["prompt_image_id"] is None
+
+
+def test_unassigned_game_cannot_use_images(hapi):
+    image = hapi.image(hapi.course(), png((79, 7)))
+    out = mysql(
+        "INSERT INTO games (title, description, max_players) "
+        "VALUES ('T8 legacy', '', 150); SELECT LAST_INSERT_ID();"
+    )
+    game = hapi.track_game(int(out.split()[-1]))
+    r = hapi.req(
+        "POST", f"/admin/games/{game}/questions", json=_mc(prompt_image_id=image)
+    )
+    _, msg = _err(r)
+    assert msg == "Assign the game to a course before adding images"
+
+
+@pytest.mark.parametrize(
+    "body, fragment",
+    [
+        (
+            _mc(config={"options": ["A", "B"], "optionImageIds": [None]}),
+            "optionImageIds must be a list the same length as options",
+        ),
+        (
+            _mc(config={"options": ["  ", "B"], "optionImageIds": [None, None]}),
+            "option 1 needs text or an image",
+        ),
+        (
+            _mc(config={"options": ["A", "B"], "optionImageIds": [True, None]}),
+            "optionImageIds[0] must be a positive integer or null",
+        ),
+        (
+            _mc(
+                type="true_false",
+                config={"optionImageIds": [None, None]},
+                answer_data={"answer_points": {"true": 1, "false": 0}},
+            ),
+            "optionImageIds is only allowed on multiple_choice and multi_select",
+        ),
+        (_mc(prompt_image_id=True), "Input should be a valid integer"),
+        (_mc(prompt_image_id=0), "Input should be greater than 0"),
+    ],
+    ids=["length", "blank-option", "bool-id", "true-false", "bool-prompt", "zero"],
+)
+def test_image_field_shape_errors(hapi, body, fragment):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    _, msg = _err(hapi.req("POST", f"/host/games/{game}/questions", token, json=body))
+    assert fragment in msg
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        _mc(prompt_image_id=5),
+        _mc(config={"options": ["A", "B"], "optionImageIds": [5, None]}),
+    ],
+    ids=["prompt", "options"],
+)
+def test_v1_bundle_with_image_ids_is_rejected(hapi, question):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    bundle = {
+        "format": "buzzer/game",
+        "version": 1,
+        "game": {"title": "v1 with image ids"},
+        "questions": [_mc(), question],
+    }
+    r = hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", json.dumps(bundle).encode())},
+        data={"course_id": str(course)},
+    )
+    _, msg = _err(r)
+    assert msg == (
+        "Question 2: image IDs can't be imported; export the game again to get a "
+        "version 2 file"
+    )
+    assert hapi.ok("GET", f"/host/courses/{course}/games", token) == []

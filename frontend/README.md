@@ -47,9 +47,9 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
   `player/vite.config.ts` contain a `devImages` plugin (`apply: 'serve'`) that serves
   `frontend/dev-images/{id}.png` for that route, plus a `server.fs.allow` entry for the folder.
   It exists only on the Vite dev servers (not nginx, not builds) so hotspot questions can be
-  authored and played before T8. The backend's stage-B image-existence check reads the same
-  folder through a dev-only `docker-compose.yml` mount, so the host editor and the server agree on
-  which IDs exist. Remove all of it in stage C — see `dev-images/README.md`.
+  authored and played before T8. The backend no longer uses the folder (T8 V3 checks real
+  uploaded images), so under `npm run dev` the apps show these files instead of the real images;
+  use the nginx build until the plugins are removed (T8 step A6) — see `dev-images/README.md`.
 
 - **No shared code:** primitives and API clients are copied three times and have already drifted
   (player button sizing, `TimerBar` props, API client methods). Fixes and theming (T9) must be
