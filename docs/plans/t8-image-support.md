@@ -154,7 +154,8 @@ browser draws them.
 - *SVG is rejected.* It is a text format that can carry scripts; serving a user's SVG from our
   origin is a script-injection risk, and making it safe needs an SVG sanitizer.
 - *GIF is rejected.* An animated GIF has many frames; hotspot coordinates and the re-save step
-  assume one.
+  assume one. An animated WebP is rejected for the same reason ("Animated images are not
+  supported").
 
 **Limits:**
 
@@ -196,9 +197,12 @@ importing a sample game three times into one course stores its images three time
 in **another** course are a separate row, because each course owns its images (D3).
 
 **Two uploads of the same bytes at the same moment** both miss the lookup and the second insert
-hits the unique `(course_id, sha256)` key. `create_image` inserts inside a savepoint
-(`db.begin_nested()`); on that `IntegrityError` it rolls back the savepoint, re-selects the
-existing row and returns it as a duplicate. The caller's transaction is unaffected and no 500 is
+hits the unique `(course_id, sha256)` key. `create_image` checks for a duplicate with a plain
+read, inserts inside a savepoint (`db.begin_nested()`), and on that `IntegrityError` rolls back
+the savepoint and re-reads the row with a **locking** read (`FOR SHARE`), which sees the other
+upload's committed row that a plain read under REPEATABLE READ would miss. The pre-check must not
+lock: `FOR SHARE` on a missing row takes a gap lock, and two uploads holding gap locks that then
+both insert deadlock, which rolls back the whole transaction (found in implementation, V2). The caller's transaction is unaffected and no 500 is
 possible.
 
 ### D3. Ownership: images belong to a course
@@ -238,8 +242,8 @@ a question may only use images from its game's course.
 | Route | Who | Result |
 |---|---|---|
 | `GET /api/images/{id}` | any logged-in token, guests included | Raw bytes. 200 sends the C3 cache header and `X-Content-Type-Options: nosniff`; 404 sends neither |
-| `GET /api/images?course_id=N&page=P&unused=bool` | admin, or HOST of course N | `ImagePage` (below), 24 per page, newest first; 404 unknown course; `page` starts at 1 |
-| `POST /api/images` | admin, or HOST of the course | Multipart `file` + `course_id` form field (as game import does) → 201 `ImageItem`; 200 with the existing row for a duplicate (D2); 404 unknown course |
+| `GET /api/images?course_id=N&page=P&unused=bool` | admin, or HOST of course N | `ImagePage` (below), 24 per page, newest first; unknown course 404 for an admin, 403 for anyone else (T4's `assert_host_can_use_course`, as `POST /host/games` does); `page` starts at 1 |
+| `POST /api/images` | admin, or HOST of the course | Multipart `file` + `course_id` form field (as game import does) → 201 `ImageItem`; 200 with the existing row for a duplicate (D2); unknown course as for the list |
 | `POST /api/images/{id}/replace` | admin, or HOST of the image's course | Multipart `file` → 200 `ReplaceResult` (D6) |
 | `DELETE /api/images/{id}` | admin, or HOST of the image's course | 204; 409 "Image is used by N questions" (C7); 403; 404 unknown |
 
