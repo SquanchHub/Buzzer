@@ -13,6 +13,7 @@ its dicts by hand.
 | `__init__.py` | Empty package marker. |
 | `admin.py` | Admin API bodies and responses: courses, roster, games, questions (with per-type validation), users, access grants, admin session list. |
 | `auth.py` | Login, token responses, guest join. |
+| `image.py` | `ImageItem` — an image's metadata for the image API (T8); never its bytes. |
 | `game.py` | Host-facing room/session/resource-list models, plus the internal `ScoreResult`. |
 
 ## Key entry points

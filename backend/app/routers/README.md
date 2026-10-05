@@ -1,7 +1,7 @@
 # backend/app/routers/
 
 HTTP (REST) layer of the FastAPI backend. Each file defines one `APIRouter`; `backend/app/main.py`
-mounts all four under the `/api` prefix. Routers handle request parsing, auth/role checks
+mounts them all under the `/api` prefix. Routers handle request parsing, auth/role checks
 (via FastAPI `Depends`), and shaping responses. Live gameplay (joining, answering, advancing
 questions) is **not** here — that runs over Socket.io in `backend/app/websocket/`.
 
@@ -14,12 +14,19 @@ questions) is **not** here — that runs over Socket.io in `backend/app/websocke
 | `auth.py` | `/api/auth/*` — login, OAuth2 callback, temp-token exchange, guest join, refresh, logout. |
 | `game.py` | `/api/game/*` — host-facing: list hostable courses/games/active and completed sessions, create/ping/get rooms, delete a session, list/merge guests, session CSV and HTML report downloads. |
 | `host.py` | `/api/host/*` — course content management for hosts (T4 §6.2.3): course roster, course game list, game create/import/edit/delete/export, question CRUD/reorder. |
+| `images.py` | `/api/images` (T8) — upload an image into a course (admin or course HOST), fetch its bytes (any token, guests included, with an immutable private cache header). |
 | `admin.py` | `/api/admin/*` — admin-only CRUD for courses, rosters, games, questions, users, access grants; game JSON import/export; guest merge; session list, CSV export, HTML report. |
 
 ## Key entry points
 
 Other code only touches the module-level `router` object in each file
-(`from .routers import admin, auth, game, health` in `main.py`). Endpoint groups:
+(`from .routers import admin, auth, game, health, host, images` in `main.py`). Endpoint groups:
+
+- **images.py** (T8, `docs/plans/t8-image-support.md` D4) — `POST /images` (multipart `file` +
+  `course_id` form field; `require_user` + `assert_host_can_use_course`, so an unknown course is
+  404 for an admin and 403 for a host; 201, or 200 with the existing row for identical bytes);
+  `GET /images/{id}` (`get_current_user`, guests included; raw bytes with
+  `Cache-Control: private, max-age=31536000, immutable` and `nosniff`, neither on a 404).
 
 - **auth.py** — `POST /login` (username/password → access token + `refresh_token` cookie;
   `{netid}` dev-only fallback → temp token), `GET /oauth2-callback` (reads Traefik's

@@ -1,0 +1,175 @@
+"""
+Question images stored in MySQL (T8, docs/plans/t8-image-support.md).
+
+Uploads are judged by their bytes, never by file name or declared type (D2):
+PNG, JPEG and WebP only, at most MAX_BYTES and MAX_SIDE px per side. An image
+carrying metadata (EXIF, XMP, text chunks) is rotated upright and re-saved
+without it; otherwise its bytes are stored exactly as uploaded. Identical
+stored bytes in one course reuse the existing row.
+
+The bytes under an image ID never change (contract C1 in docs/plans/t7-hotspot.md
+§4). Like every service here, this module flushes and never commits.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import warnings
+
+from PIL import Image as PILImage
+from PIL import ImageOps, UnidentifiedImageError
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..common.exceptions import RequestBodyInvalidError
+from ..models.image import Image
+
+MAX_BYTES = 2 * 1024 * 1024
+MAX_SIDE = 4096
+CONTENT_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}
+
+# Decoding is refused well before a "decompression bomb" could exhaust memory; the
+# per-side check below is the real limit, this is the backstop for odd headers.
+PILImage.MAX_IMAGE_PIXELS = MAX_SIDE * MAX_SIDE
+
+_METADATA_KEYS = ("exif", "xmp", "XML:com.adobe.xmp", "comment")
+
+
+def _invalid(msg: str, field: str = "file") -> RequestBodyInvalidError:
+    return RequestBodyInvalidError.for_field(field, msg)
+
+
+def _has_metadata(img: PILImage.Image) -> bool:
+    if len(img.getexif()) or any(k in img.info for k in _METADATA_KEYS):
+        return True
+    return bool(getattr(img, "text", None))  # PNG tEXt/iTXt/zTXt chunks
+
+
+def normalize(data: bytes, field: str = "file") -> tuple[bytes, str, int, int]:
+    """Validate an upload per D2 → (stored bytes, content type, width, height).
+
+    Raises RequestBodyInvalidError (422) with a message the editors show as is.
+    """
+    if not data:
+        raise _invalid("File is empty", field)
+    if len(data) > MAX_BYTES:
+        raise _invalid(
+            f"Image is {len(data) / 1048576:.1f} MB; the limit is 2 MB", field
+        )
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PILImage.DecompressionBombWarning)
+            img = PILImage.open(io.BytesIO(data))
+            fmt = img.format
+            if fmt not in CONTENT_TYPES:
+                raise _invalid("File is not a PNG, JPEG or WebP image", field)
+            width, height = img.size
+            if width > MAX_SIDE or height > MAX_SIDE:
+                raise _invalid(
+                    f"Image is {width} × {height} px; "
+                    f"the limit is {MAX_SIDE} px per side",
+                    field,
+                )
+            if getattr(img, "n_frames", 1) > 1:
+                raise _invalid("Animated images are not supported", field)
+            img.load()  # full decode: catches truncated or corrupt files
+    except RequestBodyInvalidError:
+        raise
+    except UnidentifiedImageError:
+        raise _invalid("File is not a PNG, JPEG or WebP image", field)
+    except (
+        OSError,
+        SyntaxError,
+        ValueError,
+        PILImage.DecompressionBombError,
+        PILImage.DecompressionBombWarning,
+    ):
+        raise _invalid("Image file is damaged or incomplete", field)
+
+    if not _has_metadata(img):
+        return data, CONTENT_TYPES[fmt], width, height
+
+    # Apply the rotation tag so the stored pixels match what browsers show (a phone
+    # portrait photo is stored sideways), then save again without metadata.
+    upright = ImageOps.exif_transpose(img)
+    out = io.BytesIO()
+    save: dict = {}
+    if "icc_profile" in img.info:  # colour profile, not personal data: keep it
+        save["icc_profile"] = img.info["icc_profile"]
+    if fmt in ("JPEG", "WEBP"):
+        save["quality"] = 90
+    upright.save(out, fmt, **save)
+    stored = out.getvalue()
+    if len(stored) > MAX_BYTES:
+        raise _invalid("Image is over 2 MB after removing its metadata", field)
+    return stored, CONTENT_TYPES[fmt], upright.width, upright.height
+
+
+async def _same_bytes(
+    db: AsyncSession, course_id: int, sha: str, *, latest: bool = False
+) -> Image | None:
+    query = select(Image).where(Image.course_id == course_id, Image.sha256 == sha)
+    if latest:
+        # A locking read sees rows committed after this transaction's snapshot, which
+        # a plain SELECT under REPEATABLE READ would miss. Only used once the row is
+        # known to exist: on a missing row it would take a gap lock, and two uploads
+        # holding gap locks and then inserting deadlock each other.
+        query = query.with_for_update(read=True)
+    return (await db.execute(query)).scalar_one_or_none()
+
+
+async def create_image(
+    db: AsyncSession,
+    course_id: int,
+    data: bytes,
+    uploaded_by: str | None,
+    field: str = "file",
+) -> tuple[Image, bool]:
+    """Store an image in `course_id` → (row, created). Contract C6: validates per D2,
+    raises the 422 error type, flushes, never commits. Identical stored bytes already
+    in the course return the existing row with created=False."""
+    stored, content_type, width, height = normalize(data, field)
+    sha = hashlib.sha256(stored).hexdigest()
+    existing = await _same_bytes(db, course_id, sha)
+    if existing:
+        return existing, False
+    image = Image(
+        course_id=course_id,
+        content_type=content_type,
+        data=stored,
+        byte_size=len(stored),
+        width=width,
+        height=height,
+        sha256=sha,
+        uploaded_by=uploaded_by,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(image)
+            await db.flush()
+    except IntegrityError:
+        # Two uploads of the same bytes at once: the other one won the unique key.
+        existing = await _same_bytes(db, course_id, sha, latest=True)
+        if existing is None:
+            raise
+        return existing, False
+    return image, True
+
+
+async def get_image(db: AsyncSession, image_id: int) -> tuple[str, bytes] | None:
+    """Contract C5: (content_type, bytes), or None if there is no such image."""
+    row = (
+        await db.execute(
+            select(Image.content_type, Image.data).where(Image.id == image_id)
+        )
+    ).one_or_none()
+    return (row.content_type, row.data) if row else None
+
+
+async def image_exists(db: AsyncSession, image_id: int) -> bool:
+    """Contract C4."""
+    return (
+        await db.execute(select(Image.id).where(Image.id == image_id))
+    ).scalar_one_or_none() is not None

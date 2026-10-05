@@ -17,6 +17,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `export_service.py` | Builds session score CSVs: a raw per-question table and a Canvas gradebook import format. |
 | `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
+| `image_service.py` | Question images (T8): validates uploads by their bytes with Pillow (PNG/JPEG/WebP, ≤ 2 MB, ≤ 4096 px per side), strips metadata with rotation applied, stores them per course with duplicate reuse, and serves contract calls C4–C6. |
 | `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing, game import/export (bundle format v1, never `course_id`). |
 
 ## Key entry points
@@ -73,6 +74,13 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   is imported from `game_service`, not copied. The image comes from `_hotspot_image_data_uri`,
   **a stage A stub that always returns `None`** (draws "Image unavailable") until T8's C5 lands
   (`docs/plans/t7-hotspot.md` §9 stage C).
+- **image_service** (T8, `docs/plans/t8-image-support.md` D2) — `normalize(data, field)` →
+  `(stored bytes, content_type, width, height)` or a 422 `RequestBodyInvalidError` on `field`;
+  `create_image(db, course_id, data, uploaded_by)` → `(Image, created)` (C6: flush only; identical
+  stored bytes in the course return the existing row; a concurrent duplicate is caught via a
+  savepoint + `IntegrityError` and re-read with `FOR SHARE` — the pre-check must stay a plain read,
+  or two uploads deadlock on gap locks); `get_image(db, id)` → `(content_type, bytes) | None`
+  (C5); `image_exists(db, id)` (C4). Re-saved images keep their ICC colour profile.
 - **roster_service** — `process_roster_csv(db, course_id, bytes)`, `process_roster_rows(db, course_id, rows)`;
   both return `RosterUploadResult` and cap at 1000 rows.
 - **bootstrap** — `bootstrap_admin()`.

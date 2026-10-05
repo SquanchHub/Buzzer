@@ -1,0 +1,18 @@
+"""Image API responses (T8, docs/plans/t8-image-support.md D4)."""
+
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class ImageItem(BaseModel):
+    """An image's metadata — never its bytes, which are only served by GET /images/{id}."""
+
+    id: int
+    course_id: int
+    content_type: str
+    width: int
+    height: int
+    byte_size: int
+    created_at: datetime | None
+    uploaded_by_name: str | None
