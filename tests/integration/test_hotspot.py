@@ -735,3 +735,21 @@ def test_v2_hotspot_bad_image_field_creates_nothing(hapi, config, msg):  # noqa:
     assert (
         hapi.ok("GET", f"/images?course_id={course}", token)["total"] == images_before
     )
+
+
+# §10 test 14, second half (stage E): Arjun's two T6 games are version 2 bundles, each with one
+# hotspot question whose image is embedded. Importing them is covered for both routes by
+# test_sample_game_imports_through_host_route above and test_course_games.py (admin route),
+# which run over every sample_games/*.json.
+_STAGE_E_GAMES = ("world_geography_challenge.json", "wild_kingdom_party.json")
+
+
+@pytest.mark.parametrize("name", _STAGE_E_GAMES)
+def test_stage_e_sample_game_is_v2_with_its_hotspot_image(name):
+    bundle = json.loads((_REPO_ROOT / "sample_games" / name).read_text())
+    assert bundle["version"] == 2
+    [image] = bundle["images"]
+    [hotspot] = [q for q in bundle["questions"] if q["type"] == "hotspot"]
+    assert hotspot["config"] == {"imageRef": image["ref"], "aspectRatio": 2.0}
+    stored = (_REPO_ROOT / "sample_games" / "images").glob("*.png")
+    assert base64.b64decode(image["data_base64"]) in [p.read_bytes() for p in stored]
