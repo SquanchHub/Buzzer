@@ -134,10 +134,15 @@ def test_host_reveal_and_player_results(api, new_context):
     expect(correct).to_have_count(len(ITEMS))
     for k, d in enumerate(CORRECT):
         expect(correct.nth(k)).to_contain_text(ITEMS[d][:20])
-    expect(host.get_by_test_id("ordering-host-bucket-0")).to_contain_text("Perfect")
-    expect(host.get_by_test_id("ordering-host-bucket-0")).to_contain_text("1")
-    expect(host.get_by_test_id("ordering-host-bucket-1")).to_contain_text(
-        "1 out of place"
+    # Label then count: one perfect phone, one with an item out of place, none with two.
+    expect(host.get_by_test_id("ordering-host-bucket-0")).to_have_text(
+        re.compile(r"^Perfect\s*1$")
+    )
+    expect(host.get_by_test_id("ordering-host-bucket-1")).to_have_text(
+        re.compile(r"^1 out of place\s*1$")
+    )
+    expect(host.get_by_test_id("ordering-host-bucket-2")).to_have_text(
+        re.compile(r"^2 out of place\s*0$")
     )
     expect(host.get_by_test_id("ordering-host-room-order")).to_contain_text("avg")
 

@@ -130,6 +130,10 @@ def test_in_order_matches_brute_force_for_every_permutation(n):
         assert res.total == n
         assert len(res.out_of_place) == n - res.in_order
         assert set(res.out_of_place) <= set(order)
+        # The items kept "in order" really are increasing in correct position.
+        kept = [rank[d] for d in order if d not in res.out_of_place]
+        assert len(kept) == res.in_order
+        assert all(a < b for a, b in zip(kept, kept[1:]))
         assert res.exact == (order == correct)
 
 

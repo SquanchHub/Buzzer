@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 import httpx
 import pytest
@@ -569,9 +570,9 @@ def _stored(q: dict) -> tuple:
     return (q["type"], q["grading_type"], q["config"], q["answer_data"])
 
 
-def test_export_import_version_1_round_trip(hapi):  # noqa: F811
-    """§9.2 test 12: an ordering-only game exports as version 1 and re-imports the
-    question unchanged (the stored shuffle and key survive byte for byte)."""
+async def test_export_import_version_1_round_trip(hapi):  # noqa: F811
+    """§9.2 test 12: an ordering-only game exports as version 1, re-imports the question
+    unchanged (the stored shuffle and key survive byte for byte), and plays the same."""
     a = Author(hapi, "host")
     for body in (
         _body(),
@@ -599,6 +600,20 @@ def test_export_import_version_1_round_trip(hapi):  # noqa: F811
     copy = hapi.track_game(r.json()["game_id"])
     imported = hapi.ok("GET", f"/host/games/{copy}/questions", token)
     assert [_stored(q) for q in imported] == [_stored(q) for q in originals]
+
+    setup = {"course_id": target, "game_id": copy}
+    async with OrderingGame(hapi.base, hapi.admin, setup, 2) as g:
+        await g.next_question()
+        qid = imported[0]["id"]
+        acks = [
+            await g.submit(0, qid, {"order": EXACT}),
+            await g.submit(1, qid, {"order": ONE_MOVED}),
+        ]
+        assert [a["pointsAwarded"] for a in acks] == pytest.approx([1000.0, 666.67])
+        await g.results()
+        await g.next_question()
+        await g.results()
+        await g.finish()
 
 
 @pytest.mark.parametrize("route", ROUTES)
@@ -690,7 +705,20 @@ async def test_report_renders_ordering(game_setup, base_url, admin_token):
     assert pos == sorted(pos)
     assert "Correct order" in html
     assert "Room&#x27;s order" in html or "Room's order" in html
-    assert "Perfect" in html and "1 out of place" in html
+
+    # One perfect order and one with an item out of place: check the counts, not just labels.
+    def bar_count(label: str) -> str | None:
+        m = re.search(
+            rf'{label}</span><div class="bar-track"><div class="bar-fill"[^>]*>'
+            r'(?:<span class="bar-count">(\d+)</span>)?',
+            html,
+        )
+        assert m, label
+        return m.group(1)
+
+    assert bar_count("Perfect") == "1"
+    assert bar_count("1 out of place") == "1"
+    assert bar_count("2 out of place") is None
     assert "avg 1.00" in html  # COMPLETENESS: Pineapple ranked first by its one voter
 
 
