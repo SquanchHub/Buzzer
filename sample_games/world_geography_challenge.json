@@ -220,6 +220,18 @@
       },
       "time_limit_seconds": 20,
       "points_value": 1.0
+    },
+    {
+      "type": "ordering",
+      "grading_type": "ACCURACY",
+      "prompt": "Order these cities from north to south (northernmost first).",
+      "config": {"items": ["Cairo", "Cape Town", "Oslo", "London", "Singapore"]},
+      "answer_data": {
+        "correctOrder": [2, 3, 0, 4, 1],
+        "partialCredit": true
+      },
+      "time_limit_seconds": 30,
+      "points_value": 2.0
     }
   ]
 }

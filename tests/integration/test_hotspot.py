@@ -753,3 +753,20 @@ def test_stage_e_sample_game_is_v2_with_its_hotspot_image(name):
     assert hotspot["config"] == {"imageRef": image["ref"], "aspectRatio": 2.0}
     stored = (_REPO_ROOT / "sample_games" / "images").glob("*.png")
     assert base64.b64decode(image["data_base64"]) in [p.read_bytes() for p in stored]
+
+
+def test_t6_arjuns_games_use_each_new_question_type():
+    """T6: each member's games include each of the team's new question types (T7: hotspot
+    and ordering). Both of Arjun's games carry a hotspot question (stage E); ordering came
+    later, so World Geography Challenge gained one."""
+    types = {
+        name: {
+            q["type"]
+            for q in json.loads((_REPO_ROOT / "sample_games" / name).read_text())[
+                "questions"
+            ]
+        }
+        for name in _STAGE_E_GAMES
+    }
+    assert {"hotspot", "ordering"} <= set().union(*types.values()), types
+    assert "ordering" in types["world_geography_challenge.json"], types
