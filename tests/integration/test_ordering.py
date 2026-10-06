@@ -12,12 +12,14 @@ answer (see test_hotspot.py).
 from __future__ import annotations
 
 import asyncio
+import json
 
 import httpx
 import pytest
 
 from .conftest import create_guest_tokens, create_room
 from .host_helpers import MC_QUESTION, hapi, mysql  # noqa: F401 — fixture
+from .image_helpers import png
 
 # Aliased so pytest doesn't try to collect the Test-prefixed class from this module.
 from .engine.socket_client import TestSocketClient as SocketClient
@@ -546,3 +548,96 @@ async def test_bad_stored_key_scores_zero_without_crashing(
         assert host_r["meanPositions"] == [3.0, 1.0, 4.0, 2.0]
         host_over, _ = await g.finish()
         assert host_over["questionSummary"][0]["answerReveal"] == {"type": "ordering"}
+
+
+# ---------------------------------------------------------------------------
+# §9.2 tests 12–14 — export / import (§5: no code change needed)
+# ---------------------------------------------------------------------------
+
+
+def _import(hapi, route: str, course: int, bundle: dict, token: str):  # noqa: F811
+    return hapi.req(
+        "POST",
+        f"/{route}/games/import",
+        token,
+        files={"file": ("g.json", json.dumps(bundle).encode(), "application/json")},
+        data={"course_id": str(course)},
+    )
+
+
+def _stored(q: dict) -> tuple:
+    return (q["type"], q["grading_type"], q["config"], q["answer_data"])
+
+
+def test_export_import_version_1_round_trip(hapi):  # noqa: F811
+    """§9.2 test 12: an ordering-only game exports as version 1 and re-imports the
+    question unchanged (the stored shuffle and key survive byte for byte)."""
+    a = Author(hapi, "host")
+    for body in (
+        _body(),
+        _body(
+            grading_type="COMPLETENESS",
+            config={"items": ["Pepperoni", "Mushrooms", "Pineapple"]},
+            answer_data={},
+        ),
+    ):
+        assert a.create(body).status_code == 201
+    originals = a.questions()
+    bundle = hapi.ok("GET", f"/host/games/{a.game}/export", a.host_token)
+    assert bundle["version"] == 1
+    assert [q["config"] for q in bundle["questions"]] == [
+        q["config"] for q in originals
+    ]
+    assert [q["answer_data"] for q in bundle["questions"]] == [
+        q["answer_data"] for q in originals
+    ]
+
+    target = hapi.course()
+    _, token = hapi.host_of(target)
+    r = _import(hapi, "host", target, bundle, token)
+    assert r.status_code == 201, r.text
+    copy = hapi.track_game(r.json()["game_id"])
+    imported = hapi.ok("GET", f"/host/games/{copy}/questions", token)
+    assert [_stored(q) for q in imported] == [_stored(q) for q in originals]
+
+
+@pytest.mark.parametrize("route", ROUTES)
+def test_export_import_version_2_with_prompt_image(hapi, route):  # noqa: F811
+    """§9.2 test 13: a T8 prompt image on an ordering question makes the bundle
+    version 2; the round trip gives a new image id and leaves the ordering data alone."""
+    a = Author(hapi, "host")
+    image = hapi.image(a.course, png((30, 20)), a.host_token)
+    q = a.create(_body(prompt_image_id=image)).json()
+    token = hapi.admin if route == "admin" else a.host_token
+    bundle = hapi.ok("GET", f"/{route}/games/{a.game}/export", token)
+    assert bundle["version"] == 2
+    [exported] = bundle["questions"]
+    assert exported["prompt_image_ref"] == bundle["images"][0]["ref"]
+    assert exported["config"] == q["config"]
+
+    target = hapi.course()
+    _, target_host = hapi.host_of(target)
+    r = _import(
+        hapi, route, target, bundle, hapi.admin if route == "admin" else target_host
+    )
+    assert r.status_code == 201, r.text
+    copy = hapi.track_game(r.json()["game_id"])
+    [imported] = hapi.ok("GET", f"/admin/games/{copy}/questions")
+    hapi._images.append(imported["prompt_image_id"])
+    assert imported["prompt_image_id"] not in (None, image)
+    assert _stored(imported) == _stored(q)
+
+
+def test_import_rejects_unshuffled_ordering_question(hapi):  # noqa: F811
+    """§9.2 test 14: a real export with its correctOrder edited to the identity."""
+    a = Author(hapi, "host")
+    assert a.create(_body()).status_code == 201
+    bundle = hapi.ok("GET", f"/host/games/{a.game}/export", a.host_token)
+    bundle["questions"][0]["answer_data"]["correctOrder"] = [0, 1, 2, 3]
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    r = _import(hapi, "host", course, bundle, token)
+    assert r.status_code == 422, r.text
+    assert "Question 1 invalid" in r.text
+    assert "shuffled order" in r.text
+    assert hapi.ok("GET", f"/host/courses/{course}/games", token) == []
