@@ -41,8 +41,12 @@ three apps), choosing to port components and accept the extra copy instead
 real and documented: the hotspot canvas layout rule now exists in the player's `HotspotCanvas`
 and the host's `HotspotView`, and the host components README says to change both together.
 
-*Screenshots: before/after screenshots in `docs/ui/`, including the hotspot editor and play flow,
-will be added and referenced here once T8 and T9 land.*
+*Screenshots: the T8 ones are in [`docs/ui/`](ui/README.md): the hotspot editor with the image
+picker ([`t8-hotspot-editor-picker.png`](ui/t8-hotspot-editor-picker.png)) and the play flow with
+real uploaded images ([host question screen](ui/t8-host-question-images.png),
+[phone question](ui/t8-hotspot-phone-question.png), [host results](ui/t8-hotspot-host-results.png),
+[phone result](ui/t8-hotspot-phone-result.png)). The before/after T9 theming shots are still to
+come.*
 
 **Tests and docs.** `tests/integration/` runs against the real Docker stack over HTTP and
 Socket.io (the `docker_stack` fixture); `tests/unit/` covers pure functions such as the hotspot
