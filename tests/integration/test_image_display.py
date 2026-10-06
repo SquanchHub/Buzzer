@@ -81,3 +81,37 @@ async def test_new_question_carries_prompt_and_option_images(hapi):  # noqa: F81
         await asyncio.gather(
             host.disconnect(), player.disconnect(), return_exceptions=True
         )
+
+
+async def test_host_game_over_summary_carries_prompt_images(hapi):  # noqa: F811
+    """The host's game-over cards show each question's prompt image (D8), so the host
+    question summary carries promptImageId (null when the question has none)."""
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    prompt_img = hapi.image(course, png((40, 20), (20, 20, 200)), token)
+    game = hapi.host_game(token, course, questions=0)
+    for body in (_mc("With a picture", prompt_image_id=prompt_img), _mc("Without")):
+        hapi.ok("POST", f"/host/games/{game}/questions", token, json=body)
+    code, _ = hapi.room(token, course, game)
+
+    host = SocketClient(hapi.base, token, "host")
+    player = SocketClient(hapi.base, hapi.guest(code), "guest")
+    try:
+        await asyncio.gather(host.connect(), player.connect())
+        await host.emit("join_room", {"room_code": code, "role": "HOST"})
+        await host.wait_for("sync_state")
+        await player.emit("join_room", {"room_code": code, "role": "PLAYER"})
+        await player.wait_for("sync_state")
+        for _ in range(2):
+            await host.emit("host_advance", {})
+            await host.wait_for("new_question")
+            await host.emit("host_advance", {})
+            await host.wait_for("question_results")
+            await asyncio.sleep(_RESULTS_SETTLE_S)
+        await host.emit("host_advance", {})
+        summary = (await host.wait_for("game_over"))["questionSummary"]
+    finally:
+        await asyncio.gather(
+            host.disconnect(), player.disconnect(), return_exceptions=True
+        )
+    assert [q["promptImageId"] for q in summary] == [prompt_img, None]

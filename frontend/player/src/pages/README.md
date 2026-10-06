@@ -16,8 +16,8 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 | `game/LobbyPage.tsx` | `…/lobby` | Room code, spinner, "N players in room". |
 | `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit (when an MC or multi-select question has option images — `config.optionImageIds`, T8 D8 — both become a two-column grid of large tiles: image, letter, text if any), hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit). Timer bar. Answer time measured from mount. |
 | `game/FeedbackPage.tsx` | `…/feedback` | Static "Answer locked in!" screen shown after `answer_received`. |
-| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings. |
-| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings). "Play Again" clears the token. |
+| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings. T8 D8, only for questions with option images: thumbnails of the player's choice and, after a wrong answer, of the correct choice; "(image)" names an image-only option. |
+| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings; rows of questions with option images add thumbnails of both, and "(image)" names an image-only option). "Play Again" clears the token. |
 
 ## Key entry points
 

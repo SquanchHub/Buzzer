@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
+import { ImageThumb } from '../../components/ImageThumb';
+import { optionImageId, optionText } from '../../lib/options';
 import type { AnswerReveal } from '../../types/game';
 
 const RESULTS_DISPLAY_SECONDS = 10;
@@ -113,7 +115,7 @@ function WordCloud({ distribution, answerReveal, totalAnswered, totalPlayers }: 
 // ---------------------------------------------------------------------------
 
 interface BarChartProps {
-  bars: { label: string; count: number; correct: boolean | null }[];
+  bars: { label: string; count: number; correct: boolean | null; imageId?: number | null }[];
   totalAnswered: number;
   totalPlayers: number;
 }
@@ -134,9 +136,12 @@ function AnswerBarChart({ bars, totalAnswered, totalPlayers }: BarChartProps) {
 
         return (
           <div key={i} className="flex items-center gap-3">
-            <span className="text-slate-300 font-bold font-mono w-8 text-right shrink-0">
+            <span className="text-slate-300 font-bold font-mono min-w-[2rem] max-w-[12rem] text-right shrink-0 whitespace-nowrap overflow-hidden text-ellipsis">
               {bar.label}
             </span>
+            {typeof bar.imageId === 'number' && (
+              <ImageThumb imageId={bar.imageId} alt={bar.label} className="h-10 w-14 shrink-0" />
+            )}
             <div className="flex-1 bg-slate-800 rounded-full h-10 overflow-hidden">
               <div
                 className={`h-full rounded-full flex items-center justify-end pr-3 transition-all duration-500 ${barColor}`}
@@ -168,22 +173,25 @@ function buildBars(
   reveal: AnswerReveal,
   distribution: Record<string, number>,
   options: string[] | undefined,
+  imageIds?: (number | null)[],
 ): BarChartProps['bars'] {
   if (reveal.type === 'multiple_choice') {
     const opts = options ?? [];
-    return opts.map((opt, i) => ({
-      label: `${optionLabel(i)}  ${opt}`,
+    return opts.map((_, i) => ({
+      label: `${optionLabel(i)}  ${optionText(opts, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: reveal.correctIndices.includes(i),
+      imageId: optionImageId(imageIds, i),
     }));
   }
 
   if (reveal.type === 'multi_select') {
     const opts = options ?? [];
-    return opts.map((opt, i) => ({
-      label: `${optionLabel(i)}  ${opt}`,
+    return opts.map((_, i) => ({
+      label: `${optionLabel(i)}  ${optionText(opts, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: (reveal.answerPoints[i] ?? 0) > 0,
+      imageId: optionImageId(imageIds, i),
     }));
   }
 
@@ -196,10 +204,11 @@ function buildBars(
 
   // completeness (non-FITB) — no right/wrong
   if (options && options.length > 0) {
-    return options.map((opt, i) => ({
-      label: `${optionLabel(i)}  ${opt}`,
+    return options.map((_, i) => ({
+      label: `${optionLabel(i)}  ${optionText(options, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: null,
+      imageId: optionImageId(imageIds, i),
     }));
   }
 
@@ -246,6 +255,7 @@ export default function ResultsPage() {
           questionResults.answerReveal,
           questionResults.answerDistribution,
           currentQuestion?.config?.options,
+          currentQuestion?.config?.optionImageIds,
         )
       : [];
 
@@ -256,9 +266,19 @@ export default function ResultsPage() {
       </h2>
 
       {currentQuestion && (
-        <p className="text-slate-300 text-xl text-center max-w-2xl">
-          {currentQuestion.prompt}
-        </p>
+        <div className="flex items-center justify-center gap-4 max-w-3xl">
+          {/* T8 D8: the prompt image, small, beside the prompt. */}
+          {typeof currentQuestion.promptImageId === 'number' && (
+            <ImageThumb
+              imageId={currentQuestion.promptImageId}
+              alt={currentQuestion.prompt}
+              className="h-20 w-32 shrink-0"
+            />
+          )}
+          <p className="text-slate-300 text-xl text-center max-w-2xl">
+            {currentQuestion.prompt}
+          </p>
+        </div>
       )}
 
       {questionResults && isHotspot && currentQuestion ? (

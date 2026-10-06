@@ -2,18 +2,21 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { HotspotCanvas, useImageUrl } from '../../components/HotspotCanvas';
+import { OptionThumbs } from '../../components/OptionThumbs';
+import { hasOptionImages, optionText } from '../../lib/options';
 import type { PlayerAnswerReveal, QuestionSummaryItem } from '../../types/game';
 
 function describePlayerAnswer(
   playerAnswer: QuestionSummaryItem['playerAnswer'],
   type: string,
   options: string[] | undefined,
+  imageIds?: (number | null)[],
 ): string {
   if (!playerAnswer) return 'No answer';
   if (type === 'multiple_choice') {
     const idx = playerAnswer.selectedIndex;
     if (typeof idx === 'number' && options && options[idx] !== undefined) {
-      return `${String.fromCharCode(65 + idx)} — ${options[idx]}`;
+      return `${String.fromCharCode(65 + idx)} — ${optionText(options, imageIds, idx)}`;
     }
     return '?';
   }
@@ -26,7 +29,7 @@ function describePlayerAnswer(
   if (type === 'multi_select') {
     const indices = playerAnswer.selectedIndices;
     if (!indices || indices.length === 0) return 'No selection';
-    if (options) return indices.map(i => `${String.fromCharCode(65 + i)} — ${options[i]}`).join(', ');
+    if (options) return indices.map(i => `${String.fromCharCode(65 + i)} — ${optionText(options, imageIds, i)}`).join(', ');
     return indices.map(i => String.fromCharCode(65 + i)).join(', ');
   }
   if (type === 'hotspot') {
@@ -64,11 +67,12 @@ function HotspotRecap({ item }: { item: QuestionSummaryItem }) {
 function describeCorrectAnswer(
   answerReveal: PlayerAnswerReveal,
   options: string[] | undefined,
+  imageIds?: (number | null)[],
 ): string {
   if (answerReveal.type === 'multiple_choice') {
     const indices = answerReveal.correctIndices;
     if (options) {
-      return indices.map(i => `${String.fromCharCode(65 + i)} — ${options[i]}`).join(', ');
+      return indices.map(i => `${String.fromCharCode(65 + i)} — ${optionText(options, imageIds, i)}`).join(', ');
     }
     return indices.map(i => String.fromCharCode(65 + i)).join(', ');
   }
@@ -83,7 +87,7 @@ function describeCorrectAnswer(
     const correct = answerReveal.answerPoints
       .map((p, i) => ({ p, i }))
       .filter(({ p }) => p > 0)
-      .map(({ i }) => options ? `${String.fromCharCode(65 + i)} — ${options[i]}` : String.fromCharCode(65 + i));
+      .map(({ i }) => options ? `${String.fromCharCode(65 + i)} — ${optionText(options, imageIds, i)}` : String.fromCharCode(65 + i));
     return correct.join(', ');
   }
   return '';
@@ -96,10 +100,25 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
   const isCorrect = !isCompleteness && !noAnswer && item.pointsAwarded > 0;
   const showCorrectAnswer = !isCompleteness && !isCorrect;
 
-  const playerAnswerLabel = describePlayerAnswer(item.playerAnswer, item.type, options);
+  const imageIds = item.config.optionImageIds;
+  const playerAnswerLabel = describePlayerAnswer(item.playerAnswer, item.type, options, imageIds);
   const correctAnswerLabel = !isCompleteness
-    ? describeCorrectAnswer(item.answerReveal, options)
+    ? describeCorrectAnswer(item.answerReveal, options, imageIds)
     : '';
+  // T8 D8: thumbnails of the player's choice and the correct choice (questions with option
+  // images only; text-only rows look as before).
+  const withImages = hasOptionImages(imageIds);
+  const a = item.playerAnswer;
+  const chosen: number[] =
+    !a ? []
+    : typeof a.selectedIndex === 'number' ? [a.selectedIndex]
+    : Array.isArray(a.selectedIndices) ? a.selectedIndices
+    : [];
+  const r = item.answerReveal;
+  const correctIndices: number[] =
+    r.type === 'multiple_choice' ? r.correctIndices
+    : r.type === 'multi_select' ? r.answerPoints.flatMap((p, i) => (p > 0 ? [i] : []))
+    : [];
 
   return (
     <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
@@ -128,11 +147,15 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
               {playerAnswerLabel}
             </span>
           </div>
+          {withImages && <div className="mt-1"><OptionThumbs indices={chosen} imageIds={imageIds} size="h-10 w-14" /></div>}
 
           {showCorrectAnswer && correctAnswerLabel && (
             <p className="text-slate-500 text-xs mt-1">
               Correct: <span className="text-green-400 font-medium">{correctAnswerLabel}</span>
             </p>
+          )}
+          {withImages && showCorrectAnswer && (
+            <div className="mt-1"><OptionThumbs indices={correctIndices} imageIds={imageIds} size="h-10 w-14" /></div>
           )}
         </div>
 

@@ -28,7 +28,8 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   If `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` are unset, it generates in-memory keys (tokens die on restart).
 - **game_service** — `create_room`, `get_session_by_code`, `start_game`, `complete_game`,
   `abandon_game`, `authorise_player`, `calculate_score`, `record_answer`, `get_leaderboard`,
-  `get_player_question_summary`, `get_host_question_summary`.
+  `get_player_question_summary`, `get_host_question_summary` (each host item also carries
+  `promptImageId` for the game-over card, T8 D8; option images ride in `config`).
   - Access: `assert_host_can_use_course` (HOST on the course) and `assert_host_can_use_game`
     (404 if missing; non-admins need a `user_game_access` grant **and** HOST on the game's course,
     unassigned games are admin-only, one shared 403 message). Admins bypass both.

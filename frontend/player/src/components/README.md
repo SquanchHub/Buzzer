@@ -15,6 +15,7 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 | `ui/input.tsx` | `Input` — a styled `<input>` with phone-sized padding and `text-base`. |
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
 | `ImageThumb.tsx` | `ImageThumb({ imageId, alt, className? })` — a stored image (T8) letterboxed in a box: loaded through `lib/images.ts` into a blob URL (revoked on unmount or id change), "Loading…" / "Image unavailable" otherwise. Copied from the host's `ImageThumb` (keep in sync). |
+| `OptionThumbs.tsx` | `OptionThumbs({ indices, imageIds, size? })` — lettered thumbnails of the options at `indices` that have an image (T8 D8: the player's choice and the correct choice); renders nothing when none has one. |
 | `HotspotCanvas.tsx` | `HotspotCanvas` — the hotspot question's `<canvas>` (`docs/plans/t7-hotspot.md` §7.6–7.7), interactive (tap to place a point) or display (rings + own tap); `useImageUrl(imageId)` for display canvases that load their own image. |
 
 ## Key entry points
@@ -47,7 +48,8 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 
 - `frontend/player/src/pages/`:
   - `JoinPage.tsx`, `NamePage.tsx` — `Button`, `Input`, `Card*`
-  - `game/GameOverPage.tsx` — `Button` (`variant="outline"`)
+  - `game/GameOverPage.tsx` — `Button` (`variant="outline"`), `HotspotCanvas`, `OptionThumbs`
+  - `game/ResultsPage.tsx` — `HotspotCanvas`, `OptionThumbs`
   - `game/QuestionPage.tsx` — `TimerBar`, `HotspotCanvas`, `ImageThumb` (option tiles)
 - Nothing outside the player app imports these.
 

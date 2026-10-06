@@ -69,7 +69,7 @@ network, sockets, or global state; both hotspot components fetch their image via
   - `QuestionEditorPage.tsx` — `HotspotEditor`, `Button`, `Input`, `Card*`
   - `game/LobbyPage.tsx` — `Button`
   - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `ImageThumb` (prompt image, option tiles)
-  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`
+  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`, `ImageThumb` (prompt and option thumbnails)
 - Nothing outside the host app imports these; the player and admin apps have their own copies.
 
 ## Gotchas found while reading

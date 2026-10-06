@@ -1,5 +1,7 @@
 import { useGame } from './GameLayout';
 import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
+import { OptionThumbs } from '../../components/OptionThumbs';
+import { hasOptionImages, optionText } from '../../lib/options';
 import type { HotspotBand, PlayerAnswerReveal } from '../../types/game';
 
 const HOTSPOT_LABELS: Record<HotspotBand, { text: string; className: string }> = {
@@ -22,12 +24,13 @@ function describeAnswer(
   lastAnswerData: Record<string, unknown> | null,
   type: string,
   options: string[] | undefined,
+  imageIds?: (number | null)[],
 ): string | null {
   if (!lastAnswerData) return null;
   if (type === 'multiple_choice') {
     const idx = lastAnswerData.selectedIndex;
     if (typeof idx === 'number' && options && options[idx] !== undefined) {
-      return `${String.fromCharCode(65 + idx)} — ${options[idx]}`;
+      return `${String.fromCharCode(65 + idx)} — ${optionText(options, imageIds, idx)}`;
     }
   }
   if (type === 'true_false') {
@@ -59,6 +62,7 @@ export default function ResultsPage() {
     lastAnswerData,
     currentQuestion?.type ?? '',
     currentQuestion?.config.options,
+    currentQuestion?.config.optionImageIds,
   );
   const isCompleteness = answerReveal.type === 'completeness';
   const isFitb = answerReveal.type === 'fill_in_the_blank';
@@ -80,6 +84,21 @@ export default function ResultsPage() {
     isHotspot && lastAnswerData && typeof lastAnswerData.x === 'number' && typeof lastAnswerData.y === 'number'
       ? { x: lastAnswerData.x, y: lastAnswerData.y, band: questionResults.yourBand ?? null }
       : null;
+
+  // T8 D8: thumbnails of the player's choice, and of the correct choice when they missed it
+  // (only for questions with option images; text-only questions look as before).
+  const imageIds = currentQuestion?.config.optionImageIds;
+  const withImages = hasOptionImages(imageIds);
+  const chosen: number[] =
+    !lastAnswerData ? []
+    : typeof lastAnswerData.selectedIndex === 'number' ? [lastAnswerData.selectedIndex]
+    : Array.isArray(lastAnswerData.selectedIndices) ? (lastAnswerData.selectedIndices as number[])
+    : [];
+  const correctIndices: number[] =
+    answerReveal.type === 'multiple_choice' ? answerReveal.correctIndices
+    : answerReveal.type === 'multi_select'
+      ? answerReveal.answerPoints.flatMap((p, i) => (p > 0 ? [i] : []))
+      : [];
 
   const fitbAccepted: string[] =
     isFitb && 'acceptedAnswers' in answerReveal ? answerReveal.acceptedAnswers : [];
@@ -103,6 +122,16 @@ export default function ResultsPage() {
         <p className="text-slate-400 text-base">
           You answered: <span className="text-slate-200 font-semibold">{answeredLabel}</span>
         </p>
+      )}
+
+      {withImages && chosen.length > 0 && (
+        <OptionThumbs indices={chosen} imageIds={imageIds} size="h-20 w-28" />
+      )}
+      {withImages && !isCompleteness && !isCorrect && correctIndices.length > 0 && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-slate-400 text-base">Correct:</p>
+          <OptionThumbs indices={correctIndices} imageIds={imageIds} size="h-20 w-28" />
+        </div>
       )}
 
       {/* Hotspot: own tap and the target rings */}
