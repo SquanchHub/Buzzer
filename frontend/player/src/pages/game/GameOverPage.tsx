@@ -8,6 +8,7 @@ function describePlayerAnswer(
   playerAnswer: QuestionSummaryItem['playerAnswer'],
   type: string,
   options: string[] | undefined,
+  items: string[] | undefined,
 ): string {
   if (!playerAnswer) return 'No answer';
   if (type === 'multiple_choice') {
@@ -32,6 +33,10 @@ function describePlayerAnswer(
   if (type === 'hotspot') {
     const { x, y } = playerAnswer;
     return typeof x === 'number' && typeof y === 'number' ? `Tapped (${x.toFixed(2)}, ${y.toFixed(2)})` : '—';
+  }
+  if (type === 'ordering') {
+    const order = playerAnswer.order;
+    return Array.isArray(order) && items ? order.map(d => items[d] ?? '?').join(' → ') : '—';
   }
   return '—';
 }
@@ -64,6 +69,7 @@ function HotspotRecap({ item }: { item: QuestionSummaryItem }) {
 function describeCorrectAnswer(
   answerReveal: PlayerAnswerReveal,
   options: string[] | undefined,
+  items: string[] | undefined,
 ): string {
   if (answerReveal.type === 'multiple_choice') {
     const indices = answerReveal.correctIndices;
@@ -86,6 +92,9 @@ function describeCorrectAnswer(
       .map(({ i }) => options ? `${String.fromCharCode(65 + i)} — ${options[i]}` : String.fromCharCode(65 + i));
     return correct.join(', ');
   }
+  if (answerReveal.type === 'ordering' && answerReveal.correctOrder && items) {
+    return answerReveal.correctOrder.map(d => items[d] ?? '?').join(' → ');
+  }
   return '';
 }
 
@@ -93,12 +102,18 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
   const options = item.config.options;
   const isCompleteness = item.answerReveal.type === 'completeness';
   const noAnswer = !item.playerAnswer;
-  const isCorrect = !isCompleteness && !noAnswer && item.pointsAwarded > 0;
+  // Ordering: "correct" means the exact order (O6); partial credit still shows the answer.
+  const r = item.answerReveal;
+  const exactOrder =
+    r.type === 'ordering' && !!r.correctOrder &&
+    JSON.stringify(item.playerAnswer?.order) === JSON.stringify(r.correctOrder);
+  const isCorrect =
+    !isCompleteness && !noAnswer && (item.type === 'ordering' ? exactOrder : item.pointsAwarded > 0);
   const showCorrectAnswer = !isCompleteness && !isCorrect;
 
-  const playerAnswerLabel = describePlayerAnswer(item.playerAnswer, item.type, options);
+  const playerAnswerLabel = describePlayerAnswer(item.playerAnswer, item.type, options, item.config.items);
   const correctAnswerLabel = !isCompleteness
-    ? describeCorrectAnswer(item.answerReveal, options)
+    ? describeCorrectAnswer(item.answerReveal, options, item.config.items)
     : '';
 
   return (
@@ -120,7 +135,8 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
             ) : (
               <span className="text-red-400 text-base">✗</span>
             )}
-            <span className={`text-sm font-semibold truncate ${
+            {/* An ordering answer is a whole sequence: wrap it rather than cut it off. */}
+            <span className={`text-sm font-semibold ${item.type === 'ordering' ? 'break-words' : 'truncate'} ${
               noAnswer ? 'text-slate-600' :
               isCompleteness ? 'text-indigo-300' :
               isCorrect ? 'text-green-300' : 'text-red-300'

@@ -19,9 +19,9 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 | `SessionsPage.tsx` | `/sessions` | The host's COMPLETED sessions, newest first (`GET /game/my-sessions`), each with **Download summary (HTML)** (`/game/sessions/:id/report`) and **Download scores (CSV)** (`/game/sessions/:id/export`) via `api.download` (T4 D9). |
 | `game/GameLayout.tsx` | `/game/:code` | Opens the socket, joins as HOST, handles every server event, holds all game state in a React context, and routes between the child pages. Also shows a small QR/room-code panel in the corner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Large QR code and room code, player count, auto-advance toggle, Start Game button. |
-| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. Hotspot adds the image (`HotspotView`) with no rings or taps while open (`docs/plans/t7-hotspot.md` H5). |
-| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select), word cloud (fill-in-the-blank) or hotspot view (image, rings, every tap coloured by band, band legend; COMPLETENESS: neutral taps + "N taps") with correct answers highlighted; 10s countdown to the next question when auto-advance is on. |
-| `game/GameOverPage.tsx` | `…/gameover` | Anonymous score histogram, average/high score, per-question breakdown cards (hotspot cards draw `HotspotView` from the summary's `taps`). |
+| `game/QuestionPage.tsx` | `…/question` | Prompt, timer bar, "answered / total" counter, Lock/Unlock and Show Results buttons; when auto-advance is on, advances 1.5s after the answer phase ends. Hotspot adds the image (`HotspotView`) with no rings or taps while open (`docs/plans/t7-hotspot.md` H5); ordering adds the items in display order (`OrderingItems`) with no statistics while open (`docs/plans/t7-ordering.md` O11). |
+| `game/ResultsPage.tsx` | `…/results` | Per-question bar chart (MC, T/F, multi-select), word cloud (fill-in-the-blank) or hotspot view (image, rings, every tap coloured by band, band legend; COMPLETENESS: neutral taps + "N taps") or ordering view (`OrderingView`: correct order, "Perfect / k out of place" bars, room's average order from `meanPositions`) with correct answers highlighted; 10s countdown to the next question when auto-advance is on. |
+| `game/GameOverPage.tsx` | `…/gameover` | Anonymous score histogram, average/high score, per-question breakdown cards (hotspot cards draw `HotspotView` from the summary's `taps`; ordering cards a compact `OrderingView`). |
 
 ## Key entry points
 
@@ -42,6 +42,8 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
 - `frontend/host/src/components/ui/` — `Button`, `Card`/`CardHeader`/`CardContent`, `Input`, `TimerBar`.
 - `frontend/host/src/components/HotspotView.tsx` — hotspot display (`HotspotView`, `ringsFromReveal`).
 - `frontend/host/src/components/HotspotEditor.tsx` — hotspot authoring panel, used by `QuestionEditorPage`.
+- `frontend/host/src/components/OrderingView.tsx` — ordering display (`OrderingItems`, `OrderingView`).
+- `frontend/host/src/components/OrderingEditor.tsx` — ordering authoring panel and its payload helpers, used by `QuestionEditorPage`.
 - `frontend/host/src/types/game.ts` — socket payload types (`QuestionPayload`, `HostResultsPayload`, …).
 - npm: `react-router-dom`, `socket.io-client`, `qrcode.react`, `lucide-react`.
 - Backend: `/api/auth/*`, `/api/game/*` (`backend/app/routers/`) and the Socket.io protocol

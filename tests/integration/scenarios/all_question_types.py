@@ -117,6 +117,48 @@ FITB_COMPLETENESS = QuestionSpec(
 )
 
 # ---------------------------------------------------------------------------
+# Reusable question specs — ordering (docs/plans/t7-ordering.md §6.10)
+# ---------------------------------------------------------------------------
+
+# Display: Anaphase, Prophase, Telophase, Metaphase. Correct: P M A T.
+ORDERING_PARTIAL = QuestionSpec(
+    type="ordering",
+    grading_type="ACCURACY",
+    prompt="Put the phases of mitosis in order, first to last.",
+    config={"items": ["Anaphase", "Prophase", "Telophase", "Metaphase"]},
+    answer_data={"correctOrder": [1, 3, 0, 2], "partialCredit": True},
+    points_value=1000,
+)
+
+# Same mechanic, exact order only.
+ORDERING_EXACT_ONLY = QuestionSpec(
+    type="ordering",
+    grading_type="ACCURACY",
+    prompt="Order these films by US release year, oldest first.",
+    config={
+        "items": [
+            "E.T. the Extra-Terrestrial",
+            "Titanic",
+            "Jaws",
+            "Jurassic Park",
+            "Star Wars",
+        ]
+    },
+    answer_data={"correctOrder": [2, 4, 0, 3, 1], "partialCredit": False},
+    points_value=1000,
+)
+
+# Opinion ranking: any complete order earns full points.
+ORDERING_COMPLETENESS = QuestionSpec(
+    type="ordering",
+    grading_type="COMPLETENESS",
+    prompt="Rank these pizza toppings, favourite first.",
+    config={"items": ["Pepperoni", "Mushrooms", "Pineapple", "Olives"]},
+    answer_data={},
+    points_value=500,
+)
+
+# ---------------------------------------------------------------------------
 # Player answer helpers
 # ---------------------------------------------------------------------------
 
@@ -132,6 +174,8 @@ def _correct(q: QuestionSpec) -> dict:
         return {"selectedValue": correct_val}
     if q.type == "fill_in_the_blank":
         return {"text": q.answer_data["acceptedAnswers"][0]}
+    if q.type == "ordering":
+        return {"order": list(q.answer_data["correctOrder"])}
     raise NotImplementedError(f"No _correct helper for type {q.type!r}")
 
 
@@ -148,6 +192,10 @@ def _wrong(q: QuestionSpec) -> dict:
     if q.type == "fill_in_the_blank":
         # "xxxxxxxx" has high edit distance from any realistic answer
         return {"text": "xxxxxxxx"}
+    if q.type == "ordering":
+        # The first correct item moved to the end: one item out of place.
+        order = list(q.answer_data["correctOrder"])
+        return {"order": order[1:] + order[:1]}
     raise NotImplementedError(f"No _wrong helper for type {q.type!r}")
 
 
@@ -159,6 +207,8 @@ def _any(q: QuestionSpec) -> dict:
         return {"selectedValue": True}
     if q.type == "fill_in_the_blank":
         return {"text": "anything"}
+    if q.type == "ordering":
+        return {"order": list(reversed(range(len(q.config["items"]))))}
     raise NotImplementedError(f"No _any helper for type {q.type!r}")
 
 
@@ -285,4 +335,36 @@ FITB_TYPES = GameScenario(
 )
 
 
-SCENARIOS: list[GameScenario] = [ALL_TYPES, SINGLE_PLAYER, FITB_TYPES]
+# ---------------------------------------------------------------------------
+# Scenario — ordering (docs/plans/t7-ordering.md §9.2 test 16)
+# ---------------------------------------------------------------------------
+
+ORDERING_TYPES = GameScenario(
+    name="ordering_variations",
+    description=(
+        "Ordering with partial credit, exact-only, and COMPLETENESS. Players: exact, "
+        "one item out of place (partial credit vs none), reversed, and skip."
+    ),
+    questions=[ORDERING_PARTIAL, ORDERING_EXACT_ONLY, ORDERING_COMPLETENESS],
+    player_scripts=[
+        PlayerScript(responses=[
+            _correct(ORDERING_PARTIAL),       # 1000
+            _correct(ORDERING_EXACT_ONLY),    # 1000
+            _any(ORDERING_COMPLETENESS),      # 500
+        ]),
+        PlayerScript(responses=[
+            _wrong(ORDERING_PARTIAL),         # 666.67
+            _wrong(ORDERING_EXACT_ONLY),      # 0 (exact only)
+            {"order": [0, 1, 2, 3]},          # 500
+        ]),
+        PlayerScript(responses=[
+            {"order": [2, 0, 3, 1]},          # reversed → 0
+            {"order": [1, 3, 0, 4, 2]},       # reversed → 0
+            None,
+        ]),
+        PlayerScript(responses=[None, None, None]),
+    ],
+)
+
+
+SCENARIOS: list[GameScenario] = [ALL_TYPES, SINGLE_PLAYER, FITB_TYPES, ORDERING_TYPES]

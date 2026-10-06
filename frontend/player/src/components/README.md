@@ -1,7 +1,7 @@
 # frontend/player/src/components/
 
 Presentational building blocks for the Player (phone) app: generic primitives in `ui/`, plus
-one game-specific component, `HotspotCanvas.tsx`. The answer buttons, the fill-in-the-blank input
+two game-specific components, `HotspotCanvas.tsx` and `OrderingPicker.tsx`. The answer buttons, the fill-in-the-blank input
 and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`. None of the
 `ui/` components touch the network, sockets, or global state; `HotspotCanvas.tsx`'s
 `useImageUrl` hook fetches an image via `lib/images.ts`.
@@ -15,6 +15,7 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 | `ui/input.tsx` | `Input` — a styled `<input>` with phone-sized padding and `text-base`. |
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
 | `HotspotCanvas.tsx` | `HotspotCanvas` — the hotspot question's `<canvas>` (`docs/plans/t7-hotspot.md` §7.6–7.7), interactive (tap to place a point) or display (rings + own tap); `useImageUrl(imageId)` for display canvases that load their own image. |
+| `OrderingPicker.tsx` | `OrderingPicker({items, sequence, onTap, disabled})` — ordering answer UI (`docs/plans/t7-ordering.md` §6.7, O2): full-width buttons in display order that never move; a tapped item shows its position badge (`data-testid` `ordering-item-{d}` / `ordering-badge-{d}`). `OrderingList({items, order, marked?, title, testId})` — read-only numbered list for results, marking out-of-place items. Colours from `--ordering-selected` / `--ordering-misplaced` (fallbacks until T9). |
 
 ## Key entry points
 
@@ -47,7 +48,8 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 - `frontend/player/src/pages/`:
   - `JoinPage.tsx`, `NamePage.tsx` — `Button`, `Input`, `Card*`
   - `game/GameOverPage.tsx` — `Button` (`variant="outline"`)
-  - `game/QuestionPage.tsx` — `TimerBar`
+  - `game/QuestionPage.tsx` — `TimerBar`, `OrderingPicker`, `Button`
+  - `game/ResultsPage.tsx` — `OrderingList`
 - Nothing outside the player app imports these.
 
 ## Gotchas found while reading

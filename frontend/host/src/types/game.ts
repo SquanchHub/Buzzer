@@ -42,14 +42,19 @@ export interface HotspotTap {
 // The server sends at most this many taps per question (first N in answer order).
 export const HOTSPOT_TAP_CAP = 500;
 
+// Ordering (docs/plans/t7-ordering.md §6.6). Keep in sync with the player copy.
+export interface OrderingConfig {
+  items: string[]; // display order: the same shuffled order for every player
+}
+
 export interface QuestionPayload {
   questionId: number;
   questionNumber: number;
   totalQuestions: number;
-  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
+  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot' | 'ordering';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
   prompt: string;
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
   timeLimitSeconds: number;
   pointsValue: number;
   editDistance?: number;
@@ -86,6 +91,8 @@ export type AnswerReveal =
   | { type: 'multi_select'; answerPoints: number[] }
   // Target fields are absent when the stored target is invalid (§5.4).
   | { type: 'hotspot'; x?: number; y?: number; innerRadius?: number; outerRadius?: number }
+  // correctOrder is absent when the stored key is invalid (§4.6).
+  | { type: 'ordering'; correctOrder?: number[] }
   | Record<string, never>;
 
 export interface HostResultsPayload {
@@ -95,15 +102,17 @@ export interface HostResultsPayload {
   totalAnswered: number;
   totalPlayers: number;
   taps?: HotspotTap[]; // hotspot only
+  // Ordering only: mean 1-based position per display index (null when no answers).
+  meanPositions?: (number | null)[];
 }
 
 export interface HostQuestionSummaryItem {
   questionId: number;
   questionNumber: number;
   prompt: string;
-  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
+  type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot' | 'ordering';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
   pointsValue: number;
   answerReveal: AnswerReveal;
   answerDistribution: Record<string, number>;
@@ -112,6 +121,7 @@ export interface HostQuestionSummaryItem {
   correctCount: number;
   avgAnswerTimeMs: number | null;
   taps?: HotspotTap[]; // hotspot only
+  meanPositions?: (number | null)[]; // ordering only
 }
 
 export interface HostGameOverPayload {

@@ -80,7 +80,10 @@ package: all three frontends, `tests/integration/engine/scoring.py`, `scripts/si
   never calls `state_service.delete_room_state`, so their `room:{code}` keys stay in `LOBBY` for up
   to 90 minutes and still count toward `MAX_ROOMS` in `create_room`; `session:{id}:*` keys never
   expire at all. Repeated test runs can hit the 50-room limit this way.
-- **Validation is asymmetric:** question create is structurally validated, update is not.
+- **Validation is symmetric since T4 D8:** `content_service.update_question` merges the patch onto
+  the stored question and re-validates the result with `QuestionCreate`, on both the admin and host
+  routes. A new question type only needs its rules in `validate_structure` (ordering's integration
+  tests prove both paths, `tests/integration/test_ordering.py`).
 - **Deleting a played question 500s** (no cascade on `session_scores.question_id`).
 - **Duplicate-answer protection is Redis-only** — no unique constraint in MySQL.
 - **Games are course-bound, but content management is still admin-only.** Hosts need a game grant

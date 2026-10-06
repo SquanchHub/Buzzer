@@ -23,6 +23,8 @@ All question types are handled automatically:
                       answers from --fitb-words
   hotspot           — uniform random tap (x, y) in [0, 1]; the target is never
                       used, even with --game-json (docs/plans/t7-hotspot.md §7.10)
+  ordering          — random full order; if --game-json supplied, accurate players
+                      submit the ACCURACY correctOrder (docs/plans/t7-ordering.md §6.10)
 
 Usage:
     # Basic — 20 players, default profile mix, default FITB word pool
@@ -263,6 +265,22 @@ class SimPlayer:
         if q_type == "hotspot":
             return {"x": random.random(), "y": random.random()}
 
+        if q_type == "ordering":
+            n = len(q.get("config", {}).get("items", []))
+            if n == 0:
+                return None
+            if jq and random.random() < p.accuracy:
+                # Only an ACCURACY key that is a valid permutation of the live items;
+                # anything else would earn a socket error.
+                correct = jq.get("answer_data", {}).get("correctOrder")
+                if (
+                    jq.get("grading_type") == "ACCURACY"
+                    and isinstance(correct, list)
+                    and sorted(correct) == list(range(n))
+                ):
+                    return {"order": list(correct)}
+            return {"order": random.sample(range(n), n)}
+
         return None  # unknown type
 
     def _answer_str(self, answer: dict) -> str:
@@ -276,6 +294,8 @@ class SimPlayer:
             return str(answer["selectedValue"])
         if "x" in answer and "y" in answer:
             return f"({answer['x']:.2f}, {answer['y']:.2f})"
+        if "order" in answer:
+            return f"order {answer['order']}"
         return repr(answer)
 
     # ── per-question handler ──────────────────────────────────────────────────
