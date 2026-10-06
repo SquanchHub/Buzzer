@@ -1,6 +1,7 @@
 # T7 — Ordering question type (tap items into sequence, partial credit by longest in-order run)
 
-Status: **agreed design, pre-implementation; not yet goldfish-tested.** Owner: Vincent Zhou.
+Status: **agreed design; goldfish-tested 2026-10-05 and revised** (§13 lists what the revision
+changed). Owner: Vincent Zhou.
 Branch: `feat/t7-ordering`. This is the team's second T7 type; the canvas-based one is hotspot
 (`docs/plans/t7-hotspot.md`, Arjun Kaneriya, implemented). Ordering has no blockers: T4 (host and
 admin editors, `content_service`) and T8 (images, bundle version 2) are both on this branch.
@@ -52,8 +53,9 @@ integration tests, unit tests, browser e2e tests and sample games.
    earns full points, there is no correct order, and the reveal is `{type: "completeness"}`. This
    corrects the original brief (§3 O5).
 7. **Shared helpers in `game_service`**, as for hotspot: `ordering_key` (parses stored
-   data, returns `None` and logs on bad data, never raises), `ordering_submission`,
-   `ordering_result`, `ordering_reveal`, `ordering_outcome`, `ordering_mean_positions`. Scoring,
+   data, returns `None` and logs on bad data, never raises), `ordering_item_count`,
+   `ordering_submission`, `ordering_result`, `ordering_points`, `ordering_reveal`,
+   `ordering_outcome`, `ordering_dist_key`, `ordering_mean_positions`. Scoring,
    `record_answer`, both summaries, the gateway and `report_service` all call these. There is no
    second copy of the rules. The validation rules live once, in `schemas/admin.py`
    (`ordering_config_error`, `ordering_answer_error`), and `ordering_key` reuses them.
@@ -128,18 +130,19 @@ Four candidates were compared on n = 4 with correct order A B C D:
 | Submitted | Exact positions | Kendall pairs | Adjacent pairs | **Longest run (chosen)** |
 |---|---|---|---|---|
 | A B C D | 4/4 | 6/6 | 3/3 | (4−1)/3 = 1 |
-| B A C D (one swap) | 2/4 | 5/6 | 2/3 | (3−1)/3 = 0.67 |
+| B A C D (one swap) | 2/4 | 5/6 | **1/3** | (3−1)/3 = 0.67 |
 | D A B C (one item moved) | **0/4** | 3/6 | 2/3 | (3−1)/3 = 0.67 |
-| A C B D (one swap, middle) | 2/4 | 5/6 | **1/3** | (3−1)/3 = 0.67 |
-| B A D C (two swaps) | 0/4 | 4/6 | 1/3 | (2−1)/3 = 0.33 |
+| A C B D (one swap, middle) | 2/4 | 5/6 | **0/3** | (3−1)/3 = 0.67 |
+| B A D C (two swaps) | 0/4 | 4/6 | 0/3 | (2−1)/3 = 0.33 |
 | D C B A (reversed) | 0/4 | 0/6 | 0/3 | (1−1)/3 = 0 |
 
 - **Exact position** gives 0 when the player moves just one item (D A B C). That is harsh and
   feels wrong.
 - **Kendall** grades sensibly, but "5 of 6 pairs" means nothing to a student on a results screen,
   and the host cannot show it.
-- **Adjacent pairs** treats the same single mistake differently depending on where it is (A C B D
-  scores 1/3 but B A C D scores 2/3).
+- **Adjacent pairs** ("correct successor pairs": how many of A→B, B→C, C→D appear next to each
+  other) treats the same single swap differently depending on where it is (B A C D scores 1/3
+  but A C B D scores 0/3), and moving one item (D A B C) scores better than one swap.
 - **Longest in-order run** gives one plain sentence the results screen can show: *"1 item out of
   place"*, which is the smallest number of items you would have to move. Every single-move
   mistake costs the same. The out-of-place items can be highlighted, so the score can be
@@ -186,7 +189,10 @@ return sets `is_correct = true`, unchanged. This mirrors hotspot (partial "outer
   prompt, timer and the Undo/Reset/Submit row, that fits a 375 × 667 phone (iPhone SE) without
   scrolling, which the e2e test checks (§9.3). It also keeps the answer under about 30 s, and 6!
   = 720 orders is plenty of difficulty.
-- **≤ 80 characters**, at least 1. This fits on two lines at 16 px on a 360 px-wide phone.
+- **≤ 80 characters**, at least 1. With the badge and padding about 280 px of a 375 px phone is
+  left for text, roughly 35 characters per line at 16 px, so an 80-character item takes up to
+  three lines. The layout budget (and the e2e no-scroll check) uses short items plus one
+  80-character item, with a one-line prompt.
 - **Whitespace must already be normalised** (`item == " ".join(item.split())`: no leading or
   trailing space, no runs of spaces, no newlines). The validator rejects rather than fixes, as
   every other `QuestionCreate` rule does, and the editor trims before sending.
@@ -289,6 +295,17 @@ Error messages (exact text, so tests can assert them):
 
 `ordering_answer_error(config, answer_data)` returns the config error first if `config` is
 invalid, so it can be called on its own.
+
+**Evaluation order** (the first failing check wins, so an input with two violations gets a
+predictable message): config — keys → list type and count → for each item in index order:
+type and length, then whitespace → duplicates. answer_data — keys → permutation → identity →
+partialCredit.
+
+**Message format in responses:** Pydantic prefixes model-validator errors with `Value error, `,
+so tests assert that the message is **contained** in the 422 detail, not equal to it. An
+`optionImageIds` key on an ordering question is rejected earlier by the T8 checker
+(`option_images_error` runs before every type branch), with its own message
+"optionImageIds is only allowed on multiple_choice and multi_select".
 
 ### 4.2 Submission
 
@@ -492,9 +509,11 @@ Callers:
     "Perfect", "1 out of place", … "n−1 out of place" from `dist` (reusing the `.bar-row` CSS).
   - Always: "Room's order": items sorted by mean position (ties broken by display index), each
     with "avg 1.40". "No answers" if empty.
-  - Invalid key: the note "Answer key invalid" (`.hotspot-note` style renamed or reused as
-    `.q-note`).
-  - The caller collects `mean_positions` from `q_scores` with `ordering_mean_positions`.
+  - Invalid key: the note "Answer key invalid" in a new `.ordering-note` class (same rules as
+    `.hotspot-note`; hotspot is left untouched).
+  - The caller collects `mean_positions` from `q_scores` with
+    `ordering_mean_positions(ordering_item_count(q.id, q.config), orders)` — `n` comes from the
+    config, so it works under COMPLETENESS too (`[]` when the count is `None`).
 - The stats line needs no change: "% correct" counts `is_correct`, which is "perfect order" (O6).
 
 ### 6.5 Other backend files (checked; no change)
@@ -540,16 +559,20 @@ Hand-written in both apps (`frontend/README.md` gotcha):
     (`data-testid="ordering-reset"`) as `Button variant="outline"` in a row. The hint "Tap the
     items in order. Use Undo to change." sits above the list.
   - **Submit order** (`data-testid="ordering-submit"`, `size="lg"`, full width), disabled until
-    `sequence.length === items.length` and while `!canAnswer` (locked / already submitted).
+    `sequence.length === items.length` and while `!canAnswer`. The ordering branch defines its
+    own `canAnswer = !submitted && !questionLocked` (the page has no shared one; hotspot's also
+    waits for its image).
     Before emitting it re-checks that `sequence` is a permutation of `0..n-1` (any server `error`
     event replaces the whole UI, per the `pages/README.md` gotcha). Then
     `submit({ order: sequence })`.
-  - Layout: all items visible without scrolling at 375 × 667 for n = 6 with 80-character items
-    wrapping to two lines (tested in §9.3).
+  - Layout: all items visible without scrolling at 375 × 667 for n = 6 with a one-line prompt,
+    five short items and one 80-character item wrapping to up to three lines (tested in §9.3).
 - **`pages/game/ResultsPage.tsx`**, ordering label (decided like hotspot §13.1 c):
   - reveal type `completeness` → "Answer recorded!".
   - `lastAnswerData` null → "No answer".
   - reveal without `correctOrder` → "Not scored".
+  - reveal with `correctOrder` but `yourOrdering` null → "Answer recorded" (a row missing at
+    results time; hotspot's fallback).
   - `yourOrdering.outOfPlace.length === 0` → "Perfect order!" (success style).
   - otherwise → "{k} item(s) out of place" (warning style). Never derived from points.
   - Below the label: `OrderingList` "Your order" (from `lastAnswerData.order`, `marked =
@@ -570,7 +593,7 @@ Hand-written in both apps (`frontend/README.md` gotcha):
     of a room: `text-2xl` and up unless `compact`), and a bar row per bucket "Perfect" / "1 out of
     place" / … / "{n−1} out of place" from `distribution` (keys "0".."n−1").
   - Always, when `meanPositions` has values: "Room's order", items sorted by mean (ties by
-    display index), each with "avg 1.4".
+    display index), each with "avg 1.40" (two decimals, as the report).
   - `invalidKey` → the note "Answer key invalid" instead of the correct order.
   - Test IDs: `ordering-host-correct-order`, `ordering-host-room-order`.
 - **`pages/game/QuestionPage.tsx`**: the ordering branch shows the items in display order as a
@@ -579,7 +602,8 @@ Hand-written in both apps (`frontend/README.md` gotcha):
   `meanPositions`. `accuracy` = `gradingType === 'ACCURACY'`. `invalidKey` = ACCURACY and the
   reveal has no `correctOrder`.
 - **`pages/game/GameOverPage.tsx`**: the per-question card uses `OrderingView compact` with the
-  summary's `answerReveal`, `answerDistribution` and `meanPositions`.
+  summary's `answerReveal`, `answerDistribution` and `meanPositions`, and `invalidKey` by the
+  same rule as `ResultsPage` (ACCURACY and no `correctOrder`).
 
 ### 6.9 Authoring — `frontend/host/src/components/OrderingEditor.tsx`, copied to admin
 
@@ -594,8 +618,12 @@ pattern; each copy's header comment names the other).
 - **Exported pure helpers** (the page uses them, and they keep the mapping in one place):
   - `orderingFromQuestion(config, answerData, grading) -> OrderingEditorState`. ACCURACY with a
     valid `correctOrder` `c`: `items = c.map(d => config.items[d])`,
-    `display[k] = c.indexOf(k)`. COMPLETENESS (or unparseable data): `items = config.items ?? []`,
-    `display` = identity, `partialCredit = answerData.partialCredit ?? true`.
+    `display[k] = c.indexOf(k)`, `partialCredit = answerData.partialCredit` (a bool, else
+    `true`). COMPLETENESS: `items = config.items ?? []`, `display` = identity,
+    `partialCredit = true`. **ACCURACY with an invalid key** (bad stored data): load as
+    COMPLETENESS would, set `keyInvalid: true` on the state, and the editor shows the warning
+    "The stored answer key is invalid. Re-enter the items in the correct order." and makes a new
+    display shuffle, so a re-save is valid instead of failing on the identity rule.
   - `orderingToPayload(state, grading) -> { config, answer_data }`. ACCURACY:
     `config.items = state.display.map(i => trimmed[i])`,
     `answer_data = { correctOrder: [0..n-1].map(k => state.display.indexOf(k)), partialCredit }`.
@@ -614,9 +642,13 @@ pattern; each copy's header comment names the other).
     helper text "Each item out of place costs 1/(n−1) of the points."
   - Under ACCURACY, the preview "Players see:" with the shuffled list, and a **Shuffle again**
     button.
-  - **When the shuffle is regenerated:** on add, remove or move, and when switching to ACCURACY
-    with an identity `display`. **Not** on text edits (otherwise every keystroke would reshuffle).
-    Hence a stored question re-saved after only text edits keeps its display order.
+  - **When the shuffle is regenerated:** on add or remove, on **Shuffle again**, and when
+    switching to ACCURACY with an identity `display`. **Not** on text edits or moves. A move
+    swaps two items in the correct order and each item **keeps its display slot**; only if the
+    result breaks O3's rule (identity, or "submit as shown" worth more than half) is a new
+    shuffle made. Hence a stored question re-saved after text edits or moves keeps its display
+    order wherever O3 allows, which matters because stored submissions are display indices
+    (§11).
   - The hint "Say which end comes first in the prompt, e.g. 'earliest first'."
 - **Integration into both `pages/QuestionEditorPage.tsx` (host and admin):**
   - `QuestionType` union and type dropdown: `<option value="ordering">Ordering (put items in
@@ -635,12 +667,15 @@ pattern; each copy's header comment names the other).
     credit` (correct order under ACCURACY, shown order under COMPLETENESS), item text truncated
     to 24 characters.
   - Test IDs for e2e: `question-type-select`, `ordering-editor-item-{i}`, `ordering-editor-add`,
-    `ordering-editor-partial`, `ordering-editor-preview`, `question-save`.
+    `ordering-editor-partial`, `ordering-editor-preview`, `question-save`. Neither editor page
+    has any `data-testid` yet: `question-type-select` and `question-save` are **new**, added to
+    both pages.
 
 ### 6.10 Tooling
 
-- **`scripts/simulate_players.py`**: `_make_answer` ordering branch. With `--game-json` and
-  `random() < accuracy`, submit `answer_data.correctOrder` from the JSON question (the JSON stores
+- **`scripts/simulate_players.py`**: `_make_answer` ordering branch. With `--game-json`,
+  `random() < accuracy`, an ACCURACY question and a `correctOrder` that is a valid permutation
+  of `n`, submit `answer_data.correctOrder` from the JSON question (the JSON stores
   the same display-order `items` the live payload carries, so the indices match). Otherwise
   submit `random.sample(range(n), n)`, with `n = len(q["config"]["items"])`. `_answer_str`:
   `"order [2, 0, 3, 1]"`. Update the module docstring's type list.
@@ -657,7 +692,9 @@ pattern; each copy's header comment names the other).
 ### 6.11 READMEs (`.claude/rules/context-sync.md`)
 
 Edit only what is stale in: `backend/app/README.md` (type list; "Adding a question type touches"
-unchanged), `backend/app/schemas/README.md` (ordering rules and checker),
+unchanged; its "Validation is asymmetric" gotcha is already stale since T4 D8 and is corrected),
+`backend/app/schemas/README.md` (ordering rules and checker; its "Updates bypass validation"
+line is corrected the same way),
 `backend/app/services/README.md` (ordering helpers, scoring, summaries, report),
 `backend/app/websocket/README.md` (ordering reveal, submission check, `meanPositions`,
 `yourOrdering`), `frontend/README.md` (new components; "`OrderingEditor` has an admin copy"
@@ -667,8 +704,9 @@ gotcha), `frontend/{host,player,admin}/src/{pages,components}/README.md`. Add a 
 
 ## 7. Sample games (T6)
 
-Vincent's two T6 games (filenames chosen in T6, distinct from the starter files) each get
-ordering questions. Both stay **version 1** unless they also use T8 images. Stored JSON (display
+**Not part of this branch.** T6 is its own branch (`feat/t6-games`); Vincent's two T6 games
+(filenames chosen there, distinct from the starter files) each get ordering questions once this
+type is on `main`. Both stay **version 1** unless they also use T8 images. Stored JSON (display
 order shown; checked against O3's rule):
 
 | Game | Question | Stored `config.items` (display order) | `answer_data` | Check |
@@ -692,8 +730,8 @@ tests. If Docker Desktop is not running, stop and say so.
 | # | Tests first (red) | Then implement | Commit message |
 |---|---|---|---|
 | 0 | — | This spec | `Add ordering question type design` |
-| 1 | `tests/unit/test_ordering.py` checker cases; `tests/integration/test_ordering.py` tests 1–4 | §6.1 | `Validate ordering questions on create and update` |
-| 2 | unit: `ordering_key` never-raise, `ordering_result` run/tie-break table, `calculate_score` §4.5 table, `ordering_mean_positions` | §6.2 helpers, `calculate_score`, `record_answer` | `Score ordering answers by longest in-order run` |
+| 1 | `tests/unit/test_ordering_schema.py` checker cases; `tests/integration/test_ordering.py` tests 1–4 | §6.1 | `Validate ordering questions on create and update` |
+| 2 | unit (`tests/unit/test_ordering.py`): `ordering_key` never-raise, `ordering_result` run/tie-break table, `calculate_score` §4.5 table, `ordering_mean_positions` | §6.2 helpers, `calculate_score`, `record_answer` | `Score ordering answers by longest in-order run` |
 | 3 | integration tests 5–11 (sockets, summaries, bad data) | §6.2 summaries, §6.3 gateway | `Send ordering reveals and results over the socket` |
 | 4 | integration test 16 (engine scenario) | §6.10 engine mirror, scenarios, simulator | `Mirror ordering scoring in the test engine and simulator` |
 | 5 | integration tests 12–14 (expected green: proves §5 needs no code) | none | `Test ordering export and import round trips` |
@@ -703,7 +741,6 @@ tests. If Docker Desktop is not running, stop and say so.
 | 9 | e2e test 3 (host reveal) | §6.6 host types, §6.8 | `Show ordering questions and results on the host screen` |
 | 10 | e2e test 1 in its host variant (author in host editor) | §6.9 host `OrderingEditor` + host editor page | `Add ordering editor to the host app` |
 | 11 | e2e test 1 (author in admin editor) | §6.9 admin copy + admin editor page | `Copy ordering editor into the admin app` |
-| 12 | existing sample-import tests (re-run) | §7 ordering questions in Vincent's T6 files | `Add ordering questions to Vincent's sample games` |
 | 13 | — | §6.11 READMEs | `Update context READMEs for ordering` |
 
 Then the closing steps from `CLAUDE.md`: a goldfish test of this spec in a **fresh subagent**
@@ -713,7 +750,7 @@ unit, integration and e2e tests green, `tsc --noEmit` for all three apps and `ru
 
 ## 9. Tests
 
-### 9.1 Unit — `tests/unit/test_ordering.py` (imports `app.schemas.admin`, `app.services.game_service`)
+### 9.1 Unit — `tests/unit/test_ordering_schema.py` (phase 1, imports only `app.schemas.admin`: cases 1–2) and `tests/unit/test_ordering.py` (phase 2, `app.services.game_service`: cases 3–7)
 
 1. `ordering_config_error`: valid 3- and 6-item lists → `None`. Each §4.1 config violation gives
    its exact message: not a dict; extra key; 2 items; 7 items; a non-string; `""`; 81 characters;
@@ -733,13 +770,18 @@ unit, integration and e2e tests green, `tsc --noEmit` for all three apps and `ru
    bool, a string, a float `1.0`.
 7. `ordering_mean_positions`: two orders → the expected means; empty → all `None`.
 
-### 9.2 Integration — `tests/integration/test_ordering.py` (live stack, existing fixtures `hapi`, `mysql`, `create_guest_tokens`, `create_room`, `TestSocketClient`)
+### 9.2 Integration — `tests/integration/test_ordering.py` (live stack)
+
+Helpers: the `hapi` fixture and the `mysql()` function come from
+`tests/integration/host_helpers.py`; `create_room()` and `create_guest_tokens()` are helper
+functions in `conftest.py` (with the `game_setup` / `admin_token` fixtures); `TestSocketClient`
+is in `tests/integration/engine/socket_client.py`.
 
 | # | Test | Endpoint |
 |---|---|---|
 | 1 | Create: each §4.1 violation → 422 with its message (sample of config and ACCURACY answer cases; extra `optionImageIds` key). | `POST /api/admin/games/{g}/questions` **and** `POST /api/host/games/{g}/questions` |
 | 2 | Create valid ACCURACY (both `partialCredit`) and COMPLETENESS (`answer_data` `{}`) → 201; GET returns exact `config` / `answer_data`. COMPLETENESS with 2 items → 422 (config always checked). | both routes, then `GET …/questions` |
-| 3 | **Update symmetry:** for a stored valid question, each PUT patch → 422 `VALIDATION_ERROR` and the stored row unchanged: `config` with 7 items; `answer_data` with identity `correctOrder`; `config` with 5 items while `correctOrder` has 4 (cross-field after merge); `partialCredit: "yes"`. | `PUT /api/admin/…/questions/{q}` **and** `PUT /api/host/…/questions/{q}` |
+| 3 | **Update symmetry:** for a stored valid question, each PUT patch → 422 `VALIDATION_ERROR` and the stored row unchanged: `config` with 7 items; `answer_data` with identity `correctOrder`; `config` with 5 items while `correctOrder` has 4 (cross-field after merge); `partialCredit: "yes"`. The merge is per field, so an `answer_data` patch replaces it whole: the `partialCredit` patch resends a valid `correctOrder`. | `PUT /api/admin/…/questions/{q}` **and** `PUT /api/host/…/questions/{q}` |
 | 4 | Type change: PUT `{type: "ordering"}` on a `multiple_choice` question (keeps the MC config) → 422; PUT `{type: "multiple_choice"}` on an ordering question → 422. | both routes |
 | 5 | `new_question` payload: `config.items` in stored display order; the key `correctOrder` and `partialCredit` appear **nowhere** in the payload (recursive key search). | Socket.io |
 | 6 | Scoring over sockets, one player each, n = 4, 1000 pts, `partialCredit` true: exact → 1000; one moved → 666.67; two swaps → 333.33; reversed → 0. Same orders with `partialCredit` false → 1000, 0, 0, 0. `correctCount` in the host game-over summary = number of exact orders. | Socket.io |
@@ -852,7 +894,9 @@ and `conftest.py`:
 - **Item text is shown as typed.** Players see what the author typed, including Unicode lookalikes
   that defeat the duplicate check (`"Ana phase"` vs `"Anaphase"`). Authors are trusted.
 - **The report reflects current questions** (T4 D9): editing items or `correctOrder` after a game
-  changes how old answers are shown in the report. Stored `points_awarded` do not change.
+  changes how old answers are shown in the report. Stored submissions are display indices, so
+  any reshuffle of a played question (add/remove/Shuffle again) re-maps old answers to other
+  items in the report; moves and text edits keep display slots to limit this (§6.9). Stored `points_awarded` do not change.
 - **The e2e tests need a built, running stack** and are not in CI, so they can rot unnoticed. This
   is mitigated by running them in each phase's red/green loop and before every push in phases 8–13.
 - **The e2e tests touch shared state:** they create courses, games and rooms in the dev database.
@@ -861,11 +905,42 @@ and `conftest.py`:
 - **Text-only:** subjects that order images (for example "order these skulls by age") are out of
   scope (O7).
 
-## 12. Open questions for the user
+## 12. Open questions (resolved 2026-10-05)
 
-- **Q1. e2e base URL.** The brief says `http://localhost`, but `docker-compose.yml` maps nginx to
-  `8080:80`, so the stack is at `http://localhost:8080`. The spec makes it `E2E_BASE_URL` with
-  default `http://localhost:8080`. Confirm, or change the default if your setup maps port 80.
-- **Q2. COMPLETENESS semantics** were corrected from the original brief (O5). Confirm that
-  "partial credit lives in ACCURACY behind `partialCredit`, default on" is what you want, rather
-  than ACCURACY being strictly all-or-nothing with no partial option.
+- **Q1. e2e base URL.** Resolved: `E2E_BASE_URL`, default `http://localhost:8080`. Checked
+  against the running stack (nginx answers on 8080; nothing listens on port 80).
+- **Q2. Partial credit in ACCURACY.** Resolved by the coordinator under the user's "complete it
+  end to end" instruction: keep the `partialCredit` flag, default on. It strictly contains the
+  user's original all-or-nothing ACCURACY idea (flag off), so nothing the user asked for is lost;
+  the user is told in the hand-off and can flip the editor default.
+
+## 13. Revision after goldfish test (2026-10-05)
+
+A fresh-context goldfish test of `ecc9efe` found one blocking item (open Q2) and these
+non-blocking ones, all applied above:
+
+a. O4 table: the "Adjacent pairs" column is recomputed under one stated definition (correct
+   successor pairs); the rejection reason now matches the numbers.
+b. §9.2: helper locations corrected (`hapi`/`mysql` in `host_helpers.py`, `create_room` /
+   `create_guest_tokens` are functions, `TestSocketClient` in `engine/socket_client.py`).
+c. §9.2 test 3: per-field merge, so an `answer_data` patch resends a valid `correctOrder`.
+d. §4.1: explicit check order; tests assert containment because of Pydantic's
+   "Value error, " prefix; `optionImageIds` gets the T8 message.
+e. §6.9: moves no longer reshuffle (items keep display slots unless O3 breaks); §11 notes that a
+   reshuffle re-maps a played question's stored answers in the report.
+f. §6.9: `orderingFromQuestion` reads `partialCredit` under ACCURACY and warns on an invalid
+   stored key instead of silently treating the display order as correct.
+g. §6.7: the ordering branch's own `canAnswer`; an "Answer recorded" rung when the reveal has a
+   correct order but `yourOrdering` is null.
+h. §6.9: `question-type-select` / `question-save` test IDs are new in both editors.
+i. §6.10: the simulator uses `correctOrder` only under ACCURACY when it is a valid permutation.
+j. §6.4: the report's `n` comes from `ordering_item_count`; the note class is `.ordering-note`;
+   "avg 1.40" format shared with the host.
+k. §6.8: host `GameOverPage` passes `invalidKey` like `ResultsPage`.
+l. O7 / §6.7 / §9.3: 80-character items take up to three lines; the layout check uses a one-line
+   prompt.
+m. §8 / §9.1: unit tests split so phase 1 imports only `app.schemas.admin`.
+n. §6.11: the stale "validation is asymmetric" / "updates bypass validation" README lines are
+   corrected.
+o. §7 / §8: sample games (old phase 12) move to the T6 branch.
+p. §2: the helper list names every §6.2 helper.
