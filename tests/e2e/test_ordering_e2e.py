@@ -156,6 +156,7 @@ def test_host_reveal_and_player_results(api, new_context):
 
 EDITOR_PATHS = {
     "host": "/host/games/{game}/edit",
+    "admin": "/admin/games/{game}/questions",
 }
 TYPED = ["Prophase", "Metaphase", "Anaphase", "Telophase"]
 
