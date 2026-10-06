@@ -34,3 +34,7 @@
 ### Branch: `feat/t7-ordering`
 
 - **2026-10-05, 20:03–21:15** — Built the team's second T7 type, **ordering** (tap items into sequence, partial credit by longest in-order run), end to end on a branch stacked on the unmerged T8 and commit-timing work: design in a fresh subagent (corrected the brief's COMPLETENESS-as-partial-credit premise), Goldfish-tested and revised, then test-first through validation, scoring, socket results, engine mirror and simulator, export/import, report, a new Playwright e2e harness, player/host UIs and host + admin editors; mean-review fixes, a two-origin browser QA pass (no bugs), and 158 unit / 276 integration / 5 e2e tests green. Also split T6/T7 into their own branches and pruned stale local branches.
+
+### Branch: `content/t6-games-vincent`
+
+- **2026-10-05, 21:45–22:45** — Measured T7 coverage (97.7% of changed backend lines, 79.2% overall), then created my two T6 games: **Reading the Data** (classroom, intro statistics) and **Food Fight** (party). Each has every question type including hotspot and ordering, both grading modes, and self-drawn images in a version 2 bundle. Followed a plan with a fresh-subagent fact check that caught two arguable answer keys and unfair hotspot rings, built the games through the API, added 9 integration tests, and ran a two-origin browser QA (both games played end to end, no bugs in the content). Documented a pre-existing player socket-reconnect race found during QA.
