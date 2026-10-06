@@ -3,6 +3,7 @@ import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { TimerBar } from '../../components/ui/TimerBar';
 import { HotspotView } from '../../components/HotspotView';
+import { OrderingItems } from '../../components/OrderingView';
 
 export default function QuestionPage() {
   const { currentQuestion, answeredCount, playerCount, allAnswered, answerPhaseEnded, questionLocked, lockedTimerSeconds, autoAdvance, emitAdvance, emitLockQuestion } = useGame();
@@ -27,6 +28,7 @@ export default function QuestionPage() {
     fill_in_the_blank: 'Fill in the Blank',
     multi_select: 'Multi-Select',
     hotspot: 'Hotspot',
+    ordering: 'Ordering',
   };
 
   function editDistanceLabel(d: number): string {
@@ -88,6 +90,11 @@ export default function QuestionPage() {
             maxHeightVh={50}
           />
         </div>
+      )}
+
+      {/* Ordering: the items in display order — no statistics while open (O11). */}
+      {!questionLocked && currentQuestion.type === 'ordering' && (
+        <OrderingItems items={currentQuestion.config.items ?? []} />
       )}
 
       <div className="text-slate-300 text-xl">

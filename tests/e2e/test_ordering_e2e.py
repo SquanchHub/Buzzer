@@ -12,7 +12,9 @@ from playwright.sync_api import BrowserContext, Page, expect
 
 from .conftest import url
 
-LONG = "Metaphase: the chromosomes line up along the middle of the cell, ready to split."
+LONG = (
+    "Metaphase: the chromosomes line up along the middle of the cell, ready to split."
+)
 assert len(LONG) == 80
 # Display order (what players see). Correct order: P, M(LONG), A, T, C, I.
 ITEMS = ["Anaphase", "Telophase", LONG, "Cytokinesis", "Prophase", "Interphase"]
@@ -102,3 +104,50 @@ def test_player_answers_on_a_phone(api, new_context):
     submit.click()
     expect(phone.get_by_text("Answer locked in!")).to_be_visible()
     assert phone_ctx.problems == []
+
+
+def test_host_reveal_and_player_results(api, new_context):
+    """§9.3 test 3: one exact phone, one with an item out of place."""
+    course, game = api.course_and_game()
+    api.question(game, _question())
+    code = api.room(course, game)
+    host_ctx = new_context(token=api.token)
+    host = host_ctx.new_page()
+    host.goto(url(f"/host/game/{code}/lobby"))
+    phones = [_join(new_context(phone=True), code, name) for name in ("Ada", "Bo")]
+
+    host.get_by_role("button", name="Start Game").click()
+    for phone in phones:
+        phone.wait_for_url(re.compile(r"/question$"))
+    # While the question is open the host shows the items, but no statistics (O11).
+    expect(host.get_by_test_id("ordering-host-items")).to_contain_text("Prophase")
+    expect(host.get_by_test_id("ordering-host-correct-order")).to_have_count(0)
+
+    for phone, order in zip(phones, (CORRECT, ONE_MOVED)):
+        _tap_order(phone, order)
+        phone.get_by_test_id("ordering-submit").click()
+        expect(phone.get_by_text("Answer locked in!")).to_be_visible()
+
+    host.get_by_role("button", name="Show Results").click()
+    correct = host.get_by_test_id("ordering-host-correct-order").locator("li")
+    expect(correct).to_have_count(len(ITEMS))
+    for k, d in enumerate(CORRECT):
+        expect(correct.nth(k)).to_contain_text(ITEMS[d][:20])
+    expect(host.get_by_test_id("ordering-host-bucket-0")).to_contain_text("Perfect")
+    expect(host.get_by_test_id("ordering-host-bucket-0")).to_contain_text("1")
+    expect(host.get_by_test_id("ordering-host-bucket-1")).to_contain_text(
+        "1 out of place"
+    )
+    expect(host.get_by_test_id("ordering-host-room-order")).to_contain_text("avg")
+
+    ada, bo = phones
+    expect(ada.get_by_test_id("ordering-result-label")).to_have_text("Perfect order!")
+    expect(ada.get_by_text("+1,000 pts")).to_be_visible()
+    expect(bo.get_by_test_id("ordering-result-label")).to_have_text(
+        "1 item out of place"
+    )
+    expect(bo.get_by_text("+800 pts")).to_be_visible()
+    marked = bo.get_by_test_id("ordering-your-order").locator("li[data-marked]")
+    expect(marked).to_have_count(1)
+    expect(marked).to_contain_text("Prophase")
+    assert host_ctx.problems == []

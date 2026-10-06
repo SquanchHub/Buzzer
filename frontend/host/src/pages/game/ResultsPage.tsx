@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
+import { OrderingView } from '../../components/OrderingView';
 import type { AnswerReveal } from '../../types/game';
 
 const RESULTS_DISPLAY_SECONDS = 10;
@@ -239,6 +240,7 @@ export default function ResultsPage() {
 
   const isFitb = currentQuestion?.type === 'fill_in_the_blank';
   const isHotspot = currentQuestion?.type === 'hotspot';
+  const isOrdering = currentQuestion?.type === 'ordering';
 
   const bars =
     !isFitb && questionResults
@@ -277,6 +279,27 @@ export default function ResultsPage() {
             maxHeightVh={50}
           />
           <p className="mt-1 text-center text-slate-500 text-sm">
+            {questionResults.totalAnswered} / {questionResults.totalPlayers} answered
+          </p>
+        </div>
+      ) : questionResults && isOrdering && currentQuestion ? (
+        <div className="w-full flex flex-col items-center">
+          <OrderingView
+            items={currentQuestion.config.items ?? []}
+            correctOrder={
+              questionResults.answerReveal.type === 'ordering'
+                ? questionResults.answerReveal.correctOrder
+                : undefined
+            }
+            distribution={questionResults.answerDistribution}
+            meanPositions={questionResults.meanPositions}
+            accuracy={currentQuestion.gradingType === 'ACCURACY'}
+            invalidKey={
+              currentQuestion.gradingType === 'ACCURACY' &&
+              !(questionResults.answerReveal.type === 'ordering' && questionResults.answerReveal.correctOrder)
+            }
+          />
+          <p className="mt-3 text-center text-slate-500 text-sm">
             {questionResults.totalAnswered} / {questionResults.totalPlayers} answered
           </p>
         </div>
