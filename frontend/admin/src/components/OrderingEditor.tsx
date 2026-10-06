@@ -79,7 +79,15 @@ export function orderingFromQuestion(
   const partialCredit = typeof answerData['partialCredit'] === 'boolean' ? answerData['partialCredit'] : true;
   if (grading === 'ACCURACY') {
     const c = answerData['correctOrder'];
-    if (isPermutation(c, stored.length) && !isIdentity(c)) {
+    // Mirror the server's key check (§4.1): exactly these two keys, a real bool, and a
+    // non-identity permutation of the stored items.
+    const keys = Object.keys(answerData).sort().join(',');
+    const keyOk =
+      keys === 'correctOrder,partialCredit' &&
+      typeof answerData['partialCredit'] === 'boolean' &&
+      isPermutation(c, stored.length) &&
+      !isIdentity(c);
+    if (keyOk) {
       return {
         items: c.map((d) => stored[d]),
         display: identity(stored.length).map((k) => c.indexOf(k)),
@@ -88,7 +96,8 @@ export function orderingFromQuestion(
     }
     // Bad stored key: show the items as stored, make a fresh shuffle so a re-save is
     // valid, and tell the author to re-enter the correct order.
-    return { items: stored, display: shuffleDisplay(Math.max(stored.length, 1)), partialCredit, keyInvalid: true };
+    const display = stored.length >= 2 ? shuffleDisplay(stored.length) : identity(stored.length);
+    return { items: stored, display, partialCredit, keyInvalid: true };
   }
   return { items: stored, display: identity(stored.length), partialCredit: true };
 }
@@ -136,14 +145,15 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
   const n = items.length;
 
   // Switching to ACCURACY with no real shuffle yet (e.g. from COMPLETENESS) makes one.
+  // Fewer than 2 items have no non-identity order, so never try (it would loop).
   useEffect(() => {
-    if (accuracy && (!isPermutation(display, n) || isIdentity(display))) {
+    if (accuracy && n >= 2 && (!isPermutation(display, n) || isIdentity(display))) {
       onChange({ ...state, display: shuffleDisplay(n) });
     }
   }, [accuracy, display, n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function setItem(i: number, value: string) {
-    onChange({ ...state, items: items.map((s, j) => (j === i ? value : s)) });
+    onChange({ ...state, items: items.map((s, j) => (j === i ? value : s)), keyInvalid: false });
   }
   function add() {
     onChange({ ...state, items: [...items, ''], display: shuffleDisplay(n + 1), keyInvalid: false });
