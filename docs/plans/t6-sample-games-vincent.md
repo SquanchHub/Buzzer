@@ -1,6 +1,6 @@
 # T6 — Vincent's sample games: "Reading the Data" (classroom) and "Food Fight" (party)
 
-Status: **draft, pre-implementation.** Owner: Vincent Zhou. Branch: `content/t6-games-vincent`
+Status: **plan agreed; Goldfish-tested and fact-checked 2026-10-05, revised (§8).** Owner: Vincent Zhou. Branch: `content/t6-games-vincent`
 (from `main` after T7 ordering, T8 and Arjun's T6 games merged).
 
 ## 1. Problem
@@ -45,12 +45,20 @@ uses **50–300 points**, like Wild Kingdom.
 
 ## 3. Images (self-drawn)
 
-| Id | Image | Size | Target |
-|---|---|---|---|
-| A | Scatter plot: 30 points rising along y ≈ 0.6x + noise (seeded), axes and ticks, **one clear outlier** far below the trend at the lower right | 800 × 500 | The outlier's centre; inner 0.035, outer 0.07, partial 0.5 |
-| B | Horizontal box plot on a 0–100 axis (ticks every 10). Whiskers 12–95, Q1 35, **median 48**, Q3 70 | 900 × 360 | The median line at 48; inner 0.025, outer 0.06, partial 0.5. Q1 and Q3 are > 90 px from it, so a quartile tap misses |
-| C | Scoville heat scale: horizontal log axis from 1 to 10,000,000 SHU (labels 1, 10, 100, 1K, 10K, 100K, 1M, 10M), with a green-to-red bar | 1000 × 300 | **Jalapeño ≈ 5,000 SHU** (log₁₀ 3.70); inner 0.035 (≈ ±0.3 decades, covering the common 2,500–8,000 range), outer 0.08, partial 0.5 |
-| D | Deep-fry thermometer: vertical 0–250 °C scale, ticks every 25 °C, °F labels alongside | 300 × 1000 | **180 °C (≈ 350–375 °F, the classic deep-fry range 175–190 °C)**; inner 0.025 (≈ ±7 °C), outer 0.06, partial 0.5 |
+The generator draws every image with Pillow, and the hotspot target comes from the same numbers
+used to draw it. Each image shows **numbers and axes only, never the answer** (no pepper names or
+markers). Source fonts are ≥ 22 px, so labels stay at least about 9 px tall on a 375 px phone.
+Every 1-D scale has a thin bar, so a tap at the right value anywhere across the bar scores full
+points: the inner radius covers the half-range along the axis combined with the bar's half-width.
+
+| Id | Image | Size | Drawing | Target |
+|---|---|---|---|---|
+| A | Scatter plot | 800 × 500 | Plot area x 70–770, y 30–440. 30 points: x ~ U(5, 95), y = 15 + 0.75x + N(0, 5), seed 7. **Outlier** at data (80, 18), about 57 below the trend. | The outlier's centre (the generator prints the pixel coordinates); inner 0.035 (28 px), outer 0.07 |
+| B | Horizontal box plot | 900 × 360 | Axis 0–100 at x 60–840 (7.8 px per unit), ticks every 10. Whiskers 12–95, Q1 35, **median 48**, Q3 70; box half-height 28 px. | The median line's centre; inner 0.035 (31.5 px), which covers the whole drawn line (28 px half-height). Outer 0.07 (63 px). Q1 is 101 px away, so a quartile tap misses |
+| C | Scoville scale (log) | 1000 × 300 | Axis 1 to 10M SHU at x 60–940 (125.7 px per decade); labels 1, 10, 100, 1K, 10K, 100K, 1M, 10M; green-to-red bar, half-height 15 px | **Jalapeño 4,500 SHU** (log₁₀ 3.65, the geometric middle of 2,500–8,000; ±0.25 decades = ±31.4 px); inner 0.035 (35 px ≥ √(31.4² + 15²)), outer 0.08 |
+| D | Thermometer, **horizontal** | 1000 × 300 | 0–250 °C at x 80–920 (3.36 px per °C), ticks every 25 °C, labels every 50 °C with °F underneath; tube half-height 14 px | **182.5 °C**, the middle of the 175–190 °C (350–375 °F) deep-fry range: ±7.5 °C = ±25.2 px; inner 0.03 (30 px ≥ √(25.2² + 14²)), outer 0.07 |
+
+All hotspot questions use `partialFraction` 0.5.
 
 ## 4. Questions
 
@@ -69,9 +77,9 @@ a hypothesis test. Suitable as an in-class review for an introductory statistics
 | 6 | hotspot | ACCURACY | Tap the median of this box plot. | Image B | 2 | 20 |
 | 7 | fill_in_the_blank | ACCURACY | The middle value of a sorted data set is called the ___. | **median** (1 typo allowed) | 1 | 20 |
 | 8 | true_false | ACCURACY | The median is more resistant to outliers than the mean. | **True** | 1 | 15 |
-| 9 | ordering | ACCURACY, exact order only | Put the steps of a hypothesis test in order, first to last. | State the null and alternative hypotheses → Choose a significance level → Collect data and compute the test statistic → Find the p-value → Compare the p-value with α and decide | 2 | 45 |
+| 9 | ordering | ACCURACY, partial credit (textbooks differ on steps 1–2) | Put the steps of a hypothesis test in order, first to last. | State the null and alternative hypotheses → Choose a significance level → Collect data and compute the test statistic → Find the p-value → Compare the p-value with α and decide | 2 | 45 |
 | 10 | multiple_choice | ACCURACY | A data set has a mean of 50 and a median of 42. Its distribution is most likely… | **Skewed right** / Skewed left / Symmetric / Uniform | 1 | 20 |
-| 11 | fill_in_the_blank | ACCURACY | The distance from the first quartile to the third quartile is called the ___. | **interquartile range**, **IQR** (1 typo allowed) | 2 | 25 |
+| 11 | fill_in_the_blank | ACCURACY | The distance from the first quartile to the third quartile is called the ___. | **interquartile range**, **inter-quartile range**, **IQR** (1 typo allowed) | 2 | 25 |
 | 12 | multiple_choice | COMPLETENESS | Which chart type do you find easiest to read? | Bar chart / Histogram / Box plot / Scatter plot | 1 | 20 |
 | 13 | fill_in_the_blank | COMPLETENESS | In one or two words, which statistics topic would you like to review next? | any | 1 | 30 |
 
@@ -79,8 +87,11 @@ Ordering display orders (stored `config.items`; checked against O3: not the iden
 display order submitted as-is scores at most half):
 - Q4: shown as {1, 5, 5, 9}, {−10, 0, 10, 20}, {5, 5, 5, 5}, {4, 5, 5, 6} → `correctOrder`
   [2, 3, 0, 1]; as shown r = [2, 3, 0, 1], L = 2 → 1/3 ✓.
-- Q9 (5 items): shown as Find p-value, State hypotheses, Compare and decide, Compute statistic,
-  Choose α → `correctOrder` [1, 4, 3, 0, 2]; as shown r = [3, 0, 4, 2, 1], L = 2 → 1/4 ✓.
+- Q9 (5 items, stored exactly as in the answer column): shown as "Find the p-value", "State the
+  null and alternative hypotheses", "Compare the p-value with α and decide", "Collect data and
+  compute the test statistic", "Choose a significance level" → `correctOrder` [1, 4, 3, 0, 2]; as
+  shown r = [3, 0, 4, 2, 1], L = 2 → 1/4 ✓.
+- Q4's negative number uses the Unicode minus "−" (display only; players tap, never type).
 
 Standard deviations for Q4 (population): 0, 0.71, 2.83, 11.18. The order holds for the sample
 SD too.
@@ -94,14 +105,14 @@ anyone who eats."
 |---|---|---|---|---|---|---|
 | 1 | multiple_choice | ACCURACY | Which of these "nuts" is actually a legume? | **Peanut** / Almond / Cashew / Walnut | 100 | 15 |
 | 2 | ordering | ACCURACY, partial credit | Order these peppers from mildest to hottest. | Bell pepper → Jalapeño → Cayenne → Habanero → Carolina Reaper | 300 | 35 |
-| 3 | true_false | ACCURACY | White chocolate contains cocoa solids. | **False** (cocoa butter, not cocoa solids) | 100 | 15 |
+| 3 | true_false | ACCURACY | White chocolate contains no ingredient from the cocoa bean. | **False** (it is made with cocoa butter) | 100 | 15 |
 | 4 | hotspot | ACCURACY | On this heat scale, tap where a jalapeño pepper sits. | Image C | 250 | 25 |
-| 5 | multi_select | ACCURACY | Which of these go into a classic Genovese pesto? Select all that apply. | **Basil, Pine nuts, Garlic** (+100 each); Tomato, Cream, Butter (−100 each) | 300 | 25 |
-| 6 | fill_in_the_blank | ACCURACY | Pasta cooked so it is still firm to the bite is called "al ___". | **dente** (1 typo allowed) | 200 | 20 |
-| 7 | true_false | ACCURACY | In the 1830s, ketchup was sold in the US as a medicine. | **True** (tomato "pills") | 100 | 15 |
+| 5 | multi_select | ACCURACY | Which of these go into a classic Genovese pesto? Select all that apply. | **Basil, Pine nuts, Garlic** (+100 each); Tomato, Cream, Mayonnaise (−100 each) | 300 | 25 |
+| 6 | fill_in_the_blank | ACCURACY | Pasta cooked so it is still firm to the bite is called "al ___". | **dente**, **al dente** (1 typo allowed) | 200 | 20 |
+| 7 | true_false | ACCURACY | In the 1830s, tomato ketchup was promoted in the US as a medicine. | **True** (Bennett's tomato cures; tomato "pills" followed) | 100 | 15 |
 | 8 | hotspot | ACCURACY | Tap the classic deep-frying temperature on this thermometer. | Image D | 250 | 25 |
 | 9 | fill_in_the_blank | ACCURACY | Which spice, made from crocus flowers, is the most expensive in the world by weight? | **saffron** (1 typo allowed) | 200 | 20 |
-| 10 | multiple_choice | ACCURACY | Which fruit wears its seeds on the outside? | **Strawberry** / Kiwi / Banana / Mango | 100 | 15 |
+| 10 | multiple_choice | ACCURACY | Which fruit wears its "seeds" on the outside? | **Strawberry** / Kiwi / Banana / Mango | 100 | 15 |
 | 11 | ordering | COMPLETENESS | Rank these pizza toppings, favourite first. | (opinion; the host shows the room's ranking) Pepperoni, Mushrooms, Pineapple, Olives, Extra cheese | 100 | 30 |
 | 12 | multiple_choice | COMPLETENESS | Pineapple on pizza? | Yes, obviously / Absolutely not / Only ironically / I'm calling the police | 50 | 15 |
 | 13 | fill_in_the_blank | COMPLETENESS | Name your ultimate comfort food. | any | 50 | 25 |
@@ -113,6 +124,21 @@ Ordering display order:
 
 Pepper ranges (SHU), which don't overlap: bell 0; jalapeño 2,500–8,000; cayenne 30,000–50,000;
 habanero 100,000–350,000; Carolina Reaper ~1.5–2.2 million.
+
+### Scoring data conventions (both games)
+
+- **MC:** `answer_points` gives `points_value` to the key and 0 to the other options. Under
+  COMPLETENESS, `answer_data` is `{}`.
+- **TF:** `answer_points` `{"true": …, "false": …}`, with `points_value` on the key and 0 on the
+  other.
+- **FITB:** `acceptedAnswers` as listed, `answerPoints` equal to `points_value` for each, and
+  `editDistance` 1. Matching is case-insensitive and whitespace-normalised (`calculate_score`), so
+  no case variants are needed. COMPLETENESS FITB uses `{}` and `config.maxLength` 60.
+- **MS:** `answer_points` +k on correct options and −k on the others; `points_value` is the sum
+  of the positive ones.
+- **Ordering:** `partialCredit` **true** on all three ACCURACY ordering questions (classroom Q4
+  and Q9, party Q2). COMPLETENESS Q11 has `answer_data` `{}`.
+- **Game metadata:** `max_players` 150 for both, with the descriptions given above.
 
 ### Requirements matrix
 
@@ -150,10 +176,47 @@ every `sample_games/*.json` file, so the new files join them automatically.
 ## 7. Risks
 
 - **Fact errors** in a committed teaching artifact. Mitigation: a fresh-context fact check of §4
-  before building (recorded in §8).
+  before building (§8).
 - **Hotspot rings too tight on a phone.** The smallest inner radius is 0.025 of the longer side
   (B: ≈ 9 px on a 375 px-wide phone, D: about 0.025 × 1000 scaled to the screen height). The QA
   pass taps on a phone-sized viewport, and the ring sizes get adjusted if they prove unfair.
 - **Image D is tall (aspect 0.3)**, so on a phone it is letterboxed by height. The QA pass checks
   that it stays readable.
 - **Opinion questions under COMPLETENESS score full points for anyone who answers,** by design.
+
+## 8. Goldfish test and fact check (2026-10-05)
+
+A fresh-context subagent checked commit 16e66d8 against the requirements, recomputed every
+ordering check and both SD orders, and fact-checked every ACCURACY question. It confirmed the
+requirements matrix and found no wrong keys. Four items were blocking:
+
+a. **Food Q3 (white chocolate):** "cocoa solids" is contested (EU labelling counts cocoa butter).
+   Reworded to "contains no ingredient from the cocoa bean" → False.
+b. **Food Q5 (pesto):** "Butter" could be argued (Hazan's and older Ligurian recipes include it).
+   Replaced with "Mayonnaise".
+c. **Image B:** a tap on the drawn median line could fall outside the inner ring. The box
+   half-height is now 28 px, with inner 0.035 (31.5 px).
+d. **Images C and D:** a tap at the right value but off the bar's centreline lost points. Both now
+   pin the bar thickness, axis extent and centre, with inner radii computed to cover the full
+   range (§3). Image D is now horizontal, for legible labels on a phone.
+
+Non-blocking items, all applied:
+- Food Q7 reworded to "promoted … as a medicine".
+- The deep-fry target moved to 182.5 °C, covering 175–190 °C.
+- Classroom Q9 now gives partial credit.
+- Added "al dente" and "inter-quartile range" as accepted answers.
+- Exact item strings and the Unicode minus are stated.
+- Scoring conventions are written out.
+- Images carry numbers only, with minimum font sizes.
+- The scatter seed, trend and outlier are given.
+- "seeds" is in quotes in Food Q10.
+
+The generator deletes its temporary game and images. Its build course stays behind as an inert
+row, because courses have no delete endpoint.
+
+**Image provenance (hotspot H10):** all four images are drawn by the generator from the
+parameters in §3. There are no third-party assets and no licensing questions.
+
+**Outside this plan:** Arjun's two T6 games (World Geography, Wild Kingdom) are version 1 and
+contain no hotspot or ordering questions. T6 requires each member to have at least one game that
+uses each new type, so his set still needs one.
