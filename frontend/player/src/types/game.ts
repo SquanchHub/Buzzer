@@ -27,7 +27,9 @@ export interface QuestionPayload {
   totalQuestions: number;
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   prompt: string;
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  /** T8: the prompt image, null if none (host shows it; D8). */
+  promptImageId: number | null;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig>;
   timeLimitSeconds: number;
   pointsValue: number;
 }
@@ -65,7 +67,7 @@ export interface QuestionSummaryItem {
   prompt: string;
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig>;
   pointsAwarded: number;
   maxPoints: number;
   answerTimeMs: number | null;

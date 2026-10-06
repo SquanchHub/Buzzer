@@ -49,7 +49,9 @@ export interface QuestionPayload {
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
   prompt: string;
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  /** T8: the prompt image, null if none (host shows it; D8). */
+  promptImageId: number | null;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig>;
   timeLimitSeconds: number;
   pointsValue: number;
   editDistance?: number;
@@ -103,7 +105,7 @@ export interface HostQuestionSummaryItem {
   prompt: string;
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig>;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig>;
   pointsValue: number;
   answerReveal: AnswerReveal;
   answerDistribution: Record<string, number>;
