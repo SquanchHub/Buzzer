@@ -829,6 +829,8 @@ async def get_player_question_summary(
             }
         elif q_type == "hotspot":
             reveal = hotspot_reveal(hotspot_target(r.question_id, r.config, q_ans))
+        elif q_type == "ordering":
+            reveal = ordering_reveal(ordering_key(r.question_id, r.config, q_ans))
         else:
             reveal = {}
 
@@ -922,6 +924,12 @@ async def get_host_question_summary(
         hs_target: HotspotTarget | None = None
         if q_type == "hotspot" and grading_type == "ACCURACY":
             hs_target = hotspot_target(qid, q["config"], q_ans)
+        ord_key: OrderingKey | None = None
+        ord_n: int | None = None
+        if q_type == "ordering":
+            ord_n = ordering_item_count(qid, q["config"])
+            if grading_type == "ACCURACY" and ord_n is not None:
+                ord_key = ordering_key(qid, q["config"], q_ans)
 
         if grading_type == "COMPLETENESS":
             reveal: dict = {"type": "completeness"}
@@ -950,11 +958,14 @@ async def get_host_question_summary(
             }
         elif q_type == "hotspot":
             reveal = hotspot_reveal(hs_target)
+        elif q_type == "ordering":
+            reveal = ordering_reveal(ord_key)
         else:
             reveal = {}
 
         dist: dict[str, int] = {}
         hs_taps: list[tuple[int, dict]] = []  # (score_id, tap) for hotspot
+        ord_orders: list[tuple[int, ...]] = []  # valid submissions, for ordering
         correct_count = 0
         total_time = 0
         time_count = 0
@@ -991,6 +1002,13 @@ async def get_host_question_summary(
                         hs_taps.append(
                             (s["score_id"], {"x": tap[0], "y": tap[1], "band": band})
                         )
+                elif q_type == "ordering" and ord_n is not None:
+                    order = ordering_submission(ans, ord_n)
+                    if order is not None:
+                        ord_orders.append(order)
+                        if ord_key is not None:  # buckets cover every row
+                            k = ordering_dist_key(ordering_result(ord_key, order))
+                            dist[k] = dist.get(k, 0) + 1
             if s["is_correct"]:
                 correct_count += 1
             if s["answer_time_ms"] is not None:
@@ -1019,5 +1037,9 @@ async def get_host_question_summary(
         if q_type == "hotspot":
             hs_taps.sort(key=lambda t: t[0])  # answer order
             result[-1]["taps"] = [tap for _, tap in hs_taps[:HOTSPOT_TAP_CAP]]
+        if q_type == "ordering":
+            result[-1]["meanPositions"] = (
+                ordering_mean_positions(ord_n, ord_orders) if ord_n is not None else []
+            )
 
     return result

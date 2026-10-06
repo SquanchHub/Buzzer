@@ -11,9 +11,16 @@ answer (see test_hotspot.py).
 
 from __future__ import annotations
 
+import asyncio
+
+import httpx
 import pytest
 
-from .host_helpers import MC_QUESTION, hapi  # noqa: F401 — fixture
+from .conftest import create_guest_tokens, create_room
+from .host_helpers import MC_QUESTION, hapi, mysql  # noqa: F401 — fixture
+
+# Aliased so pytest doesn't try to collect the Test-prefixed class from this module.
+from .engine.socket_client import TestSocketClient as SocketClient
 
 ITEMS = ["Anaphase", "Prophase", "Telophase", "Metaphase"]
 # Correct order: Prophase, Metaphase, Anaphase, Telophase.
@@ -247,3 +254,295 @@ def test_type_change_from_ordering_keeps_items_and_fails(hapi, route):  # noqa: 
     r = a.update(q["id"], {"type": "multiple_choice"})
     assert r.status_code == 422, r.text
     assert a.questions() == [q]
+
+
+# ---------------------------------------------------------------------------
+# Live game over Socket.io (§9.2 tests 5–11)
+# ---------------------------------------------------------------------------
+
+_TIMEOUT = 10.0
+# See test_hotspot.py: host_advance emits results before it records the RESULTS phase.
+_RESULTS_SETTLE_S = 0.3
+
+ORDER_ERROR = "ordering answer must list every item exactly once"
+# Display: Anaphase(0) Prophase(1) Telophase(2) Metaphase(3); correct: P M A T.
+EXACT = [1, 3, 0, 2]
+ONE_MOVED = [2, 1, 3, 0]  # T P M A: Telophase moved to the front
+TWO_SWAPS = [3, 1, 2, 0]  # M P T A
+REVERSED = [2, 0, 3, 1]  # T A M P
+
+
+class OrderingGame:
+    """A live room: host + N guest players over Socket.io, driven step by step."""
+
+    def __init__(self, base_url: str, admin_token: str, setup: dict, n_players: int):
+        self.base_url = base_url
+        self.admin_token = admin_token
+        self.setup = setup
+        self.n_players = n_players
+        self._after_results = False
+
+    async def __aenter__(self) -> OrderingGame:
+        room = create_room(
+            self.base_url,
+            self.admin_token,
+            self.setup["course_id"],
+            self.setup["game_id"],
+        )
+        self.room = room
+        tokens = create_guest_tokens(self.base_url, room, self.n_players)
+        self.host = SocketClient(self.base_url, self.admin_token, "host")
+        self.players = [
+            SocketClient(self.base_url, t, f"p{i}") for i, t in enumerate(tokens)
+        ]
+        await asyncio.gather(*(c.connect() for c in [self.host, *self.players]))
+        await self.host.emit("join_room", {"room_code": room, "role": "HOST"})
+        await self.host.wait_for("sync_state")
+        for p in self.players:
+            await p.emit("join_room", {"room_code": room, "role": "PLAYER"})
+            await p.wait_for("sync_state")
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await asyncio.gather(
+            *(c.disconnect() for c in [self.host, *self.players]),
+            return_exceptions=True,
+        )
+
+    async def _advance(self) -> None:
+        if self._after_results:
+            await asyncio.sleep(_RESULTS_SETTLE_S)
+        await self.host.emit("host_advance", {})
+
+    async def next_question(self) -> tuple[dict, list[dict]]:
+        await self._advance()
+        host_q = await self.host.wait_for("new_question")
+        player_qs = [await p.wait_for("new_question") for p in self.players]
+        self._after_results = False
+        return host_q, player_qs
+
+    async def submit(self, i: int, question_id: int, answer_data) -> dict:
+        await self.players[i].emit(
+            "submit_answer",
+            {
+                "question_id": question_id,
+                "answer_data": answer_data,
+                "answer_time_ms": 400,
+            },
+        )
+        return await self.players[i].wait_for("answer_received")
+
+    async def results(self) -> tuple[dict, list[dict]]:
+        await self._advance()
+        host_r = await self.host.wait_for("question_results")
+        player_rs = [await p.wait_for("question_results") for p in self.players]
+        self._after_results = True
+        return host_r, player_rs
+
+    async def finish(self) -> tuple[dict, list[dict]]:
+        await self._advance()
+        host_over = await self.host.wait_for("game_over")
+        player_overs = [await p.wait_for("game_over") for p in self.players]
+        return host_over, player_overs
+
+
+async def _nothing(client: SocketClient, event: str, wait: float = 0.5) -> bool:
+    try:
+        await client.wait_for(event, wait)
+    except (asyncio.TimeoutError, TimeoutError):
+        return True
+    return False
+
+
+def _create(base_url: str, token: str, game_id: int, **overrides) -> int:
+    r = httpx.post(
+        f"{base_url}/api/admin/games/{game_id}/questions",
+        json=_body(**overrides),
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=_TIMEOUT,
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _keys(obj) -> set[str]:
+    """Every dict key anywhere inside `obj`."""
+    if isinstance(obj, dict):
+        return set(obj) | {k for v in obj.values() for k in _keys(v)}
+    if isinstance(obj, list):
+        return {k for v in obj for k in _keys(v)}
+    return set()
+
+
+async def test_new_question_payload_has_no_answer_key(
+    game_setup, base_url, admin_token
+):
+    """§9.2 test 5."""
+    _create(base_url, admin_token, game_setup["game_id"])
+    async with OrderingGame(base_url, admin_token, game_setup, 1) as g:
+        host_q, player_qs = await g.next_question()
+        for payload in (host_q, *player_qs):
+            assert payload["type"] == "ordering"
+            assert payload["config"] == {"items": ITEMS}
+            assert not _keys(payload) & {"correctOrder", "partialCredit", "answer_data"}
+        await g.results()
+        await g.finish()
+
+
+@pytest.mark.parametrize(
+    ("partial", "expected"),
+    [(True, [1000.0, 666.67, 333.33, 0]), (False, [1000.0, 0, 0, 0])],
+    ids=["partial credit", "exact only"],
+)
+async def test_scoring_over_sockets(
+    game_setup, base_url, admin_token, partial, expected
+):
+    """§9.2 test 6."""
+    qid = _create(
+        base_url,
+        admin_token,
+        game_setup["game_id"],
+        answer_data={**ANSWER, "partialCredit": partial},
+    )
+    async with OrderingGame(base_url, admin_token, game_setup, 4) as g:
+        await g.next_question()
+        acks = [
+            await g.submit(i, qid, {"order": order})
+            for i, order in enumerate([EXACT, ONE_MOVED, TWO_SWAPS, REVERSED])
+        ]
+        assert [a["pointsAwarded"] for a in acks] == pytest.approx(expected)
+        assert [a["isCorrect"] for a in acks] == [True, False, False, False]
+        await g.results()
+        host_over, _ = await g.finish()
+        [summary] = host_over["questionSummary"]
+        assert summary["correctCount"] == 1
+
+
+async def test_completeness_any_order_scores_full(game_setup, base_url, admin_token):
+    """§9.2 test 7."""
+    qid = _create(
+        base_url,
+        admin_token,
+        game_setup["game_id"],
+        grading_type="COMPLETENESS",
+        config={"items": ["Pepperoni", "Mushrooms", "Pineapple"]},
+        answer_data={},
+    )
+    async with OrderingGame(base_url, admin_token, game_setup, 2) as g:
+        await g.next_question()
+        a = await g.submit(0, qid, {"order": [2, 0, 1]})
+        b = await g.submit(1, qid, {"order": [2, 1, 0]})
+        assert (a["pointsAwarded"], a["isCorrect"]) == (1000.0, True)
+        assert b["pointsAwarded"] == 1000.0
+        host_r, player_rs = await g.results()
+        assert host_r["answerReveal"] == {"type": "completeness"}
+        assert host_r["answerDistribution"] == {}
+        # Pepperoni: 2nd and 3rd; Mushrooms: 3rd and 2nd; Pineapple: 1st twice.
+        assert host_r["meanPositions"] == [2.5, 2.5, 1.0]
+        assert [p["yourOrdering"] for p in player_rs] == [None, None]
+        await g.finish()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {},
+        {"order": "1302"},
+        {"order": [1, 3, 0]},
+        {"order": [1, 3, 0, 0]},
+        {"order": [1, 3, 0, 4]},
+        {"order": [True, 3, 0, 2]},
+        {"order": ["1", "3", "0", "2"]},
+    ],
+    ids=["missing", "not a list", "short", "duplicate", "index n", "bool", "strings"],
+)
+async def test_malformed_submission_is_rejected(game_setup, base_url, admin_token, bad):
+    """§9.2 test 8: socket `error`, nothing recorded, and a valid order still works."""
+    qid = _create(base_url, admin_token, game_setup["game_id"])
+    async with OrderingGame(base_url, admin_token, game_setup, 1) as g:
+        await g.next_question()
+        await g.players[0].emit(
+            "submit_answer",
+            {"question_id": qid, "answer_data": bad, "answer_time_ms": 100},
+        )
+        err = await g.players[0].wait_for("error")
+        assert err["message"] == ORDER_ERROR
+        assert await _nothing(g.players[0], "answer_received")
+        ok = await g.submit(0, qid, {"order": EXACT, "extra": "dropped"})
+        assert ok["pointsAwarded"] == 1000.0
+        host_r, _ = await g.results()
+        assert host_r["totalAnswered"] == 1
+        await g.finish()
+
+
+async def test_results_payloads(game_setup, base_url, admin_token):
+    """§9.2 test 9: host gets the reveal, distribution and room order; each player gets
+    the reveal and their own yourOrdering, never meanPositions."""
+    qid = _create(base_url, admin_token, game_setup["game_id"])
+    async with OrderingGame(base_url, admin_token, game_setup, 4) as g:
+        await g.next_question()
+        for i, order in enumerate([EXACT, ONE_MOVED, ONE_MOVED]):
+            await g.submit(i, qid, {"order": order})  # player 3 does not answer
+        host_r, player_rs = await g.results()
+        reveal = {"type": "ordering", "correctOrder": EXACT}
+        assert host_r["answerReveal"] == reveal
+        assert host_r["answerDistribution"] == {"0": 1, "1": 2}
+        # Display item d's 1-based position in EXACT, ONE_MOVED, ONE_MOVED:
+        # A: 3,4,4  P: 1,2,2  T: 4,1,1  M: 2,3,3
+        assert host_r["meanPositions"] == [3.67, 1.67, 2.0, 2.67]
+        assert "yourOrdering" not in host_r
+        assert all(p["answerReveal"] == reveal for p in player_rs)
+        assert [p["yourOrdering"] for p in player_rs] == [
+            {"inOrder": 4, "total": 4, "outOfPlace": []},
+            {"inOrder": 3, "total": 4, "outOfPlace": [2]},  # Telophase
+            {"inOrder": 3, "total": 4, "outOfPlace": [2]},
+            None,
+        ]
+        assert not any("meanPositions" in p for p in player_rs)
+        await g.finish()
+
+
+async def test_game_over_summaries(game_setup, base_url, admin_token):
+    """§9.2 test 10."""
+    qid = _create(base_url, admin_token, game_setup["game_id"])
+    async with OrderingGame(base_url, admin_token, game_setup, 2) as g:
+        await g.next_question()
+        await g.submit(0, qid, {"order": EXACT})
+        await g.submit(1, qid, {"order": REVERSED})
+        await g.results()
+        host_over, player_overs = await g.finish()
+        [h] = host_over["questionSummary"]
+        assert h["answerReveal"] == {"type": "ordering", "correctOrder": EXACT}
+        assert h["answerDistribution"] == {"0": 1, "3": 1}
+        assert h["meanPositions"] == [2.5, 2.5, 2.5, 2.5]  # exact + reversed
+        [p0] = player_overs[0]["questionSummary"]
+        assert p0["playerAnswer"] == {"order": EXACT}
+        assert p0["answerReveal"] == {"type": "ordering", "correctOrder": EXACT}
+
+
+@pytest.mark.parametrize(
+    "bad_sql",
+    [
+        "JSON_SET(answer_data, '$.correctOrder', JSON_ARRAY(0, 1, 2, 3))",
+        "JSON_SET(answer_data, '$.correctOrder', JSON_ARRAY(1, 0, 2))",
+        "JSON_REMOVE(answer_data, '$.partialCredit')",
+    ],
+    ids=["identity", "wrong length", "partialCredit missing"],
+)
+async def test_bad_stored_key_scores_zero_without_crashing(
+    game_setup, base_url, admin_token, bad_sql
+):
+    """§9.2 test 11: bad data planted after create (both write paths validate)."""
+    qid = _create(base_url, admin_token, game_setup["game_id"])
+    mysql(f"UPDATE questions SET answer_data = {bad_sql} WHERE id = {int(qid)}")
+    async with OrderingGame(base_url, admin_token, game_setup, 1) as g:
+        await g.next_question()
+        a = await g.submit(0, qid, {"order": EXACT})
+        assert (a["pointsAwarded"], a["isCorrect"]) == (0, False)
+        host_r, [p] = await g.results()
+        assert host_r["answerReveal"] == {"type": "ordering"}
+        assert p["answerReveal"] == {"type": "ordering"}
+        assert p["yourOrdering"] is None
+        assert host_r["meanPositions"] == [3.0, 1.0, 4.0, 2.0]
+        host_over, _ = await g.finish()
+        assert host_over["questionSummary"][0]["answerReveal"] == {"type": "ordering"}
