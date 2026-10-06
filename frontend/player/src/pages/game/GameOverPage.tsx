@@ -135,7 +135,8 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
             ) : (
               <span className="text-red-400 text-base">✗</span>
             )}
-            <span className={`text-sm font-semibold truncate ${
+            {/* An ordering answer is a whole sequence: wrap it rather than cut it off. */}
+            <span className={`text-sm font-semibold ${item.type === 'ordering' ? 'break-words' : 'truncate'} ${
               noAnswer ? 'text-slate-600' :
               isCompleteness ? 'text-indigo-300' :
               isCorrect ? 'text-green-300' : 'text-red-300'

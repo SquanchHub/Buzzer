@@ -106,8 +106,10 @@ export default function ResultsPage() {
     isOrdering && lastAnswerData && Array.isArray(lastAnswerData.order)
       ? (lastAnswerData.order as number[])
       : null;
+  // After a reload lastAnswerData is gone, but the server's yourOrdering still says the
+  // player answered.
   const ordLabel = isOrdering
-    ? orderingLabel(answerReveal, ownOrder !== null, questionResults.yourOrdering)
+    ? orderingLabel(answerReveal, ownOrder !== null || !!questionResults.yourOrdering, questionResults.yourOrdering)
     : null;
   const correctOrder =
     answerReveal.type === 'ordering' && answerReveal.correctOrder ? answerReveal.correctOrder : null;

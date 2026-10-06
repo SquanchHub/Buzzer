@@ -28,7 +28,7 @@ export function OrderingPicker({ items, sequence, onTap, disabled }: OrderingPic
             aria-label={placed ? `${item}, position ${position + 1}` : `${item}, not placed`}
             disabled={disabled}
             onClick={() => onTap(d)}
-            className={`w-full min-h-12 flex items-center gap-3 rounded-xl px-3 py-2 text-left text-base leading-snug font-semibold border-2 transition-colors
+            className={`w-full min-h-14 flex items-center gap-3 rounded-xl px-3 py-2 text-left text-base leading-snug font-semibold border-2 transition-colors
               focus:outline-none focus-visible:ring-2 focus-visible:ring-white
               ${placed ? 'text-white' : 'bg-slate-700 border-slate-600 text-slate-100'}
               ${disabled ? 'opacity-60 cursor-not-allowed' : 'active:scale-[0.98]'}`}

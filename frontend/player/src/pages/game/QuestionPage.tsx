@@ -278,7 +278,7 @@ export default function QuestionPage() {
     const canAnswer = !submitted && !questionLocked;
     const tap = (d: number) => {
       if (!canAnswer || sequence.includes(d)) return; // numbered items ignore taps (O2)
-      setSequence(prev => [...prev, d]);
+      setSequence(prev => (prev.includes(d) ? prev : [...prev, d]));
     };
     const submitOrder = () => {
       // Any server `error` event replaces the whole game UI, so never send a bad order.
