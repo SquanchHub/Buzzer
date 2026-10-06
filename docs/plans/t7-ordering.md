@@ -944,3 +944,28 @@ n. §6.11: the stale "validation is asymmetric" / "updates bypass validation" RE
    corrected.
 o. §7 / §8: sample games (old phase 12) move to the T6 branch.
 p. §2: the helper list names every §6.2 helper.
+
+### 13.1 Implementation refinements (2026-10-05)
+
+Found while building and in the closing `mean-review`; the sections above still describe the
+design, these are the deltas:
+
+a. **e2e harness uses plain Playwright, not `pytest-playwright`** (§9.3): the plugin's
+   `pytest-base-url` dependency registers `--base-url`, which clashes with
+   `tests/integration/conftest.py` in a shared virtualenv. `tests/e2e/conftest.py` provides its
+   own `browser`, `api` and `new_context` fixtures; `requirements.txt` lists `playwright`.
+b. **e2e teardown leaves courses** (§9.3 said it deletes them): courses have no delete endpoint,
+   the same accepted leftover as `tests/integration/`. Sessions (and their Redis state) and games
+   are deleted.
+c. **Test 11's report check is its own test** (`test_report_flags_invalid_key`, phase 6), so the
+   phase 3 commit was green on its own.
+d. **Editor key check mirrors the server** (§6.9): `orderingFromQuestion` flags `keyInvalid`
+   unless `answer_data` has exactly `correctOrder` and `partialCredit` with a real bool and a
+   non-identity permutation; the warning clears on any edit. The reshuffle effect never runs for
+   fewer than two items (it looped on corrupt rows with 0–1 items).
+e. **Player results after a reload** (§6.7): the label treats `yourOrdering` as proof of an
+   answer, so a reload no longer shows "No answer" next to earned points.
+f. **Recap wraps ordering answers** instead of truncating them; only the exact order shows ✓
+   (O6). Item buttons are 56 px (`min-h-14`) as specified; the 375 × 667 no-scroll check passes.
+g. **Test 12 also plays the imported game** and checks the same scores; report and e2e
+   distribution assertions check counts, not just labels.
