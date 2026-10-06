@@ -88,7 +88,8 @@ For T3 I wrote the bottom-up `README.md` context files for nine directories on 2
 and `lib/` directories of both [`frontend/host/src/`](../frontend/host/src/README.md) and
 [`frontend/player/src/`](../frontend/player/src/README.md). Vincent wrote the admin, models,
 schemas and common READMEs and the roll-ups. Later I added
-[`frontend/dev-images/README.md`](../frontend/dev-images/README.md) for the T7 dev image route.
+`frontend/dev-images/README.md` for the T7 dev image route (removed with the route in T8 step A6,
+once real uploaded images replaced it).
 
 Writing them meant reading every file, and each one ended with a "Gotchas found while reading"
 section. Three of those gotchas changed what we did:

@@ -61,10 +61,10 @@ four child pages render each game phase. Routes are declared in `frontend/host/s
   Inherited from admin: after a roster import the result card must be dismissed with its icon-only
   ✕ (no accessible label) before "Upload CSV" appears again. The hotspot branches (T7 stage B) were
   copied into the admin editor in T4 phase 3, so they are now in both copies too.
-- **A hotspot question can't be saved (or edited) without a loadable image.** In dev that means
-  `frontend/dev-images/{id}.png` (served by Vite, and checked by the backend through a dev-only
-  mount); on nginx/builds no image exists before T8, so the editor keeps Save disabled. A stored
-  question whose image is gone also can't be edited until its Image ID is changed.
+- **A hotspot question can't be saved (or edited) without a loadable image** from the game's
+  course: pick or upload one with the image picker (T8). The editor keeps Save disabled until the
+  image has loaded, and the server refuses an image from another course. A stored question whose
+  image can't be loaded can't be saved until a different image is picked.
 
 - **Reloading after the game ends:** a reload on `/gameover` shows "Loading final results…"
   forever. `sync_state` with status `COMPLETED` is ignored, and `game_over` is not sent again.
