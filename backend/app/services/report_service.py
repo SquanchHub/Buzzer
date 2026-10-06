@@ -9,6 +9,7 @@ Answer distributions are reconstructed from session_scores.answer_data in MySQL
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 from collections import defaultdict
@@ -21,6 +22,7 @@ from ..models.course import Course
 from ..models.game import Game, Question
 from ..models.session import GameSession, SessionScore
 from ..schemas.admin import is_hotspot_aspect_ratio
+from . import image_service
 from .game_service import (
     HotspotTarget,
     hotspot_reveal,
@@ -153,15 +155,42 @@ def _build_histogram(scores: list[float], max_possible: float) -> list[dict]:
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
+def _option_image_id(q: Question, i: int) -> int | None:
+    ids = q.config.get("optionImageIds") if isinstance(q.config, dict) else None
+    image_id = ids[i] if isinstance(ids, list) and i < len(ids) else None
+    return (
+        image_id
+        if isinstance(image_id, int) and not isinstance(image_id, bool)
+        else None
+    )
+
+
+def _option_label(q: Question, i: int, text: str, images: dict[int, str]) -> str:
+    """Bar label: letter, the option's thumbnail if it has one, and its text — or
+    "(image)" for an image-only option (T8 D8)."""
+    image_id = _option_image_id(q, i)
+    thumb = (
+        f'<img class="bar-thumb" src="{images[image_id]}" alt="">'
+        if image_id in images
+        else ""
+    )
+    shown = "(image)" if not text.strip() and image_id is not None else _esc(text)
+    return f"{_OPTION_LETTERS[i]} {thumb}{shown}"
+
+
 def _render_bar_chart(
-    q: Question, dist: dict[str, int], reveal: dict, total_players: int
+    q: Question,
+    dist: dict[str, int],
+    reveal: dict,
+    total_players: int,
+    images: dict[int, str],
 ) -> str:
     options = q.config.get("options", [])
 
     if q.type == "multiple_choice":
         bars = [
             {
-                "label": f"{_OPTION_LETTERS[i]} {_esc(opt)}",
+                "label": _option_label(q, i, opt, images),
                 "count": dist.get(str(i), 0),
                 "correct": (i in reveal.get("correctIndices", []))
                 if reveal.get("type") == "multiple_choice"
@@ -278,14 +307,24 @@ _HOTSPOT_BAND_COLOURS: dict[str | None, str] = {
 _HOTSPOT_BAND_LABELS = {"inner": "Bullseye", "outer": "Close", "miss": "Miss"}
 
 
-def _hotspot_image_data_uri(q: Question) -> str | None:
-    """The question's image as a data: URI, or None if unavailable.
-
-    STAGE A STUB (docs/plans/t7-hotspot.md §9): returns None until T8 provides C5
-    (image bytes and content type callable from Python). Stage C replaces the body
-    with a C5 lookup on q.config["imageId"] and base64-encodes the bytes.
-    """
-    return None
+async def _image_data_uris(
+    db: AsyncSession, questions: list[Question]
+) -> dict[int, str]:
+    """Every image the questions use (prompt, options, hotspot), fetched once through C5
+    and base64-encoded as a data: URI, so the report stays one standalone file
+    (t8-image-support.md D8). An image that no longer exists is simply absent; the
+    renderers then fall back (no thumbnail, or hotspot's "Image unavailable" box)."""
+    ids: set[int] = set()
+    for q in questions:
+        ids |= image_service.question_image_ids(q.type, q.config, q.prompt_image_id)
+    uris: dict[int, str] = {}
+    for image_id in sorted(ids):
+        found = await image_service.get_image(db, image_id)
+        if found is not None:
+            content_type, data = found
+            encoded = base64.b64encode(data).decode()
+            uris[image_id] = f"data:{content_type};base64,{encoded}"
+    return uris
 
 
 def _render_hotspot(
@@ -293,6 +332,7 @@ def _render_hotspot(
     dist: dict[str, int],
     target: HotspotTarget | None,
     taps: list[tuple[float, float, str | None]],
+    images: dict[int, str],
 ) -> str:
     """Inline SVG: image (or an "Image unavailable" box), rings under ACCURACY, every
     tap as a dot coloured by band, and a legend. No player names (§7.5)."""
@@ -308,7 +348,8 @@ def _render_hotspot(
         f'aria-label="Hotspot taps">'
         f'<rect width="{w:.1f}" height="{h:.1f}" fill="#0f172a"/>'
     ]
-    image = _hotspot_image_data_uri(q)
+    image_id = q.config.get("imageId") if isinstance(q.config, dict) else None
+    image = images.get(image_id) if isinstance(image_id, int) else None
     if image is not None:
         parts.append(
             f'<image href="{_esc(image)}" width="{w:.1f}" height="{h:.1f}" '
@@ -418,6 +459,8 @@ body{
 .badge-completeness{background:#2d2d1a;color:#fde68a}
 .q-timing{margin-left:auto;color:#475569;font-size:0.78rem}
 .prompt{font-size:1.2rem;font-weight:600;color:#f1f5f9;margin-bottom:28px;line-height:1.5}
+.prompt-img{display:block;max-width:100%;max-height:320px;margin:0 auto 16px;border-radius:8px}
+.bar-thumb{height:28px;width:40px;object-fit:contain;vertical-align:middle;margin-right:6px;border-radius:4px;background:#0f172a}
 .q-stats{margin-top:16px;font-size:0.78rem;color:#475569;text-align:right}
 .pct-correct{color:#4ade80;font-weight:700}
 
@@ -504,6 +547,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
         .order_by(Question.order_index)
     )
     questions = q_result.scalars().all()
+    images = await _image_data_uris(db, list(questions))
 
     s_result = await db.execute(
         select(SessionScore).where(SessionScore.session_id == session_id)
@@ -564,7 +608,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
         pts_label = f"{pts_val} pt{'s' if q.points_value != 1 else ''}"
 
         if q.type in ("multiple_choice", "true_false"):
-            chart = _render_bar_chart(q, dict(dist), reveal, total_players)
+            chart = _render_bar_chart(q, dict(dist), reveal, total_players, images)
         elif q.type == "fill_in_the_blank":
             chart = _render_word_cloud(q, dict(dist), reveal)
         elif q.type == "hotspot":
@@ -574,7 +618,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
                 if tap is not None:
                     band = hotspot_tap_band(q.grading_type, hs_target, tap)
                     hs_taps.append((tap[0], tap[1], band))
-            chart = _render_hotspot(q, dict(dist), hs_target, hs_taps)
+            chart = _render_hotspot(q, dict(dist), hs_target, hs_taps, images)
         else:
             chart = ""
 
@@ -589,6 +633,12 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
         else:
             stats = f'<div class="q-stats">{answered} / {total_players} answered</div>'
 
+        # T8 D8: the prompt image above the prompt, when the question has one.
+        prompt_image = (
+            f'<img class="prompt-img" src="{images[q.prompt_image_id]}" alt="">'
+            if q.prompt_image_id in images
+            else ""
+        )
         # Prompt was already bleach-sanitised on write; embed as HTML
         q_sections.append(
             f'<div class="q-card">'
@@ -598,6 +648,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
             f'<span class="badge {grading_class}">{_esc(grading_label)}</span>'
             f'<span class="q-timing">{q.time_limit_seconds}s · {_esc(pts_label)}</span>'
             f"</div>"
+            f"{prompt_image}"
             f'<p class="prompt">{q.prompt}</p>'
             f"{chart}"
             f"{stats}"

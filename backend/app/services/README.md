@@ -15,7 +15,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 | `game_service.py` | Room/session lifecycle, join authorisation, per-question-type scoring, answer persistence, leaderboard and game-over summaries. |
 | `state_service.py` | All Redis reads/writes for live game state: room, players, current question, answered sets, answer distributions. |
 | `export_service.py` | Builds session score CSVs: a raw per-question table and a Canvas gradebook import format. |
-| `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram) from MySQL only. |
+| `report_service.py` | Builds a standalone, PII-free HTML session report (charts, word cloud, score histogram, every question image embedded as a data URI) from MySQL only. |
 | `roster_service.py` | Upserts `course_rosters` from a Canvas CSV or pre-mapped rows; deactivates netids missing from the upload. |
 | `image_service.py` | Question images (T8): validates uploads by their bytes with Pillow (PNG/JPEG/WebP, ≤ 2 MB, ≤ 4096 px per side), strips metadata with rotation applied, stores them per course with duplicate reuse, and serves contract calls C4–C6. |
 | `content_service.py` | Game and question business logic shared by the admin and host routers (T4 §6.2.2): course game lists, create/update/delete games, the D7 live check, question CRUD/reorder with D8 re-validation, prompt sanitizing, game import/export (bundle format v1, or v2 with embedded images — T8; never `course_id`), image replace and the image copy on game move (T8). |
@@ -72,9 +72,14 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   Hotspot questions render as an inline SVG (`_render_hotspot`): viewBox in units of the image's
   longer side, rings under ACCURACY, every tap as a dot coloured by band, and a band legend
   ("N taps" under COMPLETENESS; "Target data invalid" when the stored target is bad). Band logic
-  is imported from `game_service`, not copied. The image comes from `_hotspot_image_data_uri`,
-  **a stage A stub that always returns `None`** (draws "Image unavailable") until T8's C5 lands
-  (`docs/plans/t7-hotspot.md` §9 stage C).
+  is imported from `game_service`, not copied.
+  Images (T8 D8): `_image_data_uris` collects every question's images with
+  `image_service.question_image_ids`, fetches each once through C5 (`get_image`) and
+  base64-encodes it, then the renderers use that map — the hotspot SVG's background, the prompt
+  image above the prompt, and a thumbnail in each multiple-choice bar label, where an image-only
+  option reads "(image)". An image that no longer exists is just left out (hotspot draws
+  "Image unavailable"). Every image is embedded in full, so a report grows by about 1.37× the
+  game's image bytes.
 - **image_service** (T8, `docs/plans/t8-image-support.md` D2) — `normalize(data, field)` →
   `(stored bytes, content_type, width, height)` or a 422 `RequestBodyInvalidError` on `field`;
   `create_image(db, course_id, data, uploaded_by)` → `(Image, created)` (C6: flush only; identical
@@ -181,6 +186,7 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 - `update_player_score` is read-modify-write on a JSON blob, so concurrent updates can lose one.
 - `state_service.restore_from_mysql` and `remove_player` are not called anywhere in `backend/`.
   Despite its docstring, `restore_from_mysql` only returns data; it writes nothing to Redis.
-- `report_service` has no `multi_select` handling (no chart, no answer reveal), and keeps its
+- `report_service` has no `multi_select` handling (no chart, no answer reveal — so a
+  multi-select question's option images don't appear in the report either), and keeps its
   own copies of `_answer_reveal` and Levenshtein, separate from `game_service`/`gateway`
   (its hotspot branch is the exception: it calls `game_service.hotspot_reveal`).
