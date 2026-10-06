@@ -641,3 +641,70 @@ def test_import_rejects_unshuffled_ordering_question(hapi):  # noqa: F811
     assert "Question 1 invalid" in r.text
     assert "shuffled order" in r.text
     assert hapi.ok("GET", f"/host/courses/{course}/games", token) == []
+
+
+# ---------------------------------------------------------------------------
+# §9.2 test 15 — the HTML session report
+# ---------------------------------------------------------------------------
+
+
+def _report(base_url: str, admin_token: str, room: str) -> str:
+    session_id = mysql(
+        f"SELECT id FROM game_sessions WHERE room_code = '{room}' "
+        "ORDER BY created_at DESC LIMIT 1"
+    ).strip()
+    r = httpx.get(
+        f"{base_url}/api/game/sessions/{session_id}/report",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        timeout=_TIMEOUT,
+    )
+    assert r.status_code == 200, r.text
+    return r.text
+
+
+async def test_report_renders_ordering(game_setup, base_url, admin_token):
+    items = ["<b>x</b>", "Prophase", "Telophase", "Metaphase"]
+    qid = _create(base_url, admin_token, game_setup["game_id"], config={"items": items})
+    _create(
+        base_url,
+        admin_token,
+        game_setup["game_id"],
+        grading_type="COMPLETENESS",
+        config={"items": ["Pepperoni", "Mushrooms", "Pineapple"]},
+        answer_data={},
+    )
+    async with OrderingGame(base_url, admin_token, game_setup, 2) as g:
+        host_q, _ = await g.next_question()
+        await g.submit(0, qid, {"order": EXACT})
+        await g.submit(1, qid, {"order": ONE_MOVED})
+        await g.results()
+        host_q, _ = await g.next_question()
+        await g.submit(0, host_q["questionId"], {"order": [2, 0, 1]})
+        await g.results()
+        await g.finish()
+    html = _report(base_url, admin_token, g.room)
+    assert html.count("Ordering") >= 2
+    assert "&lt;b&gt;x&lt;/b&gt;" in html and "<b>x</b>" not in html
+    # Correct order P M A T, written in that order.
+    pos = [html.index(t) for t in ("Prophase", "Metaphase", "&lt;b&gt;x&lt;/b&gt;")]
+    assert pos == sorted(pos)
+    assert "Correct order" in html
+    assert "Room&#x27;s order" in html or "Room's order" in html
+    assert "Perfect" in html and "1 out of place" in html
+    assert "avg 1.00" in html  # COMPLETENESS: Pineapple ranked first by its one voter
+
+
+async def test_report_flags_invalid_key(game_setup, base_url, admin_token):
+    """§9.2 test 11, report part."""
+    qid = _create(base_url, admin_token, game_setup["game_id"])
+    mysql(
+        "UPDATE questions SET answer_data = JSON_REMOVE(answer_data, '$.partialCredit')"
+        f" WHERE id = {int(qid)}"
+    )
+    async with OrderingGame(base_url, admin_token, game_setup, 1) as g:
+        await g.next_question()
+        await g.submit(0, qid, {"order": EXACT})
+        await g.results()
+        await g.finish()
+    html = _report(base_url, admin_token, g.room)
+    assert "Answer key invalid" in html
