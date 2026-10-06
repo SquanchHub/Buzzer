@@ -44,4 +44,5 @@ async def get_db() -> AsyncSession:
 # client that reads right after a write could miss it. Every use must share the same
 # scope: FastAPI caches dependencies per scope, so mixing the two would give one
 # request two separate sessions (e.g. get_current_user's and the handler's).
+# tests/unit/test_db_scope.py fails on any get_db dependency that isn't function-scoped.
 DbSession = Annotated[AsyncSession, Depends(get_db, scope="function")]

@@ -1,4 +1,4 @@
-fastapi>=0.111
+fastapi>=0.121.1  # Depends(scope="function"), used by database.DbSession
 uvicorn[standard]>=0.29
 gunicorn>=22.0
 python-socketio[asyncio_client]>=5.11

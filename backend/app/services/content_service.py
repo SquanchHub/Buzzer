@@ -4,8 +4,9 @@ Game and question business logic shared by the admin and host routers
 
 The routers translate these functions to HTTP; access control happens before they
 are called (route dependencies). Like every service here, functions only flush —
-`get_db` commits when the request ends. Queries are explicit; relationships are never
-lazy-loaded (async SQLAlchemy raises MissingGreenlet).
+`get_db` (via `database.DbSession`) commits when the handler returns, before the response
+is sent. Queries are explicit; relationships are never lazy-loaded (async SQLAlchemy raises
+MissingGreenlet).
 
 Phase 2 uses this from routers/host.py; phase 3 switches routers/admin.py over too.
 """

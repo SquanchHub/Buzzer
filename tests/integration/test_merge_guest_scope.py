@@ -319,7 +319,6 @@ async def test_admin_merge_stays_global(world):
         json={"guest_user_id": world.guest_id(email), "target_netid": netid},
     )
     assert r.status_code == 204, r.text
-    await asyncio.sleep(0.3)  # admin.merge_guest commits via get_db, after the response
     assert world.players(sa, host_a) == [netid]
     assert world.players(sb, host_b) == [netid]
     assert world.guest_id(email) is None
