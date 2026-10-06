@@ -43,7 +43,8 @@ logging configuration, and the rate limiter. This is where any new role or permi
     — FastAPI's `RequestValidationError` and `RequestBodyInvalidError` both go through
     `_validation_error_response`, so the two can't drift apart
   - uncaught exception → 500 `{"error": "INTERNAL_ERROR", "message": "An unexpected error occurred"}`
-  - FastAPI `HTTPException` (not handled here, e.g. `import_game`) → `{"detail": "<text>"}`
+  - FastAPI `HTTPException` (not handled here; only FastAPI's own, e.g. 404 for an unknown
+    route or 405) → `{"detail": "<text>"}`. No app code raises it.
 - **`limiter`** — apply with `@limiter.limit("5/15minutes")` on an endpoint that takes a `request` arg.
 
 ## Depends on

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, List, Upload, Trash2, Pencil } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
@@ -41,8 +41,13 @@ export default function GamesPage() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editMaxPlayers, setEditMaxPlayers] = useState('');
+  const [editCourseId, setEditCourseId] = useState('');
+  const [editError, setEditError] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  // 'all', 'unassigned', or a course id.
+  const [filter, setFilter] = useState('all');
   const fileRef = useRef<HTMLInputElement>(null);
+  const editRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   async function load() {
@@ -61,6 +66,13 @@ export default function GamesPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  // The edit form sits above the list, so bring it into view (the list can be long).
+  useEffect(() => {
+    if (!editingGame) return;
+    editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editRef.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, [editingGame]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -88,23 +100,29 @@ export default function GamesPage() {
     setEditTitle(g.title);
     setEditDescription(g.description);
     setEditMaxPlayers(String(g.max_players));
+    setEditCourseId(g.course_id === null ? '' : String(g.course_id));
+    setEditError('');
   }
 
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingGame) return;
     setEditSaving(true);
-    setError('');
+    setEditError('');
     try {
       await api.put(`/admin/games/${editingGame.id}`, {
         title: editTitle,
         description: editDescription,
         max_players: Number(editMaxPlayers),
+        // Only sent when moving; the API refuses null and a move while live (409).
+        ...(editCourseId && Number(editCourseId) !== editingGame.course_id
+          ? { course_id: Number(editCourseId) }
+          : {}),
       });
       setEditingGame(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update game');
+      setEditError(err instanceof Error ? err.message : 'Failed to update game');
     } finally {
       setEditSaving(false);
     }
@@ -135,6 +153,10 @@ export default function GamesPage() {
     const c = courses.find((x) => x.id === id);
     return c ? `${c.name} (${c.semester})` : `Course ${id}`;
   }
+
+  const visibleGames = games.filter((g) =>
+    filter === 'all' ? true : filter === 'unassigned' ? g.course_id === null : g.course_id === Number(filter),
+  );
 
   async function deleteGame(id: number) {
     if (!confirm('Delete this game and all its sessions? This cannot be undone.')) return;
@@ -224,6 +246,7 @@ export default function GamesPage() {
       )}
 
       {editingGame && (
+        <div ref={editRef} className="scroll-mt-4">
         <Card className="mb-6">
           <CardHeader><h3 className="text-lg font-semibold text-slate-100">Edit Game</h3></CardHeader>
           <CardContent>
@@ -237,6 +260,23 @@ export default function GamesPage() {
                 rows={3}
               />
               <div>
+                <label htmlFor="edit-course" className="block text-xs text-slate-400 mb-1">Course</label>
+                <select
+                  id="edit-course"
+                  value={editCourseId}
+                  onChange={(e) => setEditCourseId(e.target.value)}
+                  className={selectClass}
+                >
+                  {editingGame.course_id === null && <option value="">Unassigned — choose a course…</option>}
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.semester})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Moving a game doesn't change the course of sessions already played.
+                </p>
+              </div>
+              <div>
                 <label className="block text-xs text-slate-400 mb-1">Max players</label>
                 <Input
                   type="number"
@@ -246,6 +286,7 @@ export default function GamesPage() {
                   max="500"
                 />
               </div>
+              {editError && <p className="text-red-400 text-sm">{editError}</p>}
               <div className="flex gap-3">
                 <Button type="submit" disabled={editSaving}>{editSaving ? 'Saving\u2026' : 'Save'}</Button>
                 <Button type="button" variant="ghost" onClick={() => setEditingGame(null)}>Cancel</Button>
@@ -253,21 +294,43 @@ export default function GamesPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       )}
 
+      <div className="flex items-center gap-2 mb-4">
+        <label htmlFor="course-filter" className="text-xs text-slate-400">Show</label>
+        <select
+          id="course-filter"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="all">All courses</option>
+          <option value="unassigned">Unassigned ({games.filter((g) => g.course_id === null).length})</option>
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>{c.name} ({c.semester})</option>
+          ))}
+        </select>
+      </div>
+
       {loading ? (
-        <p className="text-slate-400">Loading\u2026</p>
-      ) : games.length === 0 ? (
-        <p className="text-slate-400">No games yet.</p>
+        <p className="text-slate-400">Loading…</p>
+      ) : visibleGames.length === 0 ? (
+        <p className="text-slate-400">{games.length === 0 ? 'No games yet.' : 'No games match this filter.'}</p>
       ) : (
         <div className="space-y-3">
-          {games.map((g) => (
+          {visibleGames.map((g) => (
             <Card key={g.id} className="flex items-center justify-between px-6 py-4">
               <div>
                 <p className="font-semibold text-slate-100">{g.title}</p>
                 {g.description && <p className="text-slate-400 text-sm mt-0.5 line-clamp-1">{g.description}</p>}
                 <p className="text-slate-500 text-xs mt-0.5">
-                  {courseLabel(g.course_id)} · Max {g.max_players} players
+                  {g.course_id === null ? (
+                    <span className="text-amber-300">Unassigned — edit to choose a course</span>
+                  ) : (
+                    <Link to={`/courses/${g.course_id}`} className="hover:underline">{courseLabel(g.course_id)}</Link>
+                  )}
+                  {' · '}Max {g.max_players} players
                 </p>
               </div>
               <div className="flex gap-2">

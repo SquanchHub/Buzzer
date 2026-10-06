@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { tokenRole } from '../lib/utils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const notice = (useLocation().state as { message?: string } | null)?.message;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,8 +20,13 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await api.post<{ access_token: string }>('/auth/login', { username, password });
+      if (tokenRole(data.access_token) !== 'ADMIN') {
+        // Don't store it: that would also replace the host/player apps' session.
+        setError('This account is not an admin. Use the Host app to host games.');
+        return;
+      }
       localStorage.setItem('token', data.access_token);
-      navigate('/courses');
+      navigate('/users');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -51,6 +58,7 @@ export default function LoginPage() {
               autoComplete="current-password"
               required
             />
+            {notice && !error && <p className="text-amber-300 text-sm">{notice}</p>}
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in\u2026' : 'Sign In'}

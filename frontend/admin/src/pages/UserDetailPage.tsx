@@ -20,7 +20,7 @@ interface UserDetail {
   game_access: number[];
 }
 interface Course { id: number; name: string; semester: string }
-interface Game { id: number; title: string }
+interface Game { id: number; title: string; course_id: number | null }
 
 interface CourseSelection { id: number; role: 'HOST' | 'PLAYER'; checked: boolean }
 interface GameSelection { id: number; checked: boolean }
@@ -105,17 +105,21 @@ export default function UserDetailPage() {
     if (selected.length === 0) return;
     setGrantingGames(true);
     setError('');
-    try {
-      await Promise.all(
-        selected.map((s) => api.post(`/admin/users/${userId}/game-access`, { game_id: s.id }))
-      );
-      setShowGamePanel(false);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to grant game access');
-    } finally {
-      setGrantingGames(false);
+    // One at a time, so each refusal (e.g. the 409 "must have HOST access to this
+    // game's course") is reported against its game while the others still go through.
+    const failures: string[] = [];
+    for (const s of selected) {
+      try {
+        await api.post(`/admin/users/${userId}/game-access`, { game_id: s.id });
+      } catch (err) {
+        const title = games.find((g) => g.id === s.id)?.title ?? `Game ${s.id}`;
+        failures.push(`${title}: ${err instanceof Error ? err.message : 'failed'}`);
+      }
     }
+    if (failures.length === 0) setShowGamePanel(false);
+    else setError(`Some games were not granted. ${failures.join(' · ')}`);
+    await load();
+    setGrantingGames(false);
   }
 
   async function revokeGameAccess(gameId: number) {
@@ -176,6 +180,24 @@ export default function UserDetailPage() {
   const grantedGameIds = new Set(user.game_access);
   const availableCourses = courses.filter((c) => !grantedCourseIds.has(c.id));
   const availableGames = games.filter((g) => !grantedGameIds.has(g.id));
+
+  // D1: a non-admin's game grant only works while they HOST the game's course.
+  const hostedCourseIds = new Set(
+    user.course_access.filter((ca) => ca.role === 'HOST').map((ca) => ca.course_id),
+  );
+  const canUseGame = (g: Game | undefined) =>
+    user.role === 'ADMIN' || (g !== undefined && g.course_id !== null && hostedCourseIds.has(g.course_id));
+  const courseName = (id: number | null) =>
+    id === null ? 'Unassigned' : courseMap[id] ? `${courseMap[id].name} (${courseMap[id].semester})` : `Course ${id}`;
+  // Picker groups: one per course (plus Unassigned), in course-list order.
+  const gameGroups = [...courses.map((c) => c.id as number | null), null]
+    .map((cid) => ({
+      courseId: cid,
+      selections: gameSelections
+        .map((sel, index) => ({ sel, index }))
+        .filter(({ sel }) => (gameMap[sel.id]?.course_id ?? null) === cid),
+    }))
+    .filter((group) => group.selections.length > 0);
 
   const selectedCourseCount = courseSelections.filter((s) => s.checked).length;
   const selectedGameCount = gameSelections.filter((s) => s.checked).length;
@@ -402,7 +424,13 @@ export default function UserDetailPage() {
             const game = gameMap[gid];
             return (
               <div key={gid} className="flex items-center justify-between">
-                <span className="text-slate-200 text-sm">{game ? game.title : `Game ${gid}`}</span>
+                <span className="text-slate-200 text-sm">
+                  {game ? game.title : `Game ${gid}`}
+                  <span className="text-slate-500 text-xs ml-2">{courseName(game?.course_id ?? null)}</span>
+                  {!canUseGame(game) && (
+                    <span className="text-amber-300 text-xs ml-2">inactive: not HOST of this course</span>
+                  )}
+                </span>
                 <Button variant="ghost" size="sm" onClick={() => void revokeGameAccess(gid)}>
                   <Trash2 size={12} />
                 </Button>
@@ -416,28 +444,48 @@ export default function UserDetailPage() {
                 <input
                   type="checkbox"
                   className="rounded"
-                  checked={gameSelections.every((s) => s.checked)}
+                  checked={gameSelections.some((s) => s.checked) && gameSelections.every((s) => s.checked || !canUseGame(gameMap[s.id]))}
                   onChange={(e) =>
-                    setGameSelections((prev) => prev.map((s) => ({ ...s, checked: e.target.checked })))
+                    setGameSelections((prev) =>
+                      prev.map((s) => ({ ...s, checked: e.target.checked && canUseGame(gameMap[s.id]) })),
+                    )
                   }
                 />
-                <span className="text-xs text-slate-400">Select all</span>
+                <span className="text-xs text-slate-400">Select all available</span>
               </div>
-              {gameSelections.map((sel, i) => {
-                const game = gameMap[sel.id];
+              {gameGroups.map(({ courseId, selections }) => {
+                const usable = user.role === 'ADMIN' || (courseId !== null && hostedCourseIds.has(courseId));
                 return (
-                  <div key={sel.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="rounded"
-                      checked={sel.checked}
-                      onChange={(e) =>
-                        setGameSelections((prev) =>
-                          prev.map((s, j) => j === i ? { ...s, checked: e.target.checked } : s)
-                        )
-                      }
-                    />
-                    <span className="text-sm text-slate-200">{game ? game.title : `Game ${sel.id}`}</span>
+                  <div key={courseId ?? 'unassigned'} className="pt-1">
+                    <p className="text-xs font-semibold text-slate-300">
+                      {courseName(courseId)}
+                      {!usable && (
+                        <span className="font-normal text-amber-300 ml-2">
+                          {courseId === null
+                            ? 'assign these games a course first'
+                            : 'grant HOST on this course first'}
+                        </span>
+                      )}
+                    </p>
+                    {selections.map(({ sel, index }) => {
+                      const game = gameMap[sel.id];
+                      return (
+                        <label key={sel.id} className={`flex items-center gap-2 pl-3 ${usable ? '' : 'opacity-50'}`}>
+                          <input
+                            type="checkbox"
+                            className="rounded"
+                            checked={sel.checked}
+                            disabled={!usable}
+                            onChange={(e) =>
+                              setGameSelections((prev) =>
+                                prev.map((s, j) => j === index ? { ...s, checked: e.target.checked } : s)
+                              )
+                            }
+                          />
+                          <span className="text-sm text-slate-200">{game ? game.title : `Game ${sel.id}`}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 );
               })}

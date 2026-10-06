@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Users, Pencil } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
@@ -25,6 +25,7 @@ export default function CoursesPage() {
   const [editName, setEditName] = useState('');
   const [editSemester, setEditSemester] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const editRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   async function load() {
@@ -39,6 +40,13 @@ export default function CoursesPage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  // The edit form sits above the list, so bring it into view (the list can be long).
+  useEffect(() => {
+    if (!editingCourse) return;
+    editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editRef.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, [editingCourse]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -120,6 +128,7 @@ export default function CoursesPage() {
       )}
 
       {editingCourse && (
+        <div ref={editRef} className="scroll-mt-4">
         <Card className="mb-6">
           <CardHeader><h3 className="text-lg font-semibold text-slate-100">Edit Course</h3></CardHeader>
           <CardContent>
@@ -143,6 +152,7 @@ export default function CoursesPage() {
             </form>
           </CardContent>
         </Card>
+        </div>
       )}
 
       {loading ? (
@@ -154,7 +164,9 @@ export default function CoursesPage() {
           {courses.map((c) => (
             <Card key={c.id} className="flex items-center justify-between px-6 py-4">
               <div>
-                <p className="font-semibold text-slate-100">{c.name}</p>
+                <Link to={`/courses/${c.id}`} className="font-semibold text-slate-100 hover:underline">
+                  {c.name}
+                </Link>
                 <p className="text-slate-400 text-sm">{c.semester}</p>
               </div>
               <div className="flex gap-2">

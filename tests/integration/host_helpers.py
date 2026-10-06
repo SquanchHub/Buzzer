@@ -52,6 +52,26 @@ def redis_exists(*keys: str) -> int:
     return int(out.stdout.strip())
 
 
+def mysql(sql: str) -> str:
+    """Run SQL in the stack's MySQL as the app user, for states the API refuses to create."""
+    password = ""
+    env = _REPO_ROOT / ".env"
+    if env.exists():
+        for line in env.read_text().splitlines():
+            if line.startswith("MYSQL_PASSWORD="):
+                password = line.partition("=")[2].strip()
+    out = subprocess.run(
+        ["docker", "compose", "exec", "-T", "mysql"]
+        + ["mysql", "-N", "-uapp_user", f"-p{password}", "buzzer"],
+        cwd=_REPO_ROOT,
+        input=sql,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout
+
+
 def redis_keys(pattern: str) -> list[str]:
     """Keys matching `pattern` in the stack's Redis (KEYS is fine at test-database size)."""
     out = subprocess.run(

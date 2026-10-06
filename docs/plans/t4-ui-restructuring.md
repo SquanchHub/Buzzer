@@ -1,8 +1,9 @@
 # T4 — UI Restructuring: host capabilities, course-specific games, admin-first admin app
 
 Status: **agreed design, revised after goldfish test** (cross-course roster rule, D6/D8
-semantics, named schemas, per-phase tests). **Phase 1 implemented** (branch
-`feat/t4-ui-restructuring`); see §6.1.9 for the details it settled. Owners: Vincent Zhou (phases 1 and 3), Arjun
+semantics, named schemas, per-phase tests). **All three phases implemented**:
+phase 1 (§6.1.9), phase 2 (§6.2.5), phase 3 on `feat/t4_ui_restructuring_phase_3` (§6.5.1), which
+depends on `fix/get-db-commit-timing` (§6.2.5 k). Owners: Vincent Zhou (phases 1 and 3), Arjun
 Kaneriya (phase 2). Read with the context hierarchy: `backend/app/README.md`,
 `frontend/README.md`, and the per-directory READMEs they link.
 
@@ -456,6 +457,43 @@ Frontend (`frontend/admin/src/`):
   `localStorage.token`, so the admin arrives signed in; `authorise_player` admits ADMIN. Caveat
   (documented, not fixed): the player app's "Play Again" removes the shared token, signing the
   admin out. In `npm run dev` the apps are on different ports and the admin must sign in again.
+
+### 6.5.1 Phase 3 as implemented (details the plan left open)
+
+- **Prerequisite:** `fix/get-db-commit-timing` (§6.2.5 k) lands first; the admin handlers on
+  `content_service` only flush and rely on `get_db` committing before the response, so the phase 3
+  branch is built on that fix and must merge after it.
+- **Admin router:** game create/update/delete, import/export and all question handlers only call
+  `content_service` (no `db.commit()` of their own; the old admin `create_*` commits are gone with
+  their handlers). `GET /admin/games` and `GET /admin/games/{id}` stay plain reads. No admin
+  handler raises `HTTPException` any more.
+- **`GET /admin/courses/{id}/access`** returns `CourseMemberResponse` rows
+  (`user_id, username, display_name, netid, role`), HOSTs first (the role enum's declared order).
+- **Course detail games list** filters `GET /admin/games` by `course_id` in the browser instead of
+  adding an endpoint. The add-member form offers only USER accounts (admins bypass course roles).
+  Demoting or removing a HOST confirms first, because D1 silently disables their game grants.
+- **`RequireAdmin`** decodes the role claim with `tokenRole` (`lib/utils.ts`) and treats an expired
+  token like a non-admin one; it never removes the shared token. `LoginPage` refuses a non-admin
+  login *without* storing the token, so signing in to the admin app with a host account doesn't
+  replace that browser's host/player session.
+- **"Open Host app" links to `/host/home`, not `/host/`** (found in manual testing): the host
+  app's root falls through to its catch-all route, which shows the login form even when a valid
+  token is stored, so `/host/` made the admin look signed out. `/home` is behind `RequireAuth`,
+  which accepts the shared token.
+- **User detail game picker** sends grants one at a time and lists failures per game rather than
+  failing the whole batch on the first 409; it disables games the user couldn't use under D1.
+- **T7 stage D** (`t7-hotspot.md` H9, §8) is part of this phase: `HotspotEditor` and
+  `lib/images.ts` are copied into admin unchanged except their header notes, the host editor's
+  stage B hotspot branches are ported into the admin `QuestionEditorPage`, and the admin Vite
+  config gets the dev-only `devImages` plugin (listed for stage C removal in
+  `frontend/dev-images/README.md`).
+- **Test changes:** `tests/integration/test_admin_content.py` covers both phase-3 rows of §6.4 plus
+  admin question 409s/422s/404s, import error shape, no admin auto-grant, admin deleting another
+  host's game, and `/access`. Because the admin route now runs the hotspot image-existence check,
+  `test_hotspot.py::test_host_update_checks_image_even_when_patch_omits_it` can no longer plant a
+  dangling `imageId` through the admin API; it now creates the question with a valid image and
+  points it at a missing one in MySQL (new `host_helpers.mysql`), with every assertion kept and a
+  new one that the admin route refuses the missing image.
 
 ## 7. Known risks and open edges
 
