@@ -1,10 +1,10 @@
 # frontend/player/src/components/
 
 Presentational building blocks for the Player (phone) app: generic primitives in `ui/`, plus
-one game-specific component, `HotspotCanvas.tsx`. The answer buttons, the fill-in-the-blank input
+`HotspotCanvas.tsx` and `ImageThumb.tsx` (a stored T8 image). The answer buttons, the fill-in-the-blank input
 and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`. None of the
 `ui/` components touch the network, sockets, or global state; `HotspotCanvas.tsx`'s
-`useImageUrl` hook fetches an image via `lib/images.ts`.
+`useImageUrl` hook and `ImageThumb` fetch images via `lib/images.ts`.
 
 ## Files
 
@@ -14,6 +14,7 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 | `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — rounded, padded panel wrappers around `<div>`. |
 | `ui/input.tsx` | `Input` — a styled `<input>` with phone-sized padding and `text-base`. |
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
+| `ImageThumb.tsx` | `ImageThumb({ imageId, alt, className? })` — a stored image (T8) letterboxed in a box: loaded through `lib/images.ts` into a blob URL (revoked on unmount or id change), "Loading…" / "Image unavailable" otherwise. Copied from the host's `ImageThumb` (keep in sync). |
 | `HotspotCanvas.tsx` | `HotspotCanvas` — the hotspot question's `<canvas>` (`docs/plans/t7-hotspot.md` §7.6–7.7), interactive (tap to place a point) or display (rings + own tap); `useImageUrl(imageId)` for display canvases that load their own image. |
 
 ## Key entry points
@@ -47,7 +48,7 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 - `frontend/player/src/pages/`:
   - `JoinPage.tsx`, `NamePage.tsx` — `Button`, `Input`, `Card*`
   - `game/GameOverPage.tsx` — `Button` (`variant="outline"`)
-  - `game/QuestionPage.tsx` — `TimerBar`
+  - `game/QuestionPage.tsx` — `TimerBar`, `HotspotCanvas`, `ImageThumb` (option tiles)
 - Nothing outside the player app imports these.
 
 ## Gotchas found while reading

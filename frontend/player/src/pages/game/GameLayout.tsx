@@ -124,6 +124,11 @@ export default function GameLayout() {
       // with the player reading the prompt. A re-sent new_question for the same
       // question (reconnect) keeps the image already loaded.
       if (imageRef.current?.questionId !== data.questionId) {
+        // T8 D8: warm the browser cache for option images now (C3's immutable header lets
+        // the tiles' own fetches read it), so loading overlaps reading the question.
+        for (const id of data.config.optionImageIds ?? []) {
+          if (typeof id === 'number') loadImageUrl(id).then(URL.revokeObjectURL, () => {});
+        }
         releaseImage();
         setQuestionImage(null);
         const imageId = data.config.imageId;

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { loadImageUrl } from '../../lib/images';
 import { QRCodeSVG } from 'qrcode.react';
 import { io, Socket } from 'socket.io-client';
 import type {
@@ -140,6 +141,11 @@ export default function GameLayout() {
     });
 
     sock.on('new_question', (data: QuestionPayload) => {
+      // T8 D8: warm the browser cache for the prompt and option images now (C3's immutable
+      // header lets the screen's own fetches read it), so loading overlaps the prompt.
+      for (const id of [data.promptImageId, ...(data.config.optionImageIds ?? [])]) {
+        if (typeof id === 'number') loadImageUrl(id).then(URL.revokeObjectURL, () => {});
+      }
       currentQuestionIdRef.current = data.questionId;
       setCurrentQuestion(data);
       setAnsweredCount(0);

@@ -16,7 +16,7 @@ network, sockets, or global state; both hotspot components fetch their image via
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
 | `HotspotView.tsx` | `HotspotView` — display-only hotspot `<canvas>` (`docs/plans/t7-hotspot.md` §7.8): image, optional rings, optional taps coloured by band, optional legend; `ringsFromReveal(reveal)` helper. |
 | `HotspotEditor.tsx` | `HotspotEditor` — hotspot authoring panel (§7.9, §13.2): Image ID field (or T8 picker slot), canvas preview with live rings, click to place the centre, sliders for the radii and partial fraction. Exports `HOTSPOT_DEFAULT_TARGET`, `HOTSPOT_ASPECT_MIN`/`MAX` and its prop types. |
-| `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin and host — keep in sync. |
+| `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin, host and player (the player copy shows option images, T8 D8) — keep the three in sync. |
 | `ImagePicker.tsx` | `ImagePicker({courseId, value, onChange, label?})` — choose a question image (T8 §3 contract): the chosen thumbnail with Choose / Change / Remove, and a dialog listing the course's images 24 per page (`listImages`) with **Upload new** (`uploadImage`, selected straight away). Returns only the id; `null` = no image. Escape or a backdrop click closes it. Copied between admin and host — keep in sync. |
 
 ## Key entry points
@@ -68,7 +68,7 @@ network, sockets, or global state; both hotspot components fetch their image via
   - `HomePage.tsx`, `SessionsPage.tsx` — `Button`, `Card*`
   - `QuestionEditorPage.tsx` — `HotspotEditor`, `Button`, `Input`, `Card*`
   - `game/LobbyPage.tsx` — `Button`
-  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`
+  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `ImageThumb` (prompt image, option tiles)
   - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`
 - Nothing outside the host app imports these; the player and admin apps have their own copies.
 

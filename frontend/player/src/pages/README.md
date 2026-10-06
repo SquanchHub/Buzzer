@@ -14,7 +14,7 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 | `LoginPage.tsx` | `/login` | OAuth2 return landing: exchanges the temp token, then returns to `/name/:code` using `sessionStorage.joinRoomCode`. |
 | `game/GameLayout.tsx` | `/game/:code` | Checks token expiry, opens the socket, joins as PLAYER, handles server events, exposes state via context, routes between child pages, shows a "host disconnected" banner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Room code, spinner, "N players in room". |
-| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit, hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit). Timer bar. Answer time measured from mount. |
+| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit (when an MC or multi-select question has option images — `config.optionImageIds`, T8 D8 — both become a two-column grid of large tiles: image, letter, text if any), hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit). Timer bar. Answer time measured from mount. |
 | `game/FeedbackPage.tsx` | `…/feedback` | Static "Answer locked in!" screen shown after `answer_received`. |
 | `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings. |
 | `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings). "Play Again" clears the token. |
@@ -28,6 +28,8 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 - `questionImage` — the current hotspot question's image (`{questionId, status, url?}`), fetched
   by `GameLayout` the moment `new_question` arrives (`docs/plans/t7-hotspot.md` H11), shared by
   `QuestionPage` and `ResultsPage`, revoked when the next question replaces it or on unmount.
+  For other questions `GameLayout` only warms the browser cache for the option images on
+  `new_question` (C3's immutable header lets the tiles' own fetches read it).
 - `answer_data` shapes sent by `QuestionPage`: `{selectedIndex}`, `{selectedValue}`, `{text}`,
   `{selectedIndices}`, `{x, y}` (hotspot). They must match `game_service.calculate_score` on the backend.
 - Socket events handled: `sync_state`, `player_joined`, `new_question`, `question_locked`,
