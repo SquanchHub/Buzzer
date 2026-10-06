@@ -1,6 +1,7 @@
 import { useGame } from './GameLayout';
 import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
-import type { HotspotBand, PlayerAnswerReveal } from '../../types/game';
+import { OrderingList } from '../../components/OrderingPicker';
+import type { HotspotBand, OrderingOutcome, PlayerAnswerReveal } from '../../types/game';
 
 const HOTSPOT_LABELS: Record<HotspotBand, { text: string; className: string }> = {
   inner: { text: 'Bullseye!', className: 'text-green-400' },
@@ -43,6 +44,24 @@ function describeAnswer(
   return null;
 }
 
+/** The ordering result label (docs/plans/t7-ordering.md §6.7): from the server's
+ * yourOrdering, never from points, so points_value 0 and exact-only questions read right. */
+function orderingLabel(
+  reveal: PlayerAnswerReveal,
+  answered: boolean,
+  outcome: OrderingOutcome | null | undefined,
+): { text: string; className: string } {
+  if (reveal.type === 'completeness') return { text: 'Answer recorded!', className: 'text-indigo-400' };
+  if (!answered) return { text: 'No answer', className: 'text-slate-400' };
+  if (reveal.type !== 'ordering' || !reveal.correctOrder) {
+    return { text: 'Not scored', className: 'text-slate-400' };
+  }
+  if (!outcome) return { text: 'Answer recorded', className: 'text-indigo-400' }; // don't guess
+  const k = outcome.outOfPlace.length;
+  if (k === 0) return { text: 'Perfect order!', className: 'text-green-400' };
+  return { text: `${k} item${k === 1 ? '' : 's'} out of place`, className: 'text-amber-400' };
+}
+
 export default function ResultsPage() {
   const { questionResults, currentQuestion, lastAnswerData, questionImage } = useGame();
 
@@ -81,6 +100,18 @@ export default function ResultsPage() {
       ? { x: lastAnswerData.x, y: lastAnswerData.y, band: questionResults.yourBand ?? null }
       : null;
 
+  const isOrdering = currentQuestion?.type === 'ordering';
+  const ordItems = currentQuestion?.config.items ?? [];
+  const ownOrder =
+    isOrdering && lastAnswerData && Array.isArray(lastAnswerData.order)
+      ? (lastAnswerData.order as number[])
+      : null;
+  const ordLabel = isOrdering
+    ? orderingLabel(answerReveal, ownOrder !== null, questionResults.yourOrdering)
+    : null;
+  const correctOrder =
+    answerReveal.type === 'ordering' && answerReveal.correctOrder ? answerReveal.correctOrder : null;
+
   const fitbAccepted: string[] =
     isFitb && 'acceptedAnswers' in answerReveal ? answerReveal.acceptedAnswers : [];
 
@@ -88,7 +119,11 @@ export default function ResultsPage() {
     <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-5 text-center">
 
       {/* Correct / Wrong / Recorded */}
-      {isHotspot && hotspotLabel ? (
+      {ordLabel ? (
+        <p data-testid="ordering-result-label" className={`${ordLabel.className} text-4xl font-black`}>
+          {ordLabel.text}
+        </p>
+      ) : isHotspot && hotspotLabel ? (
         <p className={`${hotspotLabel.className} text-4xl font-black`}>{hotspotLabel.text}</p>
       ) : isCompleteness ? (
         <p className="text-indigo-400 text-4xl font-black">Answer recorded!</p>
@@ -117,6 +152,20 @@ export default function ResultsPage() {
             maxHeightVh={40}
           />
         </div>
+      )}
+
+      {/* Ordering: own order (out-of-place items marked) and the correct order */}
+      {isOrdering && ownOrder && (
+        <OrderingList
+          items={ordItems}
+          order={ownOrder}
+          marked={questionResults.yourOrdering?.outOfPlace}
+          title="Your order"
+          testId="ordering-your-order"
+        />
+      )}
+      {isOrdering && correctOrder && (
+        <OrderingList items={ordItems} order={correctOrder} title="Correct order" testId="ordering-correct-order" />
       )}
 
       {/* Correct answer for FITB ACCURACY */}
