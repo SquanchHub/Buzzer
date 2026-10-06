@@ -29,3 +29,4 @@
 ### Branch: `feat/t8-image-support`
 
 - **2026-10-04, 21:30–22:57** — Merged T4 phase 3 into a new T8 branch, then wrote the T8 image-support design (`docs/plans/t8-image-support.md`): first draft, the remaining design decisions, revisions after a Goldfish test, and a test-first implementation order split by owner.
+- **2026-10-05, 14:45–19:18** — Implemented my half of T8 test-first (steps V0–V9): migration 005 (`images`, `questions.prompt_image_id`), Pillow-validated uploads with metadata stripping and per-course duplicate reuse, prompt/option image fields with a course-aware existence check replacing the dev-image stand-in, image listing with reference counts, delete protection, upload-and-repoint replace, image copy on game move, version 2 export/import, and the admin/host `ImagePicker` and image library page; 74 new integration tests (full suite 217 passed), fixed a duplicate-upload deadlock found in testing, and passed a manual test on the nginx build.
