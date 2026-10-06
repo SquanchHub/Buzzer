@@ -202,6 +202,74 @@ def hotspot_answer_error(answer_data: object) -> str | None:
     return None
 
 
+# Ordering rules (docs/plans/t7-ordering.md §4.1). The single checker for these rules:
+# QuestionCreate uses it to reject bad input (create, and update via content_service's
+# merge-and-revalidate), and game_service uses it to detect bad *stored* data (§4.6).
+# Checks run in the §4.1 order, so the first failing one names the problem.
+ORDERING_MIN_ITEMS = 3
+ORDERING_MAX_ITEMS = 6
+ORDERING_ITEM_MAX_LEN = 80
+
+
+def _is_index(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def ordering_config_error(config: object) -> str | None:
+    """Why an ordering config breaks §4.1, or None if it is valid."""
+    if not isinstance(config, dict) or set(config) != {"items"}:
+        return "ordering config must have exactly 'items'"
+    items = config["items"]
+    if (
+        not isinstance(items, list)
+        or not ORDERING_MIN_ITEMS <= len(items) <= ORDERING_MAX_ITEMS
+        or not all(isinstance(item, str) for item in items)
+    ):
+        return "ordering items must be a list of 3 to 6 strings"
+    for i, item in enumerate(items, start=1):
+        if not 1 <= len(item) <= ORDERING_ITEM_MAX_LEN:
+            return f"ordering item {i} must be 1 to 80 characters"
+        if item != " ".join(item.split()):
+            return (
+                f"ordering item {i} must not have leading, trailing or repeated spaces"
+            )
+    if len({" ".join(item.lower().split()) for item in items}) != len(items):
+        return "ordering items must be unique"
+    return None
+
+
+def ordering_answer_error(config: object, answer_data: object) -> str | None:
+    """Why an ACCURACY ordering question's config or answer_data breaks §4.1, or None."""
+    error = ordering_config_error(config)
+    if error is not None:
+        return error
+    if not isinstance(answer_data, dict) or set(answer_data) != {
+        "correctOrder",
+        "partialCredit",
+    }:
+        return (
+            "ACCURACY ordering answer_data must have exactly 'correctOrder' and "
+            "'partialCredit'"
+        )
+    n = len(config["items"])
+    order = answer_data["correctOrder"]
+    if (
+        not isinstance(order, list)
+        or not all(_is_index(i) for i in order)
+        or sorted(order) != list(range(n))
+    ):
+        return (
+            f"ordering correctOrder must list each item index 0..{n - 1} exactly once"
+        )
+    if order == list(range(n)):
+        return (
+            "ordering items must be stored in a shuffled order, not the correct order"
+        )
+    if not isinstance(answer_data["partialCredit"], bool):
+        return "ordering partialCredit must be true or false"
+    return None
+
+
 # T8 option images (docs/plans/t8-image-support.md D5, §5): only these types may carry
 # config.optionImageIds.
 OPTION_IMAGE_TYPES = ("multiple_choice", "multi_select")
@@ -235,7 +303,7 @@ class QuestionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str = Field(
         ...,
-        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot)$",
+        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot|ordering)$",
     )
     grading_type: str = Field(..., pattern="^(ACCURACY|COMPLETENESS)$")
     prompt: str = Field(..., min_length=1, max_length=2000)
@@ -312,6 +380,12 @@ class QuestionCreate(BaseModel):
                 error = hotspot_answer_error(self.answer_data)
             if error is not None:
                 raise ValueError(error)
+        if self.type == "ordering":
+            error = ordering_config_error(self.config)
+            if error is None and self.grading_type == "ACCURACY":
+                error = ordering_answer_error(self.config, self.answer_data)
+            if error is not None:
+                raise ValueError(error)
         return self
 
 
@@ -319,7 +393,7 @@ class QuestionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str | None = Field(
         None,
-        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot)$",
+        pattern="^(multiple_choice|true_false|fill_in_the_blank|multi_select|hotspot|ordering)$",
     )
     grading_type: str | None = Field(None, pattern="^(ACCURACY|COMPLETENESS)$")
     prompt: str | None = Field(None, min_length=1, max_length=2000)
