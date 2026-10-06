@@ -1,8 +1,10 @@
-import { useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGame } from './GameLayout';
 import { TimerBar } from '../../components/ui/TimerBar';
 import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
 import { ImageThumb } from '../../components/ImageThumb';
+import { OrderingPicker } from '../../components/OrderingPicker';
+import { Button } from '../../components/ui/button';
 import type { HotspotPoint } from '../../types/game';
 
 const OPTION_COLORS = [
@@ -45,6 +47,10 @@ export default function QuestionPage() {
   const [inputValue, setInputValue] = useState('');
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [hotspotPoint, setHotspotPoint] = useState<HotspotPoint | null>(null);
+  // Ordering: display indices tapped so far, cleared whenever the question changes.
+  const [sequence, setSequence] = useState<number[]>([]);
+  const questionId = currentQuestion?.questionId;
+  useEffect(() => setSequence([]), [questionId]);
 
   const toggleIndex = useCallback((i: number) => {
     if (submitted || questionLocked) return;
@@ -328,6 +334,67 @@ export default function QuestionPage() {
         ) : null}
         {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
         {!submitted && questionLocked && image.status !== 'error' && lockedMsg}
+      </div>
+    );
+  }
+
+  if (currentQuestion.type === 'ordering') {
+    // docs/plans/t7-ordering.md §6.7, O2: tap items in order; Undo / Reset; then Submit.
+    const items = currentQuestion.config.items ?? [];
+    const canAnswer = !submitted && !questionLocked;
+    const tap = (d: number) => {
+      if (!canAnswer || sequence.includes(d)) return; // numbered items ignore taps (O2)
+      setSequence(prev => (prev.includes(d) ? prev : [...prev, d]));
+    };
+    const submitOrder = () => {
+      // Any server `error` event replaces the whole game UI, so never send a bad order.
+      const isPermutation =
+        sequence.length === items.length &&
+        [...sequence].sort((a, b) => a - b).every((d, i) => d === i);
+      if (isPermutation) submit({ order: sequence });
+    };
+    return (
+      <div className="py-4 px-4 flex flex-col gap-3">
+        <div>
+          {questionLabel}
+          <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+        </div>
+        <p className="text-slate-100 text-lg font-semibold text-center leading-snug">{currentQuestion.prompt}</p>
+        {canAnswer && (
+          <p className="text-slate-400 text-sm text-center">Tap the items in order. Use Undo to change.</p>
+        )}
+        <OrderingPicker items={items} sequence={sequence} onTap={tap} disabled={!canAnswer} />
+        {canAnswer && (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              data-testid="ordering-undo"
+              disabled={sequence.length === 0}
+              onClick={() => setSequence(prev => prev.slice(0, -1))}
+            >
+              Undo
+            </Button>
+            <Button
+              variant="outline"
+              data-testid="ordering-reset"
+              disabled={sequence.length === 0}
+              onClick={() => setSequence([])}
+            >
+              Reset
+            </Button>
+            <Button
+              size="lg"
+              className="flex-1 font-black"
+              data-testid="ordering-submit"
+              disabled={sequence.length !== items.length}
+              onClick={submitOrder}
+            >
+              Submit order
+            </Button>
+          </div>
+        )}
+        {submitted && <p className="text-center text-slate-400 text-sm">Answer submitted — waiting for results…</p>}
+        {!submitted && questionLocked && lockedMsg}
       </div>
     );
   }

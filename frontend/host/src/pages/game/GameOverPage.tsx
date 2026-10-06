@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
+import { OrderingView } from '../../components/OrderingView';
 import { ImageThumb } from '../../components/ImageThumb';
 import { optionImageId, optionText } from '../../lib/options';
 import type { AnswerReveal, HostQuestionSummaryItem } from '../../types/game';
@@ -88,6 +89,7 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
     fill_in_the_blank: 'Fill in the Blank',
     multi_select: 'Multi-Select',
     hotspot: 'Hotspot',
+    ordering: 'Ordering',
   };
 
   const answeredPct = totalPlayers > 0 ? Math.round((totalAnswered / totalPlayers) * 100) : 0;
@@ -157,6 +159,17 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
             taps={item.taps ?? []}
             legend={{ accuracy: gradingType === 'ACCURACY', distribution: answerDistribution }}
             maxHeightVh={35}
+          />
+        )}
+        {type === 'ordering' && (
+          <OrderingView
+            items={config.items ?? []}
+            correctOrder={reveal.type === 'ordering' ? reveal.correctOrder : undefined}
+            distribution={answerDistribution}
+            meanPositions={item.meanPositions}
+            accuracy={gradingType === 'ACCURACY'}
+            invalidKey={gradingType === 'ACCURACY' && !(reveal.type === 'ordering' && reveal.correctOrder)}
+            compact
           />
         )}
         {(type === 'multiple_choice' || type === 'multi_select') && (config.options ?? []).map((_, i) => {

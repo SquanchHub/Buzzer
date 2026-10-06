@@ -22,8 +22,16 @@ import {
   type HotspotEditorTarget,
 } from '../components/HotspotEditor';
 import { ImagePicker } from '../components/ImagePicker';
+import {
+  OrderingEditor,
+  orderingFromQuestion,
+  orderingProblems,
+  orderingToPayload,
+  shuffleDisplay,
+  type OrderingEditorState,
+} from '../components/OrderingEditor';
 
-type QuestionType = 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
+type QuestionType = 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot' | 'ordering';
 type GradingType = 'ACCURACY' | 'COMPLETENESS';
 
 interface Question {
@@ -131,6 +139,8 @@ interface FormState {
   // hotspot
   hsConfig: HotspotEditorConfig;
   hsTarget: HotspotEditorTarget;
+  // ordering (docs/plans/t7-ordering.md §6.9)
+  ordState: OrderingEditorState;
 }
 
 const defaultForm = (): FormState => ({
@@ -148,6 +158,7 @@ const defaultForm = (): FormState => ({
   msOptions: [{ text: '', points: 1 }, { text: '', points: 1 }],
   hsConfig: {},
   hsTarget: { ...HOTSPOT_DEFAULT_TARGET },
+  ordState: { items: ['', '', '', ''], display: shuffleDisplay(4), partialCredit: true },
 });
 
 function questionToForm(q: Question): FormState {
@@ -187,6 +198,8 @@ function questionToForm(q: Question): FormState {
     const { config, target } = hotspotFromQuestion(q);
     base.hsConfig = config;
     base.hsTarget = target;
+  } else if (q.type === 'ordering') {
+    base.ordState = orderingFromQuestion(q.config, q.answer_data, q.grading_type);
   }
   return base;
 }
@@ -212,13 +225,17 @@ function formToPayload(form: FormState) {
     // back and forth keeps it (§13.2 G5).
     config = { ...form.hsConfig };
     answer_data = { ...form.hsTarget };
+  } else if (form.type === 'ordering') {
+    const p = orderingToPayload(form.ordState, form.grading);
+    config = p.config;
+    answer_data = p.answer_data;
   } else {
     const p = buildFibPayload(form.fibAnswers.filter((a) => a.text.trim()), form.fibEditDistance);
     config = p.config;
     answer_data = p.answer_data;
   }
   const points_value =
-    form.grading === 'COMPLETENESS' || form.type === 'hotspot'
+    form.grading === 'COMPLETENESS' || form.type === 'hotspot' || form.type === 'ordering'
       ? form.pointsValue
       : form.type === 'multiple_choice'
       ? Math.max(0, ...form.mcOptions.map((o) => o.points))
@@ -255,8 +272,10 @@ function QuestionForm({
 }) {
   const [form, setForm] = useState<FormState>(initial);
   // Hotspot points have no per-option source, so the field shows under both gradings (§13.2 G3).
-  const showPoints = form.grading === 'COMPLETENESS' || form.type === 'hotspot';
+  // Ordering has no per-option points either (§6.9).
+  const showPoints = form.grading === 'COMPLETENESS' || form.type === 'hotspot' || form.type === 'ordering';
   const blockedByImage = form.type === 'hotspot' && !hotspotReady(form.hsConfig);
+  const ordProblems = form.type === 'ordering' ? orderingProblems(form.ordState) : [];
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -288,6 +307,7 @@ function QuestionForm({
         <div className="flex-1">
           <label className="block text-xs text-slate-400 mb-1">Question type</label>
           <select
+            data-testid="question-type-select"
             className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 text-sm"
             value={form.type}
             onChange={(e) => set('type', e.target.value as QuestionType)}
@@ -297,6 +317,7 @@ function QuestionForm({
             <option value="fill_in_the_blank">Fill in the Blank</option>
             <option value="multi_select">Multi-Select (Select All That Apply)</option>
             <option value="hotspot">Hotspot (tap the image)</option>
+            <option value="ordering">Ordering (put items in order)</option>
           </select>
         </div>
         <div className="flex-1">
@@ -597,6 +618,25 @@ function QuestionForm({
         </div>
       )}
 
+      {form.type === 'ordering' && (
+        <div>
+          <OrderingEditor
+            state={form.ordState}
+            grading={form.grading}
+            onChange={(ordState) => setForm((prev) => ({ ...prev, ordState }))}
+          />
+          {form.grading === 'COMPLETENESS' && (
+            <p className="text-slate-500 text-xs mt-2">
+              Completeness: any complete order earns full points. There is no correct order, which suits
+              opinion rankings.
+            </p>
+          )}
+          {form.timeLimitSeconds < 5 * form.ordState.items.length && (
+            <p className="text-amber-400 text-xs mt-2">Ordering questions usually need about 5 seconds per item.</p>
+          )}
+        </div>
+      )}
+
       {/* Time + points */}
       <div className="flex gap-4">
         <div>
@@ -627,12 +667,20 @@ function QuestionForm({
       </div>
 
       <div className="flex gap-3">
-        <Button type="button" onClick={() => onSave(formToPayload(form))} disabled={saving || blockedByImage}>
+        <Button
+          type="button"
+          data-testid="question-save"
+          onClick={() => onSave(formToPayload(form))}
+          disabled={saving || blockedByImage || ordProblems.length > 0}
+        >
           {saving ? 'Saving\u2026' : 'Save Question'}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         {blockedByImage && (
           <span className="self-center text-xs text-slate-500">Save needs a loaded image with a supported aspect ratio.</span>
+        )}
+        {ordProblems.length > 0 && (
+          <span className="self-center text-xs text-slate-500">{ordProblems.join(' ')}</span>
         )}
       </div>
     </div>
@@ -807,6 +855,7 @@ export default function QuestionEditorPage() {
     fill_in_the_blank: 'Fill',
     multi_select: 'Multi',
     hotspot: 'Hotspot',
+    ordering: 'Ordering',
   };
 
   if (loading) return <div className="text-slate-400">Loading…</div>;
@@ -966,6 +1015,22 @@ export default function QuestionEditorPage() {
                             {' \u00b7 '}target ({target.x.toFixed(2)}, {target.y.toFixed(2)}){' \u00b7 '}rings{' '}
                             {pct(target.innerRadius)} / {pct(target.outerRadius)}{' \u00b7 '}partial{' '}
                             {Math.round(target.partialFraction * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {q.type === 'ordering' && (() => {
+                    const st = orderingFromQuestion(q.config, q.answer_data, q.grading_type);
+                    const short = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}\u2026` : s);
+                    return (
+                      <div className="mt-2 text-xs text-slate-400">
+                        {st.items.map(short).join(' \u2192 ')}
+                        {q.grading_type === 'ACCURACY' && (
+                          <span className="text-slate-500">
+                            {' \u00b7 '}
+                            {st.keyInvalid ? 'answer key invalid' : st.partialCredit ? 'partial credit' : 'exact order only'}
                           </span>
                         )}
                       </div>

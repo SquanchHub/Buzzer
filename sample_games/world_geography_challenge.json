@@ -1,0 +1,203 @@
+{
+  "format": "buzzer/game",
+  "version": 1,
+  "game": {
+    "title": "World Geography Challenge",
+    "description": "Oceans, capitals, borders, and hemispheres. A review of physical and political world geography, ranging from warm-up questions to two challenge items.",
+    "max_players": 150
+  },
+  "questions": [
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "Which is the largest ocean on Earth by surface area?",
+      "config": {
+        "options": [
+          "Atlantic Ocean",
+          "Indian Ocean",
+          "Pacific Ocean",
+          "Arctic Ocean"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0.0, 0.0, 1.0, 0.0]
+      },
+      "time_limit_seconds": 20,
+      "points_value": 1.0
+    },
+    {
+      "type": "true_false",
+      "grading_type": "ACCURACY",
+      "prompt": "The equator passes through Brazil.",
+      "config": {},
+      "answer_data": {
+        "answer_points": {
+          "true": 1.0,
+          "false": 0.0
+        }
+      },
+      "time_limit_seconds": 15,
+      "points_value": 1.0
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "ACCURACY",
+      "prompt": "The capital of Canada is ___. (One word)",
+      "config": {},
+      "answer_data": {
+        "acceptedAnswers": ["ottawa"],
+        "answerPoints": [1.0],
+        "editDistance": 1
+      },
+      "time_limit_seconds": 25,
+      "points_value": 1.0
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "Counting its overseas territories, which country spans the most time zones?",
+      "config": {
+        "options": [
+          "Russia",
+          "United States",
+          "France",
+          "China"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0.0, 0.0, 1.0, 0.0]
+      },
+      "time_limit_seconds": 25,
+      "points_value": 1.0
+    },
+    {
+      "type": "multi_select",
+      "grading_type": "ACCURACY",
+      "prompt": "Which of these countries are landlocked (no coastline on an ocean or sea)? Select all that apply.",
+      "config": {
+        "options": [
+          "Bolivia",
+          "Switzerland",
+          "Mongolia",
+          "Ethiopia",
+          "Chile",
+          "Portugal"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0.5, 0.5, 0.5, 0.5, -0.5, -0.5]
+      },
+      "time_limit_seconds": 30,
+      "points_value": 2.0
+    },
+    {
+      "type": "true_false",
+      "grading_type": "ACCURACY",
+      "prompt": "Africa is larger in land area than North America.",
+      "config": {},
+      "answer_data": {
+        "answer_points": {
+          "true": 1.0,
+          "false": 0.0
+        }
+      },
+      "time_limit_seconds": 15,
+      "points_value": 1.0
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "ACCURACY",
+      "prompt": "The ___ Desert is the largest hot desert in the world. (One word)",
+      "config": {},
+      "answer_data": {
+        "acceptedAnswers": ["sahara", "sahara desert", "the sahara"],
+        "answerPoints": [1.0, 1.0, 1.0],
+        "editDistance": 1
+      },
+      "time_limit_seconds": 25,
+      "points_value": 1.0
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "The Strait of Gibraltar separates Spain from which country?",
+      "config": {
+        "options": [
+          "Morocco",
+          "Algeria",
+          "Tunisia",
+          "Portugal"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [1.0, 0.0, 0.0, 0.0]
+      },
+      "time_limit_seconds": 20,
+      "points_value": 1.0
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "COMPLETENESS",
+      "prompt": "Which continent would you most like to study in more depth this term?",
+      "config": {
+        "options": [
+          "Africa",
+          "Antarctica",
+          "Asia",
+          "Europe",
+          "North America",
+          "Oceania",
+          "South America"
+        ]
+      },
+      "answer_data": {},
+      "time_limit_seconds": 20,
+      "points_value": 1.0
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "COMPLETENESS",
+      "prompt": "Name one country you would like to learn more about.",
+      "config": {
+        "maxLength": 40
+      },
+      "answer_data": {},
+      "time_limit_seconds": 25,
+      "points_value": 1.0
+    },
+    {
+      "type": "multi_select",
+      "grading_type": "ACCURACY",
+      "prompt": "Which of these capital cities are located in the Southern Hemisphere? Select all that apply.",
+      "config": {
+        "options": [
+          "Canberra",
+          "Nairobi",
+          "Jakarta",
+          "Lima",
+          "Bogotá",
+          "Singapore",
+          "Kampala"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5]
+      },
+      "time_limit_seconds": 35,
+      "points_value": 2.0
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "ACCURACY",
+      "prompt": "What is the current capital city of Kazakhstan?",
+      "config": {},
+      "answer_data": {
+        "acceptedAnswers": ["astana", "nur-sultan"],
+        "answerPoints": [1.0, 0.5],
+        "editDistance": 1
+      },
+      "time_limit_seconds": 25,
+      "points_value": 1.0
+    }
+  ]
+}

@@ -39,15 +39,20 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     then on `question.type`: `multiple_choice`, `true_false`, `fill_in_the_blank` (Levenshtein
     within `editDistance`), `multi_select` (sum of per-option points, floored at 0), `hotspot`
     (flat band: inner = full points and correct; outer = `points_value × partialFraction`;
-    miss, malformed tap or invalid stored target = 0).
+    miss, malformed tap or invalid stored target = 0), `ordering` (exact order = full points and
+    correct; otherwise, with `partialCredit`, `round(points × (L−1)/(n−1), 2)` where L is the
+    longest run in correct relative order, else 0; invalid key or submission = 0).
     **Adding a question type means adding a branch here** and in `record_answer`'s distribution keys.
   - `record_answer` adds a `SessionScore` row (flush only), then updates the Redis score,
     answered set, and distribution hash. Hotspot distribution keys are band names
-    (`inner`/`outer`/`miss`) under ACCURACY; COMPLETENESS hotspot records no key.
+    (`inner`/`outer`/`miss`) under ACCURACY; COMPLETENESS hotspot records no key. Ordering keys
+    are the number of items out of place (`"0"` = perfect) under ACCURACY with a valid key.
   - Game-over summaries: for hotspot, both use `hotspot_reveal`; the host summary's
     `answerDistribution` is band counts over **all** answers, and it adds
     `taps: [{x, y, band}]` (band `null` under COMPLETENESS), the first `HOTSPOT_TAP_CAP` (500)
-    in answer order (`session_scores.id`). Only hotspot items carry `taps`.
+    in answer order (`session_scores.id`). Only hotspot items carry `taps`. For ordering, both use
+    `ordering_reveal`; the host summary's distribution is "out of place" counts over all answers
+    and ordering items add `meanPositions` (both gradings).
   - Hotspot helpers (pure, module level; `docs/plans/t7-hotspot.md` §5.2–5.4):
     `hotspot_target(question_id, config, answer_data)` → frozen `HotspotTarget` or `None` (bad
     stored data; logs `hotspot_target_invalid`, never raises); `hotspot_band(target, px, py)` →
@@ -58,6 +63,14 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
     under COMPLETENESS, `"miss"` for an invalid target. Validation rules come from
     `schemas/admin.py`'s hotspot checker, not a copy. Call `hotspot_target` only under ACCURACY
     (COMPLETENESS rows have no target and it would log a false warning).
+  - Ordering helpers (pure, module level; `docs/plans/t7-ordering.md` §4.3–4.6, §6.2):
+    `ordering_key(question_id, config, answer_data)` → frozen `OrderingKey` or `None` (logs
+    `ordering_key_invalid`, never raises; call only under ACCURACY); `ordering_item_count` (logs
+    `ordering_config_invalid`); `ordering_submission(answer_data, n)` → the one submission parser
+    (a permutation tuple or `None`); `ordering_result(key, order)` → `OrderingResult` (longest
+    in-order run by DP plus the deterministic tie-break for which items are out of place);
+    `ordering_points`, `ordering_reveal`, `ordering_outcome`, `ordering_dist_key`,
+    `ordering_mean_positions`. Rules come from `schemas/admin.py`'s ordering checker.
   - `start_game` and `complete_game` call `db.commit()` themselves, so concurrent socket
     handlers see the new status.
 - **state_service** — key layout is documented in its module docstring
@@ -80,6 +93,9 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
   option reads "(image)". An image that no longer exists is just left out (hotspot draws
   "Image unavailable"). Every image is embedded in full, so a report grows by about 1.37× the
   game's image bytes.
+  Ordering questions (`_render_ordering`) show the
+  correct order and "Perfect / k out of place" bars under ACCURACY ("Answer key invalid" for bad
+  stored data) and the room's average order under both gradings; item text is escaped.
 - **image_service** (T8, `docs/plans/t8-image-support.md` D2) — `normalize(data, field)` →
   `(stored bytes, content_type, width, height)` or a 422 `RequestBodyInvalidError` on `field`;
   `create_image(db, course_id, data, uploaded_by)` → `(Image, created)` (C6: flush only; identical
@@ -148,8 +164,9 @@ Exceptions that commit: `game_service.start_game`, `game_service.complete_game`,
 
 - `backend/app/models/` — `User`, `Course`, `CourseRoster`, `UserCourseAccess`, `Game`,
   `Question`, `UserGameAccess`, `GameSession`, `SessionScore`.
-- `backend/app/schemas/` — `game.ScoreResult`, `admin.RosterUploadResult`, and the hotspot
-  checker in `admin.py` (`is_hotspot_aspect_ratio`, `hotspot_answer_error`).
+- `backend/app/schemas/` — `game.ScoreResult`, `admin.RosterUploadResult`, and the hotspot and
+  ordering checkers in `admin.py` (`is_hotspot_aspect_ratio`, `hotspot_answer_error`,
+  `ordering_config_error`, `ordering_answer_error`).
 - `backend/app/common/` — `exceptions` (`ConflictError`, `ForbiddenError`, `NotFoundError`).
 - `backend/app/` top level — `config.settings`, `database.AsyncSessionLocal` (bootstrap only).
 - Within the directory: `game_service` → `state_service`; `content_service` → `state_service`;

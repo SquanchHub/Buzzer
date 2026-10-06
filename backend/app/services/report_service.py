@@ -25,10 +25,18 @@ from ..schemas.admin import is_hotspot_aspect_ratio
 from . import image_service
 from .game_service import (
     HotspotTarget,
+    OrderingKey,
     hotspot_reveal,
     hotspot_tap,
     hotspot_tap_band,
     hotspot_target,
+    ordering_dist_key,
+    ordering_item_count,
+    ordering_key,
+    ordering_mean_positions,
+    ordering_result,
+    ordering_reveal,
+    ordering_submission,
 )
 
 
@@ -77,18 +85,32 @@ def _answer_reveal(q: Question) -> dict:
         }
     if q.type == "hotspot":
         return hotspot_reveal(hotspot_target(q.id, q.config, q.answer_data))
+    if q.type == "ordering":
+        return ordering_reveal(ordering_key(q.id, q.config, q.answer_data))
     return {}
 
 
 def _extract_answer_key(
-    q: Question, answer_data: dict | None, hs_target: HotspotTarget | None = None
+    q: Question,
+    answer_data: dict | None,
+    hs_target: HotspotTarget | None = None,
+    ord_key: OrderingKey | None = None,
 ) -> str | None:
     """Convert a player's answer_data blob into the distribution key used for charting.
     For hotspot the key is the band; pass the question's target (computed once per
-    question by the caller) so bad stored data logs once, not once per answer."""
+    question by the caller) so bad stored data logs once, not once per answer.
+    For ordering the key is the number of items out of place; it needs the ACCURACY
+    key (None under COMPLETENESS or with bad stored data → no key)."""
     q_type = q.type
     if not answer_data:
         return None
+    if q_type == "ordering":
+        if ord_key is None:
+            return None
+        order = ordering_submission(answer_data, len(ord_key.correct_order))
+        if order is None:
+            return None
+        return ordering_dist_key(ordering_result(ord_key, order))
     if q_type == "hotspot":
         tap = hotspot_tap(answer_data)
         if tap is None:
@@ -392,6 +414,57 @@ def _render_hotspot(
     return '<div class="hotspot">' + "".join(parts) + "</div>"
 
 
+def _render_ordering(
+    q: Question,
+    dist: dict[str, int],
+    ord_key: OrderingKey | None,
+    mean_positions: list[float | None],
+) -> str:
+    """Correct order and "out of place" bars (ACCURACY), and the room's average order
+    (both gradings) — docs/plans/t7-ordering.md §6.4. Items are plain text: escaped."""
+    items = q.config.get("items", []) if isinstance(q.config, dict) else []
+    parts: list[str] = []
+    if q.grading_type == "ACCURACY":
+        if ord_key is None:
+            parts.append('<p class="ordering-note">Answer key invalid</p>')
+        else:
+            lis = "".join(f"<li>{_esc(items[d])}</li>" for d in ord_key.correct_order)
+            parts.append(
+                '<p class="ordering-heading">Correct order</p>'
+                f'<ol class="ordering-list">{lis}</ol>'
+            )
+            n = len(ord_key.correct_order)
+            labels = ["Perfect"] + [f"{k} out of place" for k in range(1, n)]
+            counts = [dist.get(str(k), 0) for k in range(n)]
+            top = max(counts, default=0) or 1
+            rows = []
+            for label, count in zip(labels, counts):
+                pct = max(int(count / top * 100), 3 if count else 0)
+                fill = "#166534" if label == "Perfect" else "#3730a3"
+                inner = f'<span class="bar-count">{count}</span>' if count else ""
+                rows.append(
+                    f'<div class="bar-row"><span class="bar-label">{label}</span>'
+                    f'<div class="bar-track"><div class="bar-fill" '
+                    f'style="width:{pct}%;background:{fill}">{inner}</div></div></div>'
+                )
+            parts.append('<div class="bar-chart">' + "".join(rows) + "</div>")
+    ranked = sorted(
+        (m, d) for d, m in enumerate(mean_positions) if m is not None and d < len(items)
+    )
+    if ranked:
+        lis = "".join(
+            f'<li>{_esc(items[d])} <span class="ordering-avg">avg {m:.2f}</span></li>'
+            for m, d in ranked
+        )
+        parts.append(
+            '<p class="ordering-heading">Room&#x27;s order</p>'
+            f'<ol class="ordering-list">{lis}</ol>'
+        )
+    else:
+        parts.append('<p class="wc-empty">No answers</p>')
+    return '<div class="ordering">' + "".join(parts) + "</div>"
+
+
 def _render_histogram(buckets: list[dict]) -> str:
     max_count = max((b["count"] for b in buckets), default=0) or 1
     MAX_H = 160  # max bar height px
@@ -455,6 +528,7 @@ body{
 .badge-tf{background:#1a3a2a;color:#86efac}
 .badge-fitb{background:#3b2f1e;color:#fbbf24}
 .badge-hotspot{background:#3b1d2e;color:#f9a8d4}
+.badge-ordering{background:#1e3b3b;color:#5eead4}
 .badge-accuracy{background:#2e1b3d;color:#c084fc}
 .badge-completeness{background:#2d2d1a;color:#fde68a}
 .q-timing{margin-left:auto;color:#475569;font-size:0.78rem}
@@ -494,6 +568,12 @@ body{
 .hotspot-svg{display:block;width:100%;height:auto;border-radius:12px}
 .hotspot-legend{margin-top:12px;text-align:center;font-size:0.85rem;color:#94a3b8}
 .hotspot-note{color:#f87171;font-weight:700}
+
+/* ── Ordering ── */
+.ordering-heading{font-size:0.8rem;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin:12px 0 8px}
+.ordering-list{margin:0 0 16px 24px;color:#e2e8f0;line-height:1.9}
+.ordering-avg{color:#64748b;font-size:0.8rem;margin-left:8px}
+.ordering-note{color:#f87171;font-weight:700}
 
 /* ── Histogram ── */
 .summary-card{
@@ -583,10 +663,13 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
         hs_target: HotspotTarget | None = None
         if q.type == "hotspot" and q.grading_type == "ACCURACY":
             hs_target = hotspot_target(q.id, q.config, q.answer_data)
+        ord_key: OrderingKey | None = None
+        if q.type == "ordering" and q.grading_type == "ACCURACY":
+            ord_key = ordering_key(q.id, q.config, q.answer_data)
 
         dist: dict[str, int] = defaultdict(int)
         for s in q_scores:
-            key = _extract_answer_key(q, s.answer_data, hs_target)
+            key = _extract_answer_key(q, s.answer_data, hs_target, ord_key)
             if key is not None:
                 dist[key] += 1
 
@@ -598,6 +681,7 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
             "true_false": ("True / False", "badge-tf"),
             "fill_in_the_blank": ("Fill in the Blank", "badge-fitb"),
             "hotspot": ("Hotspot", "badge-hotspot"),
+            "ordering": ("Ordering", "badge-ordering"),
         }.get(q.type, (q.type, ""))
         type_label, type_class = type_badge
 
@@ -619,6 +703,16 @@ async def build_session_report(db: AsyncSession, session_id: str) -> tuple[str, 
                     band = hotspot_tap_band(q.grading_type, hs_target, tap)
                     hs_taps.append((tap[0], tap[1], band))
             chart = _render_hotspot(q, dict(dist), hs_target, hs_taps, images)
+        elif q.type == "ordering":
+            n = ordering_item_count(q.id, q.config)
+            orders = []
+            if n is not None:
+                for s in q_scores:
+                    order = ordering_submission(s.answer_data, n)
+                    if order is not None:
+                        orders.append(order)
+            means = ordering_mean_positions(n, orders) if n is not None else []
+            chart = _render_ordering(q, dict(dist), ord_key, means)
         else:
             chart = ""
 

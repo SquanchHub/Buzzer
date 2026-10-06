@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from itertools import combinations
 
 
 # ---------------------------------------------------------------------------
@@ -18,7 +19,7 @@ from dataclasses import dataclass, field
 @dataclass
 class QuestionSpec:
     """Declarative description of one question — mirrors the DB Question model."""
-    type: str           # 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'hotspot'
+    type: str           # 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'hotspot' | 'ordering'
     grading_type: str   # 'ACCURACY' | 'COMPLETENESS'
     prompt: str
     config: dict        # e.g. {"options": ["A", "B", "C"]}
@@ -133,6 +134,9 @@ def compute_question_score(q: QuestionSpec, response: dict | None) -> float:
     if q.type == "hotspot":
         return _hotspot_score(q, response)
 
+    if q.type == "ordering":
+        return _ordering_score(q, response)
+
     # Unknown question type — extend here when new types are added
     return 0
 
@@ -158,6 +162,32 @@ def _hotspot_score(q: QuestionSpec, response: dict) -> float:
         return q.points_value
     if d <= t["outerRadius"]:
         return q.points_value * t["partialFraction"]
+    return 0
+
+
+def _ordering_score(q: QuestionSpec, response: dict) -> float:
+    """
+    Mirror of docs/plans/t7-ordering.md §4.3–4.4, written from the spec rather than
+    imported from the backend. The longest in-order run is found by brute force over
+    index subsets (largest first), not the backend's DP, so the two cross-check.
+    """
+    order = response.get("order")
+    correct = q.answer_data["correctOrder"]
+    n = len(correct)
+    if not isinstance(order, list) or sorted(order) != list(range(n)):
+        return 0
+    rank = {d: k for k, d in enumerate(correct)}
+    ranks = [rank[d] for d in order]
+    longest = next(
+        size
+        for size in range(n, 0, -1)
+        for idx in combinations(range(n), size)
+        if all(ranks[a] < ranks[b] for a, b in zip(idx, idx[1:]))
+    )
+    if longest == n:
+        return q.points_value
+    if q.answer_data["partialCredit"]:
+        return round(q.points_value * (longest - 1) / (n - 1), 2)
     return 0
 
 
@@ -217,4 +247,6 @@ def _build_reveal(q: QuestionSpec) -> dict:
             "innerRadius": a["innerRadius"],
             "outerRadius": a["outerRadius"],
         }
+    if q.type == "ordering":
+        return {"type": "ordering", "correctOrder": q.answer_data["correctOrder"]}
     return {}

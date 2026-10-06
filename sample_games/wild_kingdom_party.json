@@ -1,0 +1,198 @@
+{
+  "format": "buzzer/game",
+  "version": 1,
+  "game": {
+    "title": "Wild Kingdom Party",
+    "description": "Animal myths, weird facts, and a few questions about you. No biology degree required.",
+    "max_players": 150
+  },
+  "questions": [
+    {
+      "type": "true_false",
+      "grading_type": "ACCURACY",
+      "prompt": "Wombats poop cubes.",
+      "config": {},
+      "answer_data": {
+        "answer_points": {
+          "true": 100,
+          "false": 0
+        }
+      },
+      "time_limit_seconds": 15,
+      "points_value": 100
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "Which of these is the only mammal capable of true flight?",
+      "config": {
+        "options": [
+          "Flying squirrel",
+          "Bat",
+          "Sugar glider",
+          "Colugo"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0, 100, 0, 0]
+      },
+      "time_limit_seconds": 20,
+      "points_value": 100
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "COMPLETENESS",
+      "prompt": "You get one animal sidekick for life. Who are you picking?",
+      "config": {
+        "options": [
+          "Octopus",
+          "Red panda",
+          "Golden retriever",
+          "Snow leopard",
+          "Honey badger"
+        ]
+      },
+      "answer_data": {},
+      "time_limit_seconds": 20,
+      "points_value": 50
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "ACCURACY",
+      "prompt": "A baby kangaroo is called a ___. (One word)",
+      "config": {},
+      "answer_data": {
+        "acceptedAnswers": ["joey"],
+        "answerPoints": [100],
+        "editDistance": 1
+      },
+      "time_limit_seconds": 25,
+      "points_value": 100
+    },
+    {
+      "type": "true_false",
+      "grading_type": "ACCURACY",
+      "prompt": "Octopuses have three hearts.",
+      "config": {},
+      "answer_data": {
+        "answer_points": {
+          "true": 100,
+          "false": 0
+        }
+      },
+      "time_limit_seconds": 15,
+      "points_value": 100
+    },
+    {
+      "type": "multi_select",
+      "grading_type": "ACCURACY",
+      "prompt": "Which of these NHL teams have an animal in their logo or name? Select all that apply.",
+      "config": {
+        "options": [
+          "Sharks",
+          "Penguins",
+          "Bruins",
+          "Canucks",
+          "Red Wings",
+          "Panthers"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [50, 50, 50, 50, -50, 50]
+      },
+      "time_limit_seconds": 30,
+      "points_value": 250
+    },
+    {
+      "type": "true_false",
+      "grading_type": "ACCURACY",
+      "prompt": "Bulls charge at the color red.",
+      "config": {},
+      "answer_data": {
+        "answer_points": {
+          "true": 0,
+          "false": 100
+        }
+      },
+      "time_limit_seconds": 15,
+      "points_value": 100
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "COMPLETENESS",
+      "prompt": "Describe your spirit animal in one word.",
+      "config": {
+        "maxLength": 30
+      },
+      "answer_data": {},
+      "time_limit_seconds": 25,
+      "points_value": 50
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "What color is a polar bear's skin?",
+      "config": {
+        "options": [
+          "White",
+          "Pink",
+          "Black",
+          "Gray"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0, 0, 100, 0]
+      },
+      "time_limit_seconds": 20,
+      "points_value": 100
+    },
+    {
+      "type": "multi_select",
+      "grading_type": "COMPLETENESS",
+      "prompt": "Which of these animals have you actually seen in person? Select all that apply.",
+      "config": {
+        "options": [
+          "Elephant",
+          "Penguin",
+          "Giraffe",
+          "Octopus",
+          "Bald eagle"
+        ]
+      },
+      "answer_data": {},
+      "time_limit_seconds": 25,
+      "points_value": 50
+    },
+    {
+      "type": "fill_in_the_blank",
+      "grading_type": "ACCURACY",
+      "prompt": "The cut of pork that bacon most commonly comes from in the US is the pork ___. (One word)",
+      "config": {},
+      "answer_data": {
+        "acceptedAnswers": ["belly", "pork belly"],
+        "answerPoints": [100, 100],
+        "editDistance": 1
+      },
+      "time_limit_seconds": 25,
+      "points_value": 100
+    },
+    {
+      "type": "multiple_choice",
+      "grading_type": "ACCURACY",
+      "prompt": "About how many hours a day does a koala sleep?",
+      "config": {
+        "options": [
+          "8 hours",
+          "12 hours",
+          "15 hours",
+          "20 hours"
+        ]
+      },
+      "answer_data": {
+        "answer_points": [0, 0, 50, 100]
+      },
+      "time_limit_seconds": 20,
+      "points_value": 100
+    }
+  ]
+}

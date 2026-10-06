@@ -49,6 +49,16 @@ FastAPI app with `socketio.ASGIApp(sio, other_asgi_app=app)`, so `/socket.io/*` 
   `QUESTION → RESULTS` the host payload adds `taps: [{x, y, band}]` (first 500 in answer order)
   and each player's payload adds `yourBand` (own band only; `null` if unanswered or
   COMPLETENESS). Players never receive `taps`.
+- **Ordering** (`docs/plans/t7-ordering.md` §6.3) — `_answer_reveal` returns
+  `game_service.ordering_reveal` (`correctOrder`, never `partialCredit`; no order when the stored
+  key is invalid). `on_submit_answer` rejects anything but a full permutation of the item indices
+  (error "ordering answer must list every item exactly once"; a stored config that is itself invalid
+  gives "This ordering question is misconfigured") and stores only `{order}`. At
+  `QUESTION → RESULTS` the host payload adds `meanPositions` (average 1-based position per display
+  index, both gradings) and each player's payload adds `yourOrdering`
+  (`{inOrder, total, outOfPlace}`; `null` if unanswered, COMPLETENESS or an invalid key). Players
+  never receive `meanPositions`. `config.items` is already in shuffled display order, so
+  `_question_payload` needs no ordering code.
 
 ## In-process state (not in Redis or MySQL)
 

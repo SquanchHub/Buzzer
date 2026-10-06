@@ -1,0 +1,154 @@
+{
+  "results": [
+    {
+      "flow": "F1 author in host editor (+refresh, re-open)",
+      "role": "host",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "[{\"items\": [\"Metaphase\", \"Telophase\", \"Prophase\", \"Anaphase\"]}, {\"correctOrder\": [2, 0, 3, 1], \"partialCredit\": true}]"
+    },
+    {
+      "flow": "F2 admin edits ordering question (move item)",
+      "role": "admin",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "display before ['Metaphase', 'Telophase', 'Prophase', 'Anaphase'] after ['Metaphase', 'Anaphase', 'Telophase', 'Prophase']"
+    },
+    {
+      "flow": "F2b admin \u2192 host cross-app link",
+      "role": "admin",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "http://localhost:8080/host/home"
+    },
+    {
+      "flow": "F4 player taps / undo / reset / submit (phone, all in viewport)",
+      "role": "player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4b player reloads mid-question, then answers",
+      "role": "player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "http://localhost:8080/player/game/W8NQF6/feedback"
+    },
+    {
+      "flow": "F3 host reveal + refresh mid-question",
+      "role": "host",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4c player results labels",
+      "role": "player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "1 item out of place"
+    },
+    {
+      "flow": "F5 COMPLETENESS ordering round",
+      "role": "host+player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F6 game over (host + player recap, back button)",
+      "role": "host+player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": "http://localhost:8080/player/game/W8NQF6/results"
+    },
+    {
+      "flow": "F7 host downloads session report",
+      "role": "host",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F1 author in host editor (+refresh, re-open)",
+      "role": "host",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "[{\"items\": [\"Anaphase\", \"Prophase\", \"Telophase\", \"Metaphase\"]}, {\"correctOrder\": [1, 3, 0, 2], \"partialCredit\": true}]"
+    },
+    {
+      "flow": "F2 admin edits ordering question (move item)",
+      "role": "admin",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "display before ['Anaphase', 'Prophase', 'Telophase', 'Metaphase'] after ['Anaphase', 'Prophase', 'Telophase', 'Metaphase']"
+    },
+    {
+      "flow": "F2b admin \u2192 host cross-app link",
+      "role": "admin",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "http://127.0.0.1:8080/host/home"
+    },
+    {
+      "flow": "F4 player taps / undo / reset / submit (phone, all in viewport)",
+      "role": "player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4b player reloads mid-question, then answers",
+      "role": "player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "http://127.0.0.1:8080/player/game/DPFS4N/feedback"
+    },
+    {
+      "flow": "F3 host reveal + refresh mid-question",
+      "role": "host",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4c player results labels",
+      "role": "player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "1 item out of place"
+    },
+    {
+      "flow": "F5 COMPLETENESS ordering round",
+      "role": "host+player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F6 game over (host + player recap, back button)",
+      "role": "host+player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": "http://127.0.0.1:8080/player/game/DPFS4N/results"
+    },
+    {
+      "flow": "F7 host downloads session report",
+      "role": "host",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "problems": {
+    "localhost/host": [],
+    "localhost/admin": [],
+    "localhost/player-Ada": [],
+    "localhost/player-Bo": [],
+    "127/host": [],
+    "127/admin": [],
+    "127/player-Ada": [],
+    "127/player-Bo": []
+  }
+}

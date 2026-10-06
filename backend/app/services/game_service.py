@@ -18,7 +18,12 @@ from ..models.course import CourseRoster, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
 from ..models.user import User
-from ..schemas.admin import hotspot_answer_error, is_hotspot_aspect_ratio
+from ..schemas.admin import (
+    hotspot_answer_error,
+    is_hotspot_aspect_ratio,
+    ordering_answer_error,
+    ordering_config_error,
+)
 from ..schemas.game import ScoreResult
 from . import state_service as state
 
@@ -423,6 +428,147 @@ def hotspot_tap_band(
     return hotspot_band(target, *tap)
 
 
+# ---------------------------------------------------------------------------
+# Ordering (docs/plans/t7-ordering.md §4, §6.2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OrderingKey:
+    """An ACCURACY ordering question's validated answer key (§4.1).
+    correct_order[k] is the display index of the item that belongs at position k."""
+
+    correct_order: tuple[int, ...]
+    partial_credit: bool
+
+
+@dataclass(frozen=True)
+class OrderingResult:
+    """How one submitted order compares with the key (§4.3)."""
+
+    in_order: int  # L: length of the longest run in correct relative order
+    total: int  # n
+    out_of_place: tuple[int, ...]  # display indices, in submission order
+
+    @property
+    def exact(self) -> bool:
+        return self.in_order == self.total
+
+
+def ordering_item_count(question_id: int, config: object) -> int | None:
+    """Number of items in a stored ordering config, or None (logged) if it is invalid."""
+    if ordering_config_error(config) is not None:
+        logger.warning("ordering_config_invalid", question_id=question_id)
+        return None
+    return len(config["items"])
+
+
+def ordering_key(
+    question_id: int, config: object, answer_data: object
+) -> OrderingKey | None:
+    """
+    Parse an ACCURACY ordering question's stored key. Returns None — and logs — if the
+    stored data breaks the §4.1 rules, so callers score a miss instead of crashing
+    mid-game (§4.6). Never raises. Call only under ACCURACY.
+    """
+    if ordering_answer_error(config, answer_data) is not None:
+        logger.warning("ordering_key_invalid", question_id=question_id)
+        return None
+    return OrderingKey(
+        correct_order=tuple(answer_data["correctOrder"]),
+        partial_credit=answer_data["partialCredit"],
+    )
+
+
+def ordering_submission(answer_data: object, n: int) -> tuple[int, ...] | None:
+    """A player's submitted order, or None unless it is a permutation of 0..n-1 (§4.2)."""
+    if not isinstance(answer_data, dict):
+        return None
+    order = answer_data.get("order")
+    if not isinstance(order, list) or not all(
+        isinstance(i, int) and not isinstance(i, bool) for i in order
+    ):
+        return None
+    if sorted(order) != list(range(n)):
+        return None
+    return tuple(order)
+
+
+def ordering_result(key: OrderingKey, order: tuple[int, ...]) -> OrderingResult:
+    """
+    Longest in-order run of a valid submission, with the §4.3 tie-break deciding which
+    items count as out of place: start at the earliest index that begins a longest run,
+    then repeatedly take the earliest later index that continues one.
+    """
+    rank = {d: k for k, d in enumerate(key.correct_order)}
+    r = [rank[d] for d in order]
+    n = len(r)
+    best = [1] * n  # best[i]: longest increasing run starting at i
+    for i in range(n - 1, -1, -1):
+        for j in range(i + 1, n):
+            if r[j] > r[i] and best[j] + 1 > best[i]:
+                best[i] = best[j] + 1
+    length = max(best)
+    chosen: set[int] = set()
+    i = next(k for k in range(n) if best[k] == length)
+    chosen.add(i)
+    while best[i] > 1:
+        i = next(j for j in range(i + 1, n) if r[j] > r[i] and best[j] == best[i] - 1)
+        chosen.add(i)
+    out = tuple(order[k] for k in range(n) if k not in chosen)
+    return OrderingResult(in_order=length, total=n, out_of_place=out)
+
+
+def ordering_points(
+    key: OrderingKey, result: OrderingResult, points_value: float
+) -> ScoreResult:
+    """§4.4: exact → full points; else (L−1)/(n−1) of them with partial credit, or 0."""
+    if result.exact:
+        return ScoreResult(points_awarded=points_value, is_correct=True)
+    if key.partial_credit:
+        fraction = (result.in_order - 1) / (result.total - 1)
+        return ScoreResult(
+            points_awarded=round(points_value * fraction, 2), is_correct=False
+        )
+    return ScoreResult(points_awarded=0, is_correct=False)
+
+
+def ordering_reveal(key: OrderingKey | None) -> dict:
+    """The client-safe ACCURACY ordering reveal, shared by every reveal builder.
+    partialCredit is never revealed; an invalid key reveals no order (§4.6)."""
+    if key is None:
+        return {"type": "ordering"}
+    return {"type": "ordering", "correctOrder": list(key.correct_order)}
+
+
+def ordering_outcome(result: OrderingResult | None) -> dict | None:
+    """A player's own result label data (O10), or None."""
+    if result is None:
+        return None
+    return {
+        "inOrder": result.in_order,
+        "total": result.total,
+        "outOfPlace": list(result.out_of_place),
+    }
+
+
+def ordering_dist_key(result: OrderingResult) -> str:
+    """Distribution bucket: number of items out of place ("0" = perfect)."""
+    return str(result.total - result.in_order)
+
+
+def ordering_mean_positions(
+    n: int, orders: list[tuple[int, ...]]
+) -> list[float | None]:
+    """For each display index, the average 1-based position players gave it (O9)."""
+    if not orders:
+        return [None] * n
+    return [
+        round(sum(order.index(d) + 1 for order in orders) / len(orders), 2)
+        for d in range(n)
+    ]
+
+
 def calculate_score(question: Question, answer_data: dict) -> ScoreResult:
     """
     Calculate points for a player's answer.
@@ -514,6 +660,15 @@ def calculate_score(question: Question, answer_data: dict) -> ScoreResult:
             )
         return ScoreResult(points_awarded=0, is_correct=False)
 
+    if question.type == "ordering":
+        key = ordering_key(question.id, question.config, question.answer_data)
+        if key is None:  # bad stored key: score as a miss (§4.6)
+            return ScoreResult(points_awarded=0, is_correct=False)
+        order = ordering_submission(answer_data, len(key.correct_order))
+        if order is None:  # defensive: the gateway already rejects these
+            return ScoreResult(points_awarded=0, is_correct=False)
+        return ordering_points(key, ordering_result(key, order), question.points_value)
+
     return ScoreResult(points_awarded=0, is_correct=False)
 
 
@@ -577,6 +732,13 @@ async def record_answer(
         if tap is not None:
             target = hotspot_target(question.id, question.config, question.answer_data)
             dist_key = hotspot_tap_band(question.grading_type, target, tap)
+    elif question.type == "ordering" and question.grading_type == "ACCURACY":
+        # "Items out of place" counts; no key under COMPLETENESS or a bad stored key.
+        key = ordering_key(question.id, question.config, question.answer_data)
+        if key is not None:
+            order = ordering_submission(answer_data, len(key.correct_order))
+            if order is not None:
+                dist_key = ordering_dist_key(ordering_result(key, order))
     if dist_key is not None:
         await state.increment_answer_dist(redis, session_id, question.id, dist_key)
 
@@ -667,6 +829,8 @@ async def get_player_question_summary(
             }
         elif q_type == "hotspot":
             reveal = hotspot_reveal(hotspot_target(r.question_id, r.config, q_ans))
+        elif q_type == "ordering":
+            reveal = ordering_reveal(ordering_key(r.question_id, r.config, q_ans))
         else:
             reveal = {}
 
@@ -762,6 +926,12 @@ async def get_host_question_summary(
         hs_target: HotspotTarget | None = None
         if q_type == "hotspot" and grading_type == "ACCURACY":
             hs_target = hotspot_target(qid, q["config"], q_ans)
+        ord_key: OrderingKey | None = None
+        ord_n: int | None = None
+        if q_type == "ordering":
+            ord_n = ordering_item_count(qid, q["config"])
+            if grading_type == "ACCURACY" and ord_n is not None:
+                ord_key = ordering_key(qid, q["config"], q_ans)
 
         if grading_type == "COMPLETENESS":
             reveal: dict = {"type": "completeness"}
@@ -790,11 +960,14 @@ async def get_host_question_summary(
             }
         elif q_type == "hotspot":
             reveal = hotspot_reveal(hs_target)
+        elif q_type == "ordering":
+            reveal = ordering_reveal(ord_key)
         else:
             reveal = {}
 
         dist: dict[str, int] = {}
         hs_taps: list[tuple[int, dict]] = []  # (score_id, tap) for hotspot
+        ord_orders: list[tuple[int, ...]] = []  # valid submissions, for ordering
         correct_count = 0
         total_time = 0
         time_count = 0
@@ -831,6 +1004,13 @@ async def get_host_question_summary(
                         hs_taps.append(
                             (s["score_id"], {"x": tap[0], "y": tap[1], "band": band})
                         )
+                elif q_type == "ordering" and ord_n is not None:
+                    order = ordering_submission(ans, ord_n)
+                    if order is not None:
+                        ord_orders.append(order)
+                        if ord_key is not None:  # buckets cover every row
+                            k = ordering_dist_key(ordering_result(ord_key, order))
+                            dist[k] = dist.get(k, 0) + 1
             if s["is_correct"]:
                 correct_count += 1
             if s["answer_time_ms"] is not None:
@@ -861,5 +1041,9 @@ async def get_host_question_summary(
         if q_type == "hotspot":
             hs_taps.sort(key=lambda t: t[0])  # answer order
             result[-1]["taps"] = [tap for _, tap in hs_taps[:HOTSPOT_TAP_CAP]]
+        if q_type == "ordering":
+            result[-1]["meanPositions"] = (
+                ordering_mean_positions(ord_n, ord_orders) if ord_n is not None else []
+            )
 
     return result

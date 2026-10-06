@@ -166,6 +166,9 @@ def _answer_reveal(q: Question) -> dict:
     if q.type == "hotspot":
         target = game_service.hotspot_target(q.id, q.config, q.answer_data)
         return game_service.hotspot_reveal(target)
+    if q.type == "ordering":
+        key = game_service.ordering_key(q.id, q.config, q.answer_data)
+        return game_service.ordering_reveal(key)
     return {}
 
 
@@ -916,6 +919,39 @@ async def _on_host_advance_impl(sid: str) -> None:
                     if len(hs_taps) < game_service.HOTSPOT_TAP_CAP:
                         hs_taps.append({"x": tap[0], "y": tap[1], "band": band})
 
+            # Ordering: the room's mean positions for the host (both gradings) and
+            # each player's own outcome (ACCURACY with a valid key) — t7-ordering §6.3.
+            ord_means: list | None = None
+            ord_outcomes: dict[str, dict | None] = {}
+            if question.type == "ordering":
+                ord_n = game_service.ordering_item_count(question.id, question.config)
+                ord_key = (
+                    game_service.ordering_key(
+                        question.id, question.config, question.answer_data
+                    )
+                    if question.grading_type == "ACCURACY" and ord_n is not None
+                    else None
+                )
+                ord_orders = []
+                for r in q_score_rows:
+                    order = (
+                        game_service.ordering_submission(r.answer_data, ord_n)
+                        if ord_n is not None
+                        else None
+                    )
+                    if order is None:
+                        continue
+                    ord_orders.append(order)
+                    if ord_key is not None:
+                        ord_outcomes[r.user_id] = game_service.ordering_outcome(
+                            game_service.ordering_result(ord_key, order)
+                        )
+                ord_means = (
+                    game_service.ordering_mean_positions(ord_n, ord_orders)
+                    if ord_n is not None
+                    else []
+                )
+
             # Bar-chart results → host (no player names)
             await sio.emit(
                 E.QUESTION_RESULTS,
@@ -926,6 +962,7 @@ async def _on_host_advance_impl(sid: str) -> None:
                     "totalAnswered": len(q_scores),
                     "totalPlayers": len(players),
                     **({"taps": hs_taps} if hs_taps is not None else {}),
+                    **({"meanPositions": ord_means} if ord_means is not None else {}),
                 },
                 to=_host_room(room_code),
             )
@@ -951,6 +988,13 @@ async def _on_host_advance_impl(sid: str) -> None:
                         **(
                             {"yourBand": hs_bands.get(uid)}
                             if question.type == "hotspot"
+                            else {}
+                        ),
+                        # Own outcome only. None if unanswered, COMPLETENESS or an
+                        # invalid key.
+                        **(
+                            {"yourOrdering": ord_outcomes.get(uid)}
+                            if question.type == "ordering"
                             else {}
                         ),
                     },
@@ -1200,6 +1244,21 @@ async def on_submit_answer(sid: str, data: dict) -> None:
                 return
             # Store only the point: extra client keys are dropped (§7.4).
             answer_data = {"x": tap[0], "y": tap[1]}
+
+        if question.type == "ordering":
+            # docs/plans/t7-ordering.md §4.2, §6.3
+            n = game_service.ordering_item_count(question.id, question.config)
+            if n is None:
+                await _emit_error(sid, "This ordering question is misconfigured")
+                return
+            order = game_service.ordering_submission(answer_data, n)
+            if order is None:
+                await _emit_error(
+                    sid, "ordering answer must list every item exactly once"
+                )
+                return
+            # Store only the order: extra client keys are dropped.
+            answer_data = {"order": list(order)}
 
         result = await game_service.record_answer(
             db, redis, session_id, user_id, question, answer_data, answer_time_ms
