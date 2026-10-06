@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from playwright.sync_api import BrowserContext, Page, expect
 
 from .conftest import url
@@ -151,3 +152,49 @@ def test_host_reveal_and_player_results(api, new_context):
     expect(marked).to_have_count(1)
     expect(marked).to_contain_text("Prophase")
     assert host_ctx.problems == []
+
+
+EDITOR_PATHS = {
+    "host": "/host/games/{game}/edit",
+}
+TYPED = ["Prophase", "Metaphase", "Anaphase", "Telophase"]
+
+
+@pytest.mark.parametrize("app", EDITOR_PATHS.keys())
+def test_author_ordering_question(api, new_context, app):
+    """§9.3 test 1: type the items in the correct order; the saved question stores a
+    shuffled display order whose key maps back to the typed order; re-opening shows it."""
+    _, game = api.course_and_game()
+    ctx = new_context(token=api.token)
+    page = ctx.new_page()
+    page.goto(url(EDITOR_PATHS[app].format(game=game)))
+
+    page.get_by_role("button", name="Add Question").click()
+    page.get_by_test_id("question-type-select").select_option("ordering")
+    page.locator('textarea[placeholder^="Question text"]').fill(
+        "Put the phases of mitosis in order, first first."
+    )
+    save = page.get_by_test_id("question-save")
+    expect(save).to_be_disabled()  # four empty items
+    for i, text in enumerate(TYPED):
+        page.get_by_test_id(f"ordering-editor-item-{i}").fill(text)
+    expect(page.get_by_test_id("ordering-editor-partial")).to_be_checked()
+    preview = page.get_by_test_id("ordering-editor-preview").locator("li")
+    expect(preview).to_have_count(4)
+    shown = [preview.nth(k).inner_text() for k in range(4)]
+    assert sorted(shown) == sorted(TYPED) and shown != TYPED
+    expect(save).to_be_enabled()
+    save.click()
+    expect(page.get_by_text("Prophase → Metaphase")).to_be_visible()
+
+    [q] = api.questions(game)
+    assert q["type"] == "ordering" and q["grading_type"] == "ACCURACY"
+    items, key = q["config"]["items"], q["answer_data"]
+    assert items == shown
+    assert [items[d] for d in key["correctOrder"]] == TYPED
+    assert key["partialCredit"] is True
+
+    page.get_by_role("button", name="Edit").click()
+    for i, text in enumerate(TYPED):
+        expect(page.get_by_test_id(f"ordering-editor-item-{i}")).to_have_value(text)
+    assert ctx.problems == []
