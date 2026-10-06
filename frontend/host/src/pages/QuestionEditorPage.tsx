@@ -21,6 +21,7 @@ import {
   type HotspotEditorConfig,
   type HotspotEditorTarget,
 } from '../components/HotspotEditor';
+import { ImagePicker } from '../components/ImagePicker';
 
 type QuestionType = 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot';
 type GradingType = 'ACCURACY' | 'COMPLETENESS';
@@ -30,6 +31,7 @@ interface Question {
   type: QuestionType;
   grading_type: GradingType;
   prompt: string;
+  prompt_image_id: number | null;
   config: Record<string, unknown>;
   answer_data: Record<string, unknown>;
   time_limit_seconds: number;
@@ -41,11 +43,20 @@ interface Game { id: number; title: string; description: string; max_players: nu
 
 // ---- helpers for building config/answer_data per type ----
 
-interface McOption { text: string; points: number }
+interface McOption { text: string; points: number; imageId?: number | null }
+
+/** T8 D5: config.optionImageIds only when some option has an image, so a question
+ * without option images keeps exactly its old shape. */
+function withOptionImages(options: McOption[], config: Record<string, unknown>) {
+  if (options.some((o) => typeof o.imageId === 'number')) {
+    config.optionImageIds = options.map((o) => o.imageId ?? null);
+  }
+  return config;
+}
 
 function buildMcPayload(options: McOption[], _grading: GradingType) {
   return {
-    config: { options: options.map((o) => o.text) },
+    config: withOptionImages(options, { options: options.map((o) => o.text) }),
     answer_data: { answer_points: options.map((o) => o.points) },
   };
 }
@@ -59,7 +70,7 @@ function buildTfPayload(truePoints: number, falsePoints: number) {
 
 function buildMsPayload(options: McOption[]) {
   return {
-    config: { options: options.map((o) => o.text) },
+    config: withOptionImages(options, { options: options.map((o) => o.text) }),
     answer_data: { answer_points: options.map((o) => o.points) },
   };
 }
@@ -104,6 +115,7 @@ interface FormState {
   type: QuestionType;
   grading: GradingType;
   prompt: string;
+  promptImageId: number | null; // T8: optional prompt image, any type
   timeLimitSeconds: number;
   pointsValue: number;
   // multiple_choice
@@ -125,6 +137,7 @@ const defaultForm = (): FormState => ({
   type: 'multiple_choice',
   grading: 'ACCURACY',
   prompt: '',
+  promptImageId: null,
   timeLimitSeconds: 30,
   pointsValue: 1,
   mcOptions: [{ text: '', points: 1 }, { text: '', points: 0 }],
@@ -143,13 +156,15 @@ function questionToForm(q: Question): FormState {
     type: q.type,
     grading: q.grading_type,
     prompt: q.prompt,
+    promptImageId: q.prompt_image_id ?? null,
     timeLimitSeconds: q.time_limit_seconds,
     pointsValue: q.points_value,
   };
   if (q.type === 'multiple_choice') {
     const opts = (q.config['options'] as string[]) ?? [];
     const pts = (q.answer_data['answer_points'] as number[]) ?? [];
-    base.mcOptions = opts.map((text, i) => ({ text, points: pts[i] ?? 0 }));
+    const imgs = (q.config['optionImageIds'] as (number | null)[] | undefined) ?? [];
+    base.mcOptions = opts.map((text, i) => ({ text, points: pts[i] ?? 0, imageId: imgs[i] ?? null }));
   } else if (q.type === 'true_false') {
     const ap = q.answer_data['answer_points'] as { true: number; false: number } | undefined;
     base.tfTruePoints = ap?.true ?? 1;
@@ -164,8 +179,9 @@ function questionToForm(q: Question): FormState {
   } else if (q.type === 'multi_select') {
     const opts = (q.config['options'] as string[]) ?? [];
     const pts = (q.answer_data['answer_points'] as number[]) ?? [];
+    const imgs = (q.config['optionImageIds'] as (number | null)[] | undefined) ?? [];
     base.msOptions = opts.length
-      ? opts.map((text, i) => ({ text, points: pts[i] ?? 1 }))
+      ? opts.map((text, i) => ({ text, points: pts[i] ?? 1, imageId: imgs[i] ?? null }))
       : [{ text: '', points: 1 }, { text: '', points: 1 }];
   } else if (q.type === 'hotspot') {
     const { config, target } = hotspotFromQuestion(q);
@@ -187,7 +203,8 @@ function formToPayload(form: FormState) {
     config = p.config;
     answer_data = p.answer_data;
   } else if (form.type === 'multi_select') {
-    const p = buildMsPayload(form.msOptions.filter((o) => o.text.trim()));
+    // Blank options are dropped, except image-only ones (T8 D5).
+    const p = buildMsPayload(form.msOptions.filter((o) => o.text.trim() || typeof o.imageId === 'number'));
     config = p.config;
     answer_data = p.answer_data;
   } else if (form.type === 'hotspot') {
@@ -214,6 +231,7 @@ function formToPayload(form: FormState) {
     type: form.type,
     grading_type: form.grading,
     prompt: form.prompt,
+    prompt_image_id: form.promptImageId,
     config,
     answer_data,
     time_limit_seconds: form.timeLimitSeconds,
@@ -223,11 +241,14 @@ function formToPayload(form: FormState) {
 
 function QuestionForm({
   initial,
+  courseId,
   onSave,
   onCancel,
   saving,
 }: {
   initial: FormState;
+  /** The game's course: images belong to it (T8 D3). null = unassigned game: pickers off. */
+  courseId: number | null;
   onSave: (payload: ReturnType<typeof formToPayload>) => void;
   onCancel: () => void;
   saving: boolean;
@@ -239,6 +260,25 @@ function QuestionForm({
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  // T8 A5: image pickers. Images belong to the game's course, so without one they're off.
+  const noCourseNote = <p className="text-xs text-slate-500">Assign this game to a course to add images</p>;
+  function optionPicker(key: 'mcOptions' | 'msOptions', i: number) {
+    if (courseId === null) return null;
+    const opt = form[key][i];
+    return (
+      <ImagePicker
+        courseId={courseId}
+        value={opt.imageId ?? null}
+        onChange={(id) => {
+          const opts = [...form[key]];
+          opts[i] = { ...opts[i], imageId: id };
+          set(key, opts);
+        }}
+        label={`image for option ${String.fromCharCode(65 + i)}`}
+      />
+    );
   }
 
   return (
@@ -285,10 +325,24 @@ function QuestionForm({
         />
       </div>
 
+      {/* Prompt image (T8 D5/D8): shown above the prompt on the host's screen. */}
+      <div>
+        <label className="block text-xs text-slate-400 mb-1">Prompt image (optional)</label>
+        {courseId !== null ? (
+          <ImagePicker
+            courseId={courseId}
+            value={form.promptImageId}
+            onChange={(id) => set('promptImageId', id)}
+            label="prompt image"
+          />
+        ) : noCourseNote}
+      </div>
+
       {/* Type-specific */}
       {form.type === 'multiple_choice' && (
         <div>
           <label className="block text-xs text-slate-400 mb-2">Options</label>
+          {courseId === null && <div className="mb-2">{noCourseNote}</div>}
           {form.grading === 'ACCURACY' && (
             <div className="flex gap-2 mb-1 px-0.5">
               <span className="flex-1 text-xs text-slate-500">Answer text</span>
@@ -309,6 +363,7 @@ function QuestionForm({
                   }}
                   className="flex-1 text-sm"
                 />
+                {optionPicker('mcOptions', i)}
                 {form.grading === 'ACCURACY' && (
                   <Input
                     type="number"
@@ -351,6 +406,7 @@ function QuestionForm({
       {form.type === 'multi_select' && (
         <div>
           <label className="block text-xs text-slate-400 mb-2">Options</label>
+          {courseId === null && <div className="mb-2">{noCourseNote}</div>}
           {form.grading === 'ACCURACY' && (
             <div className="flex gap-2 mb-1 px-0.5">
               <span className="flex-1 text-xs text-slate-500">Answer text</span>
@@ -371,6 +427,7 @@ function QuestionForm({
                   }}
                   className="flex-1 text-sm"
                 />
+                {optionPicker('msOptions', i)}
                 {form.grading === 'ACCURACY' && (
                   <Input
                     type="number"
@@ -518,6 +575,16 @@ function QuestionForm({
         <div>
           <label className="block text-xs text-slate-400 mb-2">Image and target</label>
           <HotspotEditor
+            renderImagePicker={(id, setId) =>
+              courseId !== null ? (
+                <ImagePicker
+                  courseId={courseId}
+                  value={id ?? null}
+                  onChange={(v) => setId(v ?? undefined)}
+                  label="hotspot image"
+                />
+              ) : noCourseNote
+            }
             config={form.hsConfig}
             answerData={form.hsTarget}
             onChange={(config, target) => setForm((prev) => ({ ...prev, hsConfig: config, hsTarget: target }))}
@@ -784,6 +851,7 @@ export default function QuestionEditorPage() {
           <CardContent>
             <QuestionForm
               initial={defaultForm()}
+              courseId={game?.course_id ?? null}
               onSave={(payload) => void addQuestion(payload)}
               onCancel={() => setShowAddForm(false)}
               saving={saving}
@@ -808,6 +876,7 @@ export default function QuestionEditorPage() {
                 <CardContent>
                   <QuestionForm
                     initial={questionToForm(q)}
+                    courseId={game?.course_id ?? null}
                     onSave={(payload) => void updateQuestion(q.id, payload)}
                     onCancel={() => setEditingId(null)}
                     saving={saving}

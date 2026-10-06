@@ -34,7 +34,8 @@ the host app's component. Pages otherwise build their own tables, forms and pane
 ## Depended on by
 
 - `frontend/admin/src/pages/` — every page imports `Button`, `Card` and `Input`.
-  `SessionsPage` uses `Card` without `CardHeader`/`CardContent`.
+  `SessionsPage` uses `Card` without `CardHeader`/`CardContent`. `QuestionEditorPage` also uses
+  `HotspotEditor` and `ImagePicker` (prompt, option and hotspot images, T8 A5).
 
 ## Gotchas found while reading
 

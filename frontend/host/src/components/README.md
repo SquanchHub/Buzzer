@@ -66,7 +66,7 @@ network, sockets, or global state; both hotspot components fetch their image via
 - `frontend/host/src/pages/`:
   - `LoginPage.tsx`, `CoursePage.tsx`, `RosterPage.tsx` — `Button`, `Input`, `Card*`
   - `HomePage.tsx`, `SessionsPage.tsx` — `Button`, `Card*`
-  - `QuestionEditorPage.tsx` — `HotspotEditor`, `Button`, `Input`, `Card*`
+  - `QuestionEditorPage.tsx` — `HotspotEditor`, `ImagePicker` (prompt, option and hotspot images), `Button`, `Input`, `Card*`
   - `game/LobbyPage.tsx` — `Button`
   - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `ImageThumb` (prompt image, option tiles)
   - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`, `ImageThumb` (prompt and option thumbnails)
