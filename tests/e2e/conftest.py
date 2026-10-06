@@ -22,7 +22,11 @@ from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = os.environ.get("E2E_BASE_URL", "http://localhost:8080").rstrip("/")
-PHONE = {"viewport": {"width": 375, "height": 667}, "has_touch": True, "is_mobile": True}
+PHONE = {
+    "viewport": {"width": 375, "height": 667},
+    "has_touch": True,
+    "is_mobile": True,
+}
 DESKTOP = {"viewport": {"width": 1280, "height": 800}}
 _TIMEOUT = 10.0
 
@@ -75,7 +79,9 @@ class Api:
             "POST", "/admin/courses", json={"name": f"E2E {tag}", "semester": "Test"}
         )["id"]
         game = self.ok(
-            "POST", "/admin/games", json={"title": f"{title} {tag}", "course_id": course}
+            "POST",
+            "/admin/games",
+            json={"title": f"{title} {tag}", "course_id": course},
         )["id"]
         self._games.append(game)
         return course, game
@@ -134,8 +140,9 @@ def new_context(browser: Browser, request):
         def watch(page: Page) -> None:
             page.on(
                 "console",
-                lambda m: m.type == "error"
-                and ctx.problems.append(f"console: {m.text}"),  # type: ignore[attr-defined]
+                lambda m: (
+                    m.type == "error" and ctx.problems.append(f"console: {m.text}")
+                ),  # type: ignore[attr-defined]
             )
             page.on(
                 "requestfailed",
