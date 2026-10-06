@@ -52,7 +52,7 @@ logging configuration, and the rate limiter. This is where any new role or permi
   `backend/app/services/game_service.py` — the `assert_host_can_use_*` checks (note: `common`
   imports from `services`, not the other way round; `game_service` imports only
   `common.exceptions`, so there is no cycle).
-- `backend/app/database.py` (`get_db`), `backend/app/models/` (`User`, `Course`,
+- `backend/app/database.py` (`DbSession`, i.e. `get_db`), `backend/app/models/` (`User`, `Course`,
   `GameSession`), `backend/app/config.py` (`settings`).
 - Libraries: `fastapi`, `python-jose`, `structlog`, `slowapi`.
 

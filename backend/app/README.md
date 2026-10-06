@@ -23,7 +23,7 @@ how they fit together and documents the top-level modules that live directly in 
 |---|---|
 | `main.py` | Builds the FastAPI `app` (lifespan: connect Redis, `bootstrap_admin()`), adds rate-limit and CORS middleware, registers error handlers, mounts the five routers at `/api`, then wraps it as `asgi_app = socketio.ASGIApp(sio, other_asgi_app=app)`. Uvicorn serves `app.main:asgi_app`. Swagger at `/api/docs` in development only. |
 | `config.py` | `settings` (pydantic-settings, reads env / `.env`): DB and Redis URLs, JWT keys, CORS origins, `MAX_ROOMS`, admin bootstrap credentials, `STRESS_TEST_KEY`. `APP_ENV=development` drives dev behaviour. |
-| `database.py` | Async engine (`asyncmy`), `AsyncSessionLocal`, declarative `Base`, and the `get_db` dependency that **commits on success / rolls back on error** when the request ends. SQL is echoed to logs in development. |
+| `database.py` | Async engine (`asyncmy`), `AsyncSessionLocal`, declarative `Base`, and the `get_db` dependency that **commits on success / rolls back on error**. Handlers inject it only as `DbSession` (`scope="function"`), so the commit happens **before the response is sent** and a client can read its own write immediately. SQL is echoed to logs in development. |
 | `redis_client.py` | Lazily created module-level async Redis client (`decode_responses=True`); `get_redis()` / `close_redis()`. |
 
 ## How a request flows
@@ -44,7 +44,8 @@ how they fit together and documents the top-level modules that live directly in 
 
 - **Layering:** routers and the gateway call services; services never emit socket events.
   `common/dependencies.py` imports `services/auth_service` (the one upward import).
-- **Commits:** `get_db` (REST) and the gateway's `_db()` context manager commit at the end;
+- **Commits:** `get_db` (REST, via `DbSession`, before the response is sent) and the gateway's
+  `_db()` context manager commit at the end;
   services mostly `flush()`. `start_game` / `complete_game` commit early on purpose.
 - **Roles:** `User.role` is `ADMIN | USER | GUEST`; per-course `HOST | PLAYER` lives in
   `user_course_access`; non-admin hosts run a game only with a `user_game_access` grant **and** HOST on the game's

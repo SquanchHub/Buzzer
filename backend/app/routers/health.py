@@ -1,11 +1,10 @@
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..database import DbSession
 from ..redis_client import get_redis
 
 router = APIRouter(tags=["health"])
@@ -13,7 +12,7 @@ logger = structlog.get_logger()
 
 
 @router.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(db: DbSession):
     mysql_status = "disconnected"
     redis_status = "disconnected"
     active_rooms = 0

@@ -6,10 +6,9 @@ import structlog
 from fastapi import Cookie, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.exceptions import ForbiddenError, NotFoundError, UnauthorizedError
-from ..database import get_db
+from ..database import DbSession
 from ..models.course import Course
 from ..models.session import GameSession
 from ..models.user import User
@@ -33,7 +32,7 @@ async def _token_from_request(
 
 async def get_current_user(
     token: Annotated[str | None, Depends(_token_from_request)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     if not token:
         raise UnauthorizedError("Authentication required")
@@ -80,7 +79,7 @@ async def require_user(
 async def require_course_host(
     course_id: int,
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     """404 if the course doesn't exist — for everyone, admins included, so a path-based
     course endpoint never answers 403 for a nonexistent course (this confirms course
@@ -94,7 +93,7 @@ async def require_course_host(
 async def require_game_access(
     game_id: int,
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     """404 if the game doesn't exist; otherwise a non-admin needs both the game grant and
     HOST on the game's course (D1), with one 403 message for every missing piece."""
@@ -105,7 +104,7 @@ async def require_game_access(
 async def require_session_host(
     session_id: str,
     user: Annotated[User, Depends(require_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     """404 if the session doesn't exist; 403 unless ADMIN or the session's host."""
     session = await db.get(GameSession, session_id)

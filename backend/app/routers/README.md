@@ -50,13 +50,15 @@ Other code only touches the module-level `router` object in each file
   first — an unknown `course_id` is therefore **403 for a host, not 404**. Handlers only
   translate `content_service` (and `roster_service`) calls; `PUT /games/{id}` uses
   `HostGameUpdate`, so `course_id` is a 422. Roster PATCH queries on both ids (404 otherwise).
-  **Interim:** every mutating `host.py` handler commits before returning, because `get_db`'s
-  commit runs after the response is sent (T4 §6.2.5 k); see the gotcha below.
+  Handlers leave the commit to `get_db` (via `DbSession`), which runs before the response.
 
 ## Conventions visible in the code
 
-- DB sessions come from `database.get_db`, which **commits automatically** when the request
-  finishes; many update/delete handlers therefore never call `db.commit()` themselves.
+- DB sessions come from `database.DbSession` (`get_db` with `scope="function"`), which
+  **commits when the handler returns — after the response is serialized, before it is sent** —
+  and rolls back on error, so handlers don't call `db.commit()` themselves. A commit-time error
+  is therefore a 500. The few that still do (admin creates and imports, `auth` login, OAuth
+  callback and guest join, game `delete_session`) predate this and are harmless no-ops.
 - Auth dependencies from `common/dependencies.py`: `require_admin` (ADMIN only),
   `require_user` (ADMIN or USER, rejects GUEST), `get_current_user` (any valid token).
 - Host-owned session endpoints in `game.py` (delete session, list guests, merge guest, CSV
@@ -77,7 +79,7 @@ Other code only touches the module-level `router` object in each file
   `Question`, `UserGameAccess`, `GameSession`, `SessionScore` (queried directly in handlers).
 - `backend/app/schemas/` — `auth`, `game`, `admin` Pydantic request/response models.
 - `backend/app/common/` — `dependencies`, `exceptions`, `rate_limit`.
-- `backend/app/` top level — `database.get_db`, `redis_client.get_redis`, `config.settings`.
+- `backend/app/` top level — `database.DbSession`, `redis_client.get_redis`, `config.settings`.
 
 ## Depended on by
 
@@ -89,11 +91,14 @@ Other code only touches the module-level `router` object in each file
 
 ## Gotchas found while reading
 
-- **`get_db` commits after the response is sent** (FastAPI 0.142 runs code after a dependency's
-  `yield` once the response has gone out). A client that reads immediately after a write can see
-  stale or missing data unless the handler commits itself — measured at 162/200 stale reads after
-  `PUT /admin/games/{id}`. Admin create handlers and every mutating `host.py` handler commit
-  in-handler; the app-wide fix is planned on `fix/get-db-commit-timing` (T4 §6.2.5 k).
+- **Inject the DB session only as `DbSession`, never `Depends(get_db)`.** `DbSession` sets
+  `scope="function"`, so `get_db` commits before the response is sent; FastAPI's default scope
+  commits only after it has gone out, and a client reading right after a write saw stale data
+  (162/200 after `PUT /admin/games/{id}`, T4 §6.2.5 k). Mixing scopes would also give one request
+  two sessions, since FastAPI caches dependencies per scope.
+  `tests/unit/test_db_scope.py` fails on any `get_db` dependency that isn't function-scoped;
+  `tests/integration/test_commit_timing.py` re-measures the stale-read patterns of
+  `scripts/probe_commit_timing.py`.
 
 - `health.py` counts players with `SCARD room:{code}:players`, but `state_service` stores the
   player set under `session:{session_id}:players`, so `activePlayers` looks like it is always 0.

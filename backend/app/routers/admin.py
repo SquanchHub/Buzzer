@@ -10,11 +10,10 @@ import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..common.dependencies import require_admin
 from ..common.exceptions import ConflictError, NotFoundError
-from ..database import get_db
+from ..database import DbSession
 from ..models.course import Course, CourseRoster, UserCourseAccess
 from ..models.game import Game, Question, UserGameAccess
 from ..models.session import GameSession, SessionScore
@@ -65,7 +64,7 @@ _PROMPT_TAGS = ["b", "i", "br", "u"]
 @router.get("/courses", response_model=list[CourseResponse])
 async def list_courses(
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[Course]:
     result = await db.execute(
         select(Course).order_by(Course.semester.desc(), Course.name)
@@ -77,7 +76,7 @@ async def list_courses(
 async def create_course(
     body: CourseCreate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Course:
     course = Course(name=body.name, semester=body.semester)
     db.add(course)
@@ -92,7 +91,7 @@ async def create_course(
 async def get_course(
     course_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Course:
     course = await db.get(Course, course_id)
     if not course:
@@ -105,7 +104,7 @@ async def update_course(
     course_id: int,
     body: CourseUpdate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Course:
     course = await db.get(Course, course_id)
     if not course:
@@ -126,7 +125,7 @@ async def update_course(
 async def list_roster(
     course_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[CourseRoster]:
     course = await db.get(Course, course_id)
     if not course:
@@ -144,7 +143,7 @@ async def upload_roster(
     course_id: int,
     file: Annotated[UploadFile, File(description="Canvas gradebook CSV export")],
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> RosterUploadResult:
     course = await db.get(Course, course_id)
     if not course:
@@ -158,7 +157,7 @@ async def import_roster_rows(
     course_id: int,
     payload: RosterImportPayload,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> RosterUploadResult:
     course = await db.get(Course, course_id)
     if not course:
@@ -180,7 +179,7 @@ async def patch_roster_entry(
     roster_id: int,
     body: RosterEntryPatch,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> CourseRoster:
     result = await db.execute(
         select(CourseRoster).where(
@@ -210,7 +209,7 @@ async def patch_roster_entry(
 @router.get("/games", response_model=list[GameResponse])
 async def list_games(
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[Game]:
     result = await db.execute(select(Game).order_by(Game.title))
     return result.scalars().all()
@@ -220,7 +219,7 @@ async def list_games(
 async def create_game(
     body: GameCreate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Game:
     if not await db.get(Course, body.course_id):
         raise NotFoundError(f"Course {body.course_id} not found")
@@ -242,7 +241,7 @@ async def create_game(
 async def get_game(
     game_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Game:
     game = await db.get(Game, game_id)
     if not game:
@@ -255,7 +254,7 @@ async def update_game(
     game_id: int,
     body: GameUpdate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     redis=Depends(get_redis),
 ) -> Game:
     game = await db.get(Game, game_id)
@@ -282,7 +281,7 @@ async def update_game(
 async def delete_game(
     game_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     game = await db.get(Game, game_id)
     if not game:
@@ -312,7 +311,7 @@ async def delete_game(
 async def list_questions(
     game_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[Question]:
     game = await db.get(Game, game_id)
     if not game:
@@ -332,7 +331,7 @@ async def create_question(
     game_id: int,
     body: QuestionCreate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Question:
     game = await db.get(Game, game_id)
     if not game:
@@ -380,7 +379,7 @@ async def update_question(
     question_id: int,
     body: QuestionUpdate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Question:
     result = await db.execute(
         select(Question).where(Question.id == question_id, Question.game_id == game_id)
@@ -415,7 +414,7 @@ async def delete_question(
     game_id: int,
     question_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     result = await db.execute(
         select(Question).where(Question.id == question_id, Question.game_id == game_id)
@@ -431,7 +430,7 @@ async def reorder_questions(
     game_id: int,
     body: QuestionReorder,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     game = await db.get(Game, game_id)
     if not game:
@@ -453,7 +452,7 @@ async def reorder_questions(
 async def export_game(
     game_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> StreamingResponse:
     game = await db.get(Game, game_id)
     if not game:
@@ -503,7 +502,7 @@ async def import_game(
     file: Annotated[UploadFile, File(description="buzzer/game JSON bundle")],
     course_id: Annotated[int, Form(gt=0, description="Course to attach the game to")],
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> dict:
     if not await db.get(Course, course_id):
         raise NotFoundError(f"Course {course_id} not found")
@@ -585,7 +584,7 @@ async def import_game(
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[User]:
     result = await db.execute(
         select(User).where(User.role != "GUEST").order_by(User.role, User.username)
@@ -597,7 +596,7 @@ async def list_users(
 async def create_user(
     body: UserCreate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     # Enforce unique username
     existing = await db.execute(select(User).where(User.username == body.username))
@@ -623,7 +622,7 @@ async def create_user(
 @router.get("/users/guests", response_model=list[UserResponse])
 async def list_guests(
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> list[User]:
     result = await db.execute(
         select(User).where(User.role == "GUEST").order_by(User.created_at.desc())
@@ -635,7 +634,7 @@ async def list_guests(
 async def get_user(
     user_id: str,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> dict:
     user = await db.get(User, user_id)
     if not user:
@@ -677,7 +676,7 @@ async def update_user(
     user_id: str,
     body: UserUpdate,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> User:
     user = await db.get(User, user_id)
     if not user:
@@ -704,7 +703,7 @@ async def update_user(
 async def delete_user(
     user_id: str,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     user = await db.get(User, user_id)
     if not user:
@@ -730,7 +729,7 @@ async def grant_course_access(
     user_id: str,
     body: CourseAccessGrant,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     user = await db.get(User, user_id)
     if not user:
@@ -759,7 +758,7 @@ async def revoke_course_access(
     user_id: str,
     course_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     result = await db.execute(
         select(UserCourseAccess).where(
@@ -780,7 +779,7 @@ async def grant_game_access(
     user_id: str,
     body: GameAccessGrant,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     user = await db.get(User, user_id)
     if not user:
@@ -821,7 +820,7 @@ async def revoke_game_access(
     user_id: str,
     game_id: int,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     result = await db.execute(
         select(UserGameAccess).where(
@@ -846,7 +845,7 @@ async def revoke_game_access(
 async def merge_guest(
     body: dict,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> None:
     guest_user_id: str = body.get("guest_user_id", "")
     target_netid: str = body.get("target_netid", "")
@@ -891,7 +890,7 @@ async def merge_guest(
 @router.get("/sessions", response_model=list[AdminSessionItem])
 async def list_sessions(
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     status: str | None = Query(
         None, description="Filter by status (LOBBY, IN_PROGRESS, COMPLETED, ABANDONED)"
     ),
@@ -941,7 +940,7 @@ async def list_sessions(
 async def export_session(
     session_id: str,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
     format: str = Query("canvas", description="'canvas' or 'raw'"),
     title: str | None = Query(
         None, description="Assignment column title (Canvas format)"
@@ -984,7 +983,7 @@ async def export_session(
 async def session_report(
     session_id: str,
     _: Annotated[User, Depends(require_admin)],
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: DbSession,
 ) -> Response:
     """Download a standalone HTML report for a session (aggregate stats, no PII)."""
     session = await db.get(GameSession, session_id)
