@@ -62,6 +62,10 @@ class Question(Base):
     time_limit_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     points_value: Mapped[float] = mapped_column(sa.Float, default=1.0, nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # T8: optional image shown with the prompt (RESTRICT: a used image can't be deleted).
+    prompt_image_id: Mapped[int | None] = mapped_column(
+        ForeignKey("images.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     game: Mapped[Game] = relationship("Game", back_populates="questions")

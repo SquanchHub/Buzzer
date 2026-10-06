@@ -1,15 +1,16 @@
 """
 T7 hotspot question type — stage A integration tests (docs/plans/t7-hotspot.md §10, §13.1 f).
 
-Stage A covers §10 tests 1 and 6–10. Before T8 there is no image API, so questions use a
-placeholder `imageId` and are created through `POST /api/admin/games/{g}/questions`, which does
-not check that the image exists until T4 phase 3. Stage C moves tests 6–10 to the host route and
-a real T8 image (§10). Test 18 is a unit test (`tests/unit/test_hotspot.py`).
+Stage A covers §10 tests 1 and 6–10 through `POST /api/admin/games/{g}/questions`. Test 18 is
+a unit test (`tests/unit/test_hotspot.py`).
 
 Stage B (§13.2) adds the host-route tests at the end: the image-existence check (test 2, and
-stage-B versions of tests 3–5 against the dev image `frontend/dev-images/1.png`, which the
-backend sees through a dev-only mount), the v1-bundle hotspot rejection (test 13b) and the
-sample-game import through the host route (test 14). Stage C switches them to real T8 images.
+tests 3–5), the v1-bundle hotspot rejection (test 13b) and the sample-game import through the
+host route (test 14).
+
+Since T8 (docs/plans/t8-image-support.md V3) every question that passes validation uses a real
+image uploaded into its game's course (`image_setup`, `_host_game`); the dev-image stand-in is
+gone. Tests that fail validation before any image lookup keep the placeholder `CONFIG`.
 
 Socket tests advance to results with no pause after the last answer: `on_submit_answer`
 commits before it emits `answer_received` (fix/commit-before-emit), so the results query
@@ -26,14 +27,17 @@ import pytest
 
 from .conftest import _REPO_ROOT, create_guest_tokens, create_room
 from .host_helpers import hapi, mysql  # noqa: F401 — fixture
+from .image_helpers import png
 
 # Aliased so pytest doesn't try to collect the Test-prefixed class from this module.
 from .engine.socket_client import TestSocketClient as SocketClient
 
 _TIMEOUT = 10.0
 
-# Placeholder image: the admin create route doesn't check image existence before T4 phase 3.
+# Placeholder image id, for bodies that fail validation before any image lookup. Bodies
+# that pass validation use a real image (image_setup / _host_game).
 CONFIG = {"imageId": 1, "aspectRatio": 2.0}
+HOTSPOT_PNG = png((800, 400))  # 2:1, matching CONFIG's aspectRatio
 TARGET = {
     "x": 0.5,
     "y": 0.5,
@@ -89,6 +93,36 @@ def _without(d: dict, key: str) -> dict:
     return {k: v for k, v in d.items() if k != key}
 
 
+@pytest.fixture()
+def image_setup(game_setup, base_url, admin_token):
+    """game_setup plus a real 2:1 image in its course: adds `image_id`, and `config` (CONFIG
+    with that image). Deletes the game, then the image."""
+    r = httpx.post(
+        f"{base_url}/api/images",
+        headers=_h(admin_token),
+        files={"file": ("map.png", HOTSPOT_PNG, "image/png")},
+        data={"course_id": str(game_setup["course_id"])},
+        timeout=_TIMEOUT,
+    )
+    assert r.status_code in (200, 201), r.text
+    image_id = r.json()["id"]
+    yield {
+        **game_setup,
+        "image_id": image_id,
+        "config": {**CONFIG, "imageId": image_id},
+    }
+    httpx.delete(
+        f"{base_url}/api/admin/games/{game_setup['game_id']}",
+        headers=_h(admin_token),
+        timeout=_TIMEOUT,
+    )
+    gone = httpx.delete(
+        f"{base_url}/api/images/{image_id}", headers=_h(admin_token), timeout=_TIMEOUT
+    )
+    if gone.status_code not in (204, 404):
+        mysql(f"DELETE FROM images WHERE id = {int(image_id)}")
+
+
 # ---------------------------------------------------------------------------
 # §10 test 1 — create-time validation (§5.1)
 # ---------------------------------------------------------------------------
@@ -114,12 +148,13 @@ _VIOLATIONS = {
 }
 
 
-def test_create_valid_hotspot(game_setup, base_url, admin_token):
+def test_create_valid_hotspot(image_setup, base_url, admin_token):
     """Baseline: the valid body is accepted and stored exactly, so each 422 below is
-    caused by its one violation. (Stage C repeats this with a real image, §10 test 3.)"""
-    r = _post_question(base_url, admin_token, game_setup["game_id"], _question_body())
+    caused by its one violation (§10 test 3)."""
+    body = _question_body(config=image_setup["config"])
+    r = _post_question(base_url, admin_token, image_setup["game_id"], body)
     assert r.status_code == 201, r.text
-    assert r.json()["config"] == CONFIG
+    assert r.json()["config"] == image_setup["config"]
     assert r.json()["answer_data"] == TARGET
 
 
@@ -144,10 +179,12 @@ def test_create_rejects_nan_aspect_ratio(game_setup, base_url, admin_token):
 
 
 def test_completeness_checks_config_but_not_answer_data(
-    game_setup, base_url, admin_token
+    image_setup, base_url, admin_token
 ):
-    game_id = game_setup["game_id"]
-    ok = _question_body(grading_type="COMPLETENESS", answer_data={})
+    game_id = image_setup["game_id"]
+    ok = _question_body(
+        grading_type="COMPLETENESS", answer_data={}, config=image_setup["config"]
+    )
     assert _post_question(base_url, admin_token, game_id, ok).status_code == 201
     bad = _question_body(
         grading_type="COMPLETENESS", answer_data={}, config={"imageId": 1}
@@ -251,12 +288,14 @@ async def _nothing(client: SocketClient, event: str, wait: float = 0.5) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def test_scoring_bands_with_aspect_correction(game_setup, base_url, admin_token):
+async def test_scoring_bands_with_aspect_correction(image_setup, base_url, admin_token):
     """§10 test 6. On a 2:1 image the outer tap is 0.35 away per axis (a miss for
     outerRadius 0.2) but 0.175 away in longer-side units — inside the outer ring (H3).
     All taps are >= 0.005 from both ring boundaries (§7.10)."""
-    qid = _create(base_url, admin_token, game_setup["game_id"])
-    async with HotspotGame(base_url, admin_token, game_setup, 3) as g:
+    qid = _create(
+        base_url, admin_token, image_setup["game_id"], config=image_setup["config"]
+    )
+    async with HotspotGame(base_url, admin_token, image_setup, 3) as g:
         await g.next_question()
         inner = await g.tap(0, qid, {"x": 0.5, "y": 0.5})  # d = 0
         outer = await g.tap(1, qid, {"x": 0.5, "y": 0.85})  # d = 0.35 / 2 = 0.175
@@ -270,16 +309,17 @@ async def test_scoring_bands_with_aspect_correction(game_setup, base_url, admin_
         await g.finish()
 
 
-async def test_completeness_any_tap_scores_full(game_setup, base_url, admin_token):
+async def test_completeness_any_tap_scores_full(image_setup, base_url, admin_token):
     """§10 test 7."""
     qid = _create(
         base_url,
         admin_token,
-        game_setup["game_id"],
+        image_setup["game_id"],
         grading_type="COMPLETENESS",
         answer_data={},
+        config=image_setup["config"],
     )
-    async with HotspotGame(base_url, admin_token, game_setup, 2) as g:
+    async with HotspotGame(base_url, admin_token, image_setup, 2) as g:
         await g.next_question()
         a = await g.tap(0, qid, {"x": 0.0, "y": 1.0})
         assert (a["pointsAwarded"], a["isCorrect"]) == (1000.0, True)
@@ -306,11 +346,13 @@ async def test_completeness_any_tap_scores_full(game_setup, base_url, admin_toke
     ids=["x missing", "x true", "y 1.5", "x string", "not an object"],
 )
 async def test_malformed_tap_is_rejected_and_not_recorded(
-    game_setup, base_url, admin_token, bad_tap
+    image_setup, base_url, admin_token, bad_tap
 ):
     """§10 test 8: socket `error`, nothing recorded, and a valid tap still works after."""
-    qid = _create(base_url, admin_token, game_setup["game_id"])
-    async with HotspotGame(base_url, admin_token, game_setup, 1) as g:
+    qid = _create(
+        base_url, admin_token, image_setup["game_id"], config=image_setup["config"]
+    )
+    async with HotspotGame(base_url, admin_token, image_setup, 1) as g:
         await g.next_question()
         await g.players[0].emit(
             "submit_answer",
@@ -328,13 +370,13 @@ async def test_malformed_tap_is_rejected_and_not_recorded(
         await g.finish()
 
 
-async def test_results_payloads(game_setup, base_url, admin_token):
+async def test_results_payloads(image_setup, base_url, admin_token):
     """§10 test 9: host gets taps + band counts; each player gets the reveal and their
     own yourBand, never taps. The second question has points_value 0, where points can't
     tell the bands apart but yourBand still can (H12)."""
-    game_id = game_setup["game_id"]
-    q1 = _create(base_url, admin_token, game_id)
-    q2 = _create(base_url, admin_token, game_id, points_value=0)
+    game_id, config = image_setup["game_id"], image_setup["config"]
+    q1 = _create(base_url, admin_token, game_id, config=config)
+    q2 = _create(base_url, admin_token, game_id, points_value=0, config=config)
     reveal = {
         "type": "hotspot",
         "x": 0.5,
@@ -343,7 +385,7 @@ async def test_results_payloads(game_setup, base_url, admin_token):
         "outerRadius": 0.2,
     }
     taps = [{"x": 0.5, "y": 0.5}, {"x": 0.5, "y": 0.85}, {"x": 0.9, "y": 0.1}]
-    async with HotspotGame(base_url, admin_token, game_setup, 3) as g:
+    async with HotspotGame(base_url, admin_token, image_setup, 3) as g:
         await g.next_question()
         for i, t in enumerate(taps):
             await g.tap(i, q1, t)
@@ -368,14 +410,14 @@ async def test_results_payloads(game_setup, base_url, admin_token):
         await g.finish()
 
 
-async def test_new_question_payload_has_no_target(game_setup, base_url, admin_token):
+async def test_new_question_payload_has_no_target(image_setup, base_url, admin_token):
     """§10 test 10: clients get config (image + aspect ratio) but never the target."""
-    _create(base_url, admin_token, game_setup["game_id"])
-    async with HotspotGame(base_url, admin_token, game_setup, 1) as g:
+    _create(base_url, admin_token, image_setup["game_id"], config=image_setup["config"])
+    async with HotspotGame(base_url, admin_token, image_setup, 1) as g:
         host_q, player_qs = await g.next_question()
         for payload in (host_q, *player_qs):
             assert payload["type"] == "hotspot"
-            assert payload["config"] == CONFIG
+            assert payload["config"] == image_setup["config"]
             flat = json.dumps(payload)
             for secret in (
                 "innerRadius",
@@ -390,22 +432,23 @@ async def test_new_question_payload_has_no_target(game_setup, base_url, admin_to
 
 
 # ---------------------------------------------------------------------------
-# Stage B — host routes (§7.3, §6.3.3, §13.2). DEV_IMAGE exists in frontend/dev-images;
-# UNKNOWN_IMAGE doesn't. Stage C: real T8 images instead.
+# Stage B — host routes (§7.3, §6.3.3, §13.2), with real T8 images since T8 V3.
+# UNKNOWN_IMAGE doesn't exist.
 # ---------------------------------------------------------------------------
 
-DEV_IMAGE = 1
 UNKNOWN_IMAGE = 999_999
 
 
-def _host_game(hapi) -> tuple[str, int, int]:  # noqa: F811
-    """A host with an empty game of their own → (token, course_id, game_id)."""
+def _host_game(hapi) -> tuple[str, int, int, int]:  # noqa: F811
+    """A host with an empty game of their own and a 2:1 image they uploaded to its course
+    → (token, course_id, game_id, image_id)."""
     course = hapi.course()
     _, token = hapi.host_of(course)
-    return token, course, hapi.host_game(token, course, questions=0)
+    image = hapi.image(course, HOTSPOT_PNG, token)
+    return token, course, hapi.host_game(token, course, questions=0), image
 
 
-def _host_body(image_id: int = DEV_IMAGE, **overrides) -> dict:
+def _host_body(image_id: int, **overrides) -> dict:
     return _question_body(config={**CONFIG, "imageId": image_id}, **overrides)
 
 
@@ -425,7 +468,7 @@ def _image_error(r: httpx.Response, image_id: int) -> None:
 
 def test_host_create_unknown_image_is_422(hapi):  # noqa: F811
     """§10 test 2."""
-    token, _, game = _host_game(hapi)
+    token, _, game, _ = _host_game(hapi)
     r = hapi.req(
         "POST", f"/host/games/{game}/questions", token, json=_host_body(UNKNOWN_IMAGE)
     )
@@ -433,18 +476,18 @@ def test_host_create_unknown_image_is_422(hapi):  # noqa: F811
     assert hapi.req("GET", f"/host/games/{game}/questions", token).json() == []
 
 
-def test_host_create_with_dev_image(hapi):  # noqa: F811
-    """Stage-B version of §10 test 3."""
-    token, _, game = _host_game(hapi)
-    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=_host_body())
+def test_host_create_with_image(hapi):  # noqa: F811
+    """§10 test 3."""
+    token, _, game, image = _host_game(hapi)
+    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=_host_body(image))
     assert r.status_code == 201, r.text
     [listed] = hapi.req("GET", f"/host/games/{game}/questions", token).json()
-    assert listed["config"] == {**CONFIG, "imageId": DEV_IMAGE}
+    assert listed["config"] == {**CONFIG, "imageId": image}
     assert listed["answer_data"] == TARGET
 
 
 def test_structural_error_is_reported_before_image_lookup(hapi):  # noqa: F811
-    token, _, game = _host_game(hapi)
+    token, _, game, _ = _host_game(hapi)
     body = _host_body(UNKNOWN_IMAGE)
     body["config"]["aspectRatio"] = 6
     r = hapi.req("POST", f"/host/games/{game}/questions", token, json=body)
@@ -455,7 +498,7 @@ def test_structural_error_is_reported_before_image_lookup(hapi):  # noqa: F811
 
 
 _UPDATE_VIOLATIONS = {
-    "aspectRatio 6": {"config": {**CONFIG, "imageId": DEV_IMAGE, "aspectRatio": 6}},
+    "aspectRatio 6": {"config": {**CONFIG, "aspectRatio": 6}},
     "innerRadius > outerRadius": {"answer_data": {**TARGET, "innerRadius": 0.3}},
     "extra answer_data key": {"answer_data": {**TARGET, "z": 0}},
 }
@@ -465,9 +508,9 @@ _UPDATE_VIOLATIONS = {
     "patch", _UPDATE_VIOLATIONS.values(), ids=_UPDATE_VIOLATIONS.keys()
 )
 def test_host_update_revalidates_hotspot(hapi, patch):  # noqa: F811
-    """Stage-B version of §10 test 4: the merged question is validated (T4 D8)."""
-    token, _, game = _host_game(hapi)
-    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body())
+    """§10 test 4: the merged question is validated (T4 D8)."""
+    token, _, game, image = _host_game(hapi)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body(image))
     r = hapi.req("PUT", f"/host/games/{game}/questions/{q['id']}", token, json=patch)
     assert r.status_code == 422, r.text
     assert r.json()["error"] == "VALIDATION_ERROR"
@@ -476,9 +519,9 @@ def test_host_update_revalidates_hotspot(hapi, patch):  # noqa: F811
 
 
 def test_host_update_to_unknown_image_is_422(hapi):  # noqa: F811
-    """Stage-B version of §10 test 5."""
-    token, _, game = _host_game(hapi)
-    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body())
+    """§10 test 5."""
+    token, _, game, image = _host_game(hapi)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body(image))
     r = hapi.req(
         "PUT",
         f"/host/games/{game}/questions/{q['id']}",
@@ -495,7 +538,7 @@ def test_host_update_checks_image_even_when_patch_omits_it(hapi):  # noqa: F811
     route until the image is fixed. Since T4 phase 3 the admin route runs the same image
     check, so the API can't create one; it is made to dangle in MySQL instead, as when
     a stored image is later deleted."""
-    token, _, game = _host_game(hapi)
+    token, _, game, image = _host_game(hapi)
     # The admin route now refuses a missing image too (T4 phase 3, content_service).
     _image_error(
         hapi.req(
@@ -503,20 +546,20 @@ def test_host_update_checks_image_even_when_patch_omits_it(hapi):  # noqa: F811
         ),
         UNKNOWN_IMAGE,
     )
-    q = hapi.ok("POST", f"/admin/games/{game}/questions", json=_host_body(DEV_IMAGE))
+    q = hapi.ok("POST", f"/admin/games/{game}/questions", json=_host_body(image))
     mysql(
         "UPDATE questions SET config = JSON_SET(config, '$.imageId', "
         f"{UNKNOWN_IMAGE}) WHERE id = {q['id']};"
     )
     url = f"/host/games/{game}/questions/{q['id']}"
     _image_error(hapi.req("PUT", url, token, json={"prompt": "Edited"}), UNKNOWN_IMAGE)
-    r = hapi.req("PUT", url, token, json={"config": {**CONFIG, "imageId": DEV_IMAGE}})
+    r = hapi.req("PUT", url, token, json={"config": {**CONFIG, "imageId": image}})
     assert r.status_code == 200, r.text
 
 
 def test_v1_bundle_with_hotspot_question_is_rejected(hapi):  # noqa: F811
     """§10 test 13b (§6.3.3): the second question is hotspot; nothing is created."""
-    token, course, _ = _host_game(hapi)
+    token, course, _, image = _host_game(hapi)
     before = hapi.req("GET", f"/host/courses/{course}/games", token).json()
     mc = {
         "type": "multiple_choice",
@@ -531,7 +574,7 @@ def test_v1_bundle_with_hotspot_question_is_rejected(hapi):  # noqa: F811
         "format": "buzzer/game",
         "version": 1,
         "game": {"title": "v1 with hotspot"},
-        "questions": [mc, _host_body()],
+        "questions": [mc, _host_body(image)],
     }
     r = hapi.req(
         "POST",

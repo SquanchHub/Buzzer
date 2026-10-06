@@ -12,10 +12,10 @@ how they fit together and documents the top-level modules that live directly in 
 | `routers/` | REST endpoints: `auth`, `game` (host-facing), `host` (host content management, T4), `admin` (admin-only CRUD), `health`. | Every `admin` endpoint is `require_admin`; `host` endpoints use the course/game dependencies in `common/`. |
 | `websocket/` | Socket.io server: join, host-driven phase machine, answers, timers, host-disconnect grace. | Only place that emits events; per-player payloads go to `user:{id}` rooms. |
 | `services/` | Business logic: auth/JWT, room lifecycle, scoring, Redis state, CSV/HTML exports, roster import. | Callers own the commit; scoring branches per question type. |
-| `models/` | SQLAlchemy ORM models for all nine tables. | Each game belongs to one course (`games.course_id`, NULL = unassigned legacy); several FKs have no cascade. |
+| `models/` | SQLAlchemy ORM models for all ten tables (T8 adds `images`). | Each game belongs to one course (`games.course_id`, NULL = unassigned legacy); several FKs have no cascade. |
 | `schemas/` | Pydantic request/response models, incl. per-type question validation. | Create validates question structure, update does not. |
 | `common/` | Auth/role dependencies, error types and JSON error shapes, logging, rate limiter. | No course-scoped permission dependency exists yet. |
-| `migrations/` | Alembic environment and versioned migrations `001`–`004` (linear chain). | Schema changes happen only here (`alembic upgrade head`). |
+| `migrations/` | Alembic environment and versioned migrations `001`–`005` (linear chain; 005 adds T8 images). | Schema changes happen only here (`alembic upgrade head`). |
 
 ## Top-level modules
 

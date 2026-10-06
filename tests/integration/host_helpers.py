@@ -102,6 +102,7 @@ class HostApi:
         self._users: list[str] = []
         self._games: list[int] = []
         self._sessions: list[str] = []
+        self._images: list[int] = []
 
     # ── HTTP ────────────────────────────────────────────────────────────────
     def req(
@@ -194,6 +195,26 @@ class HostApi:
             self.ok("POST", f"/host/games/{gid}/questions", token, json=MC_QUESTION)
         return gid
 
+    def upload(
+        self, course_id: int, data: bytes, token: str | None = None, name="i.png"
+    ) -> httpx.Response:
+        """POST /images (T8); a 200/201 response's image is deleted on cleanup."""
+        r = self.req(
+            "POST",
+            "/images",
+            token,
+            files={"file": (name, data, "application/octet-stream")},
+            data={"course_id": str(course_id)},
+        )
+        if r.status_code in (200, 201) and r.json()["id"] not in self._images:
+            self._images.append(r.json()["id"])
+        return r
+
+    def image(self, course_id: int, data: bytes, token: str | None = None) -> int:
+        r = self.upload(course_id, data, token)
+        assert r.status_code in (200, 201), r.text
+        return r.json()["id"]
+
     def track_game(self, game_id: int) -> int:
         self._games.append(game_id)
         return game_id
@@ -260,6 +281,9 @@ class HostApi:
             self.req("DELETE", f"/game/sessions/{sid}")  # also clears Redis
         for gid in self._games:
             self.req("DELETE", f"/admin/games/{gid}")
+        for iid in self._images:  # after the games whose questions used them
+            if self.req("DELETE", f"/images/{iid}").status_code not in (204, 404):
+                mysql(f"DELETE FROM images WHERE id = {int(iid)}")
         for uid in self._users:
             self.req("DELETE", f"/admin/users/{uid}")
 

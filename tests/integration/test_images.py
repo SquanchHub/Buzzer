@@ -1,0 +1,1145 @@
+# ruff: noqa: F811  (pytest fixtures are parameters named like the imported fixture)
+"""
+T8 — image upload, fetch and management (docs/plans/t8-image-support.md).
+
+Test numbers refer to the design doc's §7. Behaviour under test:
+
+- Uploads are judged by their bytes (PNG, JPEG, WebP only), capped at 2 MB and
+  4096 px per side, and re-saved without metadata (rotation applied) when they
+  carry any (D2). Identical bytes in one course reuse the existing row (D2).
+- Images belong to a course: only an admin or a HOST of that course can upload
+  (D3, D4). Any logged-in token, guests included, can fetch the bytes, which are
+  served with an immutable private cache header (C3).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import hashlib
+import json
+
+import httpx
+import pytest
+
+from .host_helpers import hapi, mysql  # noqa: F401 (fixture)
+from .image_helpers import (
+    MAX_BYTES,
+    image_bytes,
+    noise_png,
+    opened,
+    png,
+    rotated_jpeg_with_gps,
+)
+
+CACHE = "private, max-age=31536000, immutable"
+NGINX = "http://localhost:8080"
+
+
+def _detail_msg(r: httpx.Response) -> str:
+    return r.json()["detail"][0]["msg"]
+
+
+# ── 1. Valid uploads ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "fmt, ctype", [("PNG", "image/png"), ("JPEG", "image/jpeg"), ("WEBP", "image/webp")]
+)
+def test_upload_and_fetch_identical_bytes(hapi, fmt, ctype):
+    course = hapi.course()
+    _, host = hapi.host_of(course)
+    data = image_bytes(fmt, (64, 32))
+    r = hapi.upload(course, data, host, name="ignored-name.gif")
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["course_id"] == course
+    assert body["content_type"] == ctype
+    assert (body["width"], body["height"]) == (64, 32)
+    assert body["byte_size"] == len(data)
+
+    got = hapi.req("GET", f"/images/{body['id']}", host)
+    assert got.status_code == 200
+    assert got.content == data
+    assert got.headers["content-type"] == ctype
+
+
+def test_admin_can_upload_into_any_course(hapi):
+    course = hapi.course()
+    r = hapi.upload(course, png())
+    assert r.status_code == 201, r.text
+
+
+# ── 2. Rejections ───────────────────────────────────────────────────────────
+
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+
+@pytest.mark.parametrize(
+    "data, msg",
+    [
+        (b"just some text, not an image", "File is not a PNG, JPEG or WebP image"),
+        (SVG, "File is not a PNG, JPEG or WebP image"),
+        (image_bytes("GIF"), "File is not a PNG, JPEG or WebP image"),
+        (b"", "File is empty"),
+        (png()[:60], "Image file is damaged or incomplete"),
+        (
+            image_bytes("PNG", (5000, 10)),
+            "Image is 5000 × 10 px; the limit is 4096 px per side",
+        ),
+    ],
+    ids=["text", "svg", "gif", "empty", "truncated", "too-wide"],
+)
+def test_upload_rejections(hapi, data, msg):
+    course = hapi.course()
+    before = mysql(f"SELECT COUNT(*) FROM images WHERE course_id = {course}").strip()
+    r = hapi.upload(course, data)
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "VALIDATION_ERROR"
+    assert _detail_msg(r) == msg
+    after = mysql(f"SELECT COUNT(*) FROM images WHERE course_id = {course}").strip()
+    assert before == after == "0"
+
+
+def test_upload_just_over_the_size_limit(hapi):
+    course = hapi.course()
+    data = noise_png(840, 840)  # ~2.1 MB of incompressible pixels
+    assert len(data) > MAX_BYTES
+    r = hapi.upload(course, data)
+    assert r.status_code == 422, r.text
+    assert _detail_msg(r).endswith("the limit is 2 MB")
+
+
+# ── 3. Metadata stripped, rotation applied ──────────────────────────────────
+
+
+def test_rotated_jpeg_is_stored_upright_without_exif(hapi):
+    course = hapi.course()
+    r = hapi.upload(course, rotated_jpeg_with_gps())
+    assert r.status_code == 201, r.text
+    assert (r.json()["width"], r.json()["height"]) == (20, 40)  # rotated 90°
+    stored = hapi.req("GET", f"/images/{r.json()['id']}").content
+    img = opened(stored)
+    assert img.size == (20, 40)
+    assert len(img.getexif()) == 0  # no orientation, no GPS
+
+
+def test_image_without_metadata_is_stored_byte_for_byte(hapi):
+    course = hapi.course()
+    data = image_bytes("JPEG", (30, 30), quality=75)
+    iid = hapi.image(course, data)
+    assert hapi.req("GET", f"/images/{iid}").content == data
+
+
+# ── 4. Duplicates ───────────────────────────────────────────────────────────
+
+
+def test_identical_bytes_reuse_the_course_row(hapi):
+    course, other = hapi.course(), hapi.course()
+    data = png((33, 17), (1, 2, 3))
+    first = hapi.upload(course, data)
+    again = hapi.upload(course, data)
+    assert first.status_code == 201
+    assert again.status_code == 200
+    assert again.json()["id"] == first.json()["id"]
+
+    elsewhere = hapi.upload(other, data)
+    assert elsewhere.status_code == 201
+    assert elsewhere.json()["id"] != first.json()["id"]
+    sha = hashlib.sha256(data).hexdigest()
+    assert mysql(f"SELECT COUNT(*) FROM images WHERE sha256 = '{sha}'").strip() == "2"
+
+
+# ── 5. Fetching ─────────────────────────────────────────────────────────────
+
+
+def test_guest_can_fetch_with_cache_headers(hapi):
+    course = hapi.course()
+    _, host = hapi.host_of(course)
+    iid = hapi.image(course, png(), host)
+    game = hapi.host_game(host, course)
+    code, _ = hapi.room(host, course, game)
+    guest = hapi.guest(code)
+
+    r = hapi.req("GET", f"/images/{iid}", guest)
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == CACHE
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_unknown_image_is_404_without_cache_header(hapi):
+    r = hapi.req("GET", "/images/999999999")
+    assert r.status_code == 404
+    assert (
+        "cache-control" not in r.headers
+        or "immutable" not in r.headers["cache-control"]
+    )
+
+
+def test_fetch_without_token_is_401(hapi, base_url):
+    iid = hapi.image(hapi.course(), png())
+    r = httpx.get(f"{base_url}/api/images/{iid}")
+    assert r.status_code == 401
+
+
+# ── 6. Who may upload ───────────────────────────────────────────────────────
+
+
+def test_upload_refused_for_non_hosts(hapi):
+    course, other = hapi.course(), hapi.course()
+    player_id, player = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    _, other_host = hapi.host_of(other)
+    host_game_course = hapi.course()
+    _, host = hapi.host_of(host_game_course)
+    code, _ = hapi.room(host, host_game_course, hapi.host_game(host, host_game_course))
+    guest = hapi.guest(code)
+
+    for token in (player, other_host, guest):
+        r = hapi.upload(course, png(), token)
+        assert r.status_code == 403, r.text
+
+
+def test_upload_to_unknown_course(hapi):
+    _, user = hapi.user()
+    assert hapi.upload(999999999, png()).status_code == 404  # admin
+    assert hapi.upload(999999999, png(), user).status_code == 403  # T4: hosts get 403
+
+
+# ── 22. Concurrent identical uploads ────────────────────────────────────────
+
+
+def test_concurrent_identical_uploads_make_one_row(hapi, base_url, admin_token):
+    course = hapi.course()
+    data = png((51, 13), (9, 9, 9))
+
+    async def go():
+        async with httpx.AsyncClient(timeout=20) as c:
+            return await asyncio.gather(
+                *(
+                    c.post(
+                        f"{base_url}/api/images",
+                        headers={"Authorization": f"Bearer {admin_token}"},
+                        files={"file": ("x.png", data, "image/png")},
+                        data={"course_id": str(course)},
+                    )
+                    for _ in range(6)
+                )
+            )
+
+    results = asyncio.run(go())
+    ids = {r.json()["id"] for r in results if r.status_code in (200, 201)}
+    hapi._images.extend(ids)  # before asserting, so a failure still cleans up
+    assert all(r.status_code in (200, 201) for r in results), [r.text for r in results]
+    assert len(ids) == 1
+    assert sum(r.status_code == 201 for r in results) == 1
+
+
+# ── Through nginx (C8: the proxy must allow a full-size image) ─────────────
+
+
+def test_large_upload_passes_nginx(hapi, admin_token):
+    try:
+        httpx.get(f"{NGINX}/api/health", timeout=3)
+    except httpx.HTTPError:
+        pytest.skip("nginx not running on :8080")
+    course = hapi.course()
+    data = noise_png(800, 800)  # ~1.9 MB: over nginx's 1 MB default, under 2 MB
+    assert 1024 * 1024 < len(data) <= MAX_BYTES
+    r = httpx.post(
+        f"{NGINX}/api/images",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        files={"file": ("big.png", data, "image/png")},
+        data={"course_id": str(course)},
+        timeout=30,
+    )
+    assert r.status_code == 201, r.text
+    hapi._images.append(r.json()["id"])
+
+
+# ── 9. Questions using images (§5, D3, D5) ──────────────────────────────────
+
+
+def _mc(**overrides) -> dict:
+    body = {
+        "type": "multiple_choice",
+        "grading_type": "ACCURACY",
+        "prompt": "Which one?",
+        "config": {"options": ["A", "B"]},
+        "answer_data": {"answer_points": [10, 0]},
+        "time_limit_seconds": 30,
+        "points_value": 10,
+    }
+    body.update(overrides)
+    return body
+
+
+def _host_with_images(hapi, n: int = 2) -> tuple[str, int, int, list[int]]:
+    """A HOST's empty game and `n` images in its course → (token, course, game, ids)."""
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    ids = [hapi.image(course, png((10 + i, 10)), token) for i in range(n)]
+    return token, course, game, ids
+
+
+def _err(r: httpx.Response) -> tuple[list, str]:
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "VALIDATION_ERROR"
+    first = r.json()["detail"][0]
+    return first["loc"], first["msg"]
+
+
+def test_prompt_and_option_images_round_trip(hapi):
+    token, _, game, (a, b) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    body = _mc(
+        prompt_image_id=a,
+        config={"options": ["", "Beta"], "optionImageIds": [b, None]},
+    )
+    q = hapi.ok("POST", url, token, json=body)
+    assert q["prompt_image_id"] == a
+    assert q["config"] == {"options": ["", "Beta"], "optionImageIds": [b, None]}
+    [listed] = hapi.ok("GET", url, token)
+    assert listed == q
+
+    # Updates: swap the prompt image, then remove it with an explicit null.
+    swapped = hapi.ok("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": b})
+    assert swapped["prompt_image_id"] == b
+    removed = hapi.ok("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": None})
+    assert removed["prompt_image_id"] is None
+    assert removed["config"]["optionImageIds"] == [b, None]  # untouched
+
+
+def test_question_without_images_has_null_prompt_image(hapi):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    q = hapi.ok("POST", f"/host/games/{game}/questions", token, json=_mc())
+    assert q["prompt_image_id"] is None
+
+
+def test_multi_select_option_images(hapi):
+    token, _, game, (a, _) = _host_with_images(hapi)
+    body = _mc(
+        type="multi_select",
+        config={"options": ["One", "Two"], "optionImageIds": [None, a]},
+        answer_data={"answer_points": [5, 5]},
+    )
+    r = hapi.req("POST", f"/host/games/{game}/questions", token, json=body)
+    assert r.status_code == 201, r.text
+
+
+def test_unknown_image_ids_are_422_per_field(hapi):
+    token, _, game, (a, _) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    loc, msg = _err(hapi.req("POST", url, token, json=_mc(prompt_image_id=999999999)))
+    assert (loc, msg) == (["body", "prompt_image_id"], "Image 999999999 does not exist")
+    body = _mc(config={"options": ["A", "B"], "optionImageIds": [a, 999999999]})
+    loc, msg = _err(hapi.req("POST", url, token, json=body))
+    assert loc == ["body", "config", "optionImageIds", 1]
+    assert hapi.ok("GET", url, token) == []
+
+
+def test_other_course_image_is_refused(hapi):
+    token, course, game, _ = _host_with_images(hapi, 0)
+    other = hapi.course()
+    foreign = hapi.image(other, png((77, 7)))
+    r = hapi.req(
+        "POST",
+        f"/host/games/{game}/questions",
+        token,
+        json=_mc(prompt_image_id=foreign),
+    )
+    loc, msg = _err(r)
+    assert msg == f"Image {foreign} belongs to a different course"
+
+
+def test_update_to_other_course_image_is_refused(hapi):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    foreign = hapi.image(hapi.course(), png((78, 7)))
+    url = f"/host/games/{game}/questions"
+    q = hapi.ok("POST", url, token, json=_mc())
+    _, msg = _err(
+        hapi.req("PUT", f"{url}/{q['id']}", token, json={"prompt_image_id": foreign})
+    )
+    assert msg == f"Image {foreign} belongs to a different course"
+    assert hapi.ok("GET", url, token)[0]["prompt_image_id"] is None
+
+
+def test_unassigned_game_cannot_use_images(hapi):
+    image = hapi.image(hapi.course(), png((79, 7)))
+    out = mysql(
+        "INSERT INTO games (title, description, max_players) "
+        "VALUES ('T8 legacy', '', 150); SELECT LAST_INSERT_ID();"
+    )
+    game = hapi.track_game(int(out.split()[-1]))
+    r = hapi.req(
+        "POST", f"/admin/games/{game}/questions", json=_mc(prompt_image_id=image)
+    )
+    _, msg = _err(r)
+    assert msg == "Assign the game to a course before adding images"
+
+
+@pytest.mark.parametrize(
+    "body, fragment",
+    [
+        (
+            _mc(config={"options": ["A", "B"], "optionImageIds": [None]}),
+            "optionImageIds must be a list the same length as options",
+        ),
+        (
+            _mc(config={"options": ["  ", "B"], "optionImageIds": [None, None]}),
+            "option 1 needs text or an image",
+        ),
+        (
+            _mc(config={"options": ["A", "B"], "optionImageIds": [True, None]}),
+            "optionImageIds[0] must be a positive integer or null",
+        ),
+        (
+            _mc(
+                type="true_false",
+                config={"optionImageIds": [None, None]},
+                answer_data={"answer_points": {"true": 1, "false": 0}},
+            ),
+            "optionImageIds is only allowed on multiple_choice and multi_select",
+        ),
+        (_mc(prompt_image_id=True), "Input should be a valid integer"),
+        (_mc(prompt_image_id=0), "Input should be greater than 0"),
+    ],
+    ids=["length", "blank-option", "bool-id", "true-false", "bool-prompt", "zero"],
+)
+def test_image_field_shape_errors(hapi, body, fragment):
+    token, _, game, _ = _host_with_images(hapi, 0)
+    _, msg = _err(hapi.req("POST", f"/host/games/{game}/questions", token, json=body))
+    assert fragment in msg
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        _mc(prompt_image_id=5),
+        _mc(config={"options": ["A", "B"], "optionImageIds": [5, None]}),
+    ],
+    ids=["prompt", "options"],
+)
+def test_v1_bundle_with_image_ids_is_rejected(hapi, question):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    bundle = {
+        "format": "buzzer/game",
+        "version": 1,
+        "game": {"title": "v1 with image ids"},
+        "questions": [_mc(), question],
+    }
+    r = hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", json.dumps(bundle).encode())},
+        data={"course_id": str(course)},
+    )
+    _, msg = _err(r)
+    assert msg == (
+        "Question 2: image IDs can't be imported; export the game again to get a "
+        "version 2 file"
+    )
+    assert hapi.ok("GET", f"/host/courses/{course}/games", token) == []
+
+
+# ── 7. Listing a course's images ────────────────────────────────────────────
+
+
+def _list(hapi, course: int, token: str | None = None, **params) -> httpx.Response:
+    return hapi.req("GET", "/images", token, params={"course_id": course, **params})
+
+
+def test_list_counts_references_and_filters_unused(hapi):
+    token, course, game, (used, unused) = _host_with_images(hapi)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=used)
+    )
+    page = hapi.ok("GET", "/images", token, params={"course_id": course})
+    assert page["total"] == 2 and page["page"] == 1 and page["page_size"] == 24
+    by_id = {i["id"]: i for i in page["items"]}
+    assert by_id[used]["reference_count"] == 1
+    assert by_id[unused]["reference_count"] == 0
+    assert by_id[used]["uploaded_by_name"]  # the host's display name
+    assert [i["id"] for i in page["items"]] == [unused, used]  # newest first
+
+    only_unused = _list(hapi, course, token, unused="true").json()
+    assert [i["id"] for i in only_unused["items"]] == [unused]
+    assert only_unused["total"] == 1
+
+
+def test_list_pages_24_at_a_time(hapi):
+    course = hapi.course()
+    ids = [hapi.image(course, png((5 + i, 5))) for i in range(26)]
+    first = _list(hapi, course).json()
+    second = _list(hapi, course, page=2).json()
+    assert first["total"] == second["total"] == 26
+    assert len(first["items"]) == 24 and len(second["items"]) == 2
+    listed = [i["id"] for i in first["items"] + second["items"]]
+    assert sorted(listed) == sorted(ids)
+
+
+def test_list_unknown_course(hapi):
+    _, user = hapi.user()
+    assert _list(hapi, 999999999).status_code == 404  # admin
+    assert _list(hapi, 999999999, user).status_code == 403  # T4: hosts get 403
+
+
+def test_reused_upload_reports_its_reference_count(hapi):
+    token, course, game, _ = _host_with_images(hapi, 0)
+    data = png((40, 41))
+    image = hapi.image(course, data, token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=image)
+    )
+    again = hapi.upload(course, data, token)
+    assert again.status_code == 200
+    assert again.json()["reference_count"] == 1
+
+
+# ── 6 (continued). Who may list and delete ──────────────────────────────────
+
+
+def test_list_and_delete_refused_for_non_hosts(hapi):
+    course, other = hapi.course(), hapi.course()
+    image = hapi.image(course, png((61, 6)))
+    player_id, player = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    _, other_host = hapi.host_of(other)
+    room_course = hapi.course()
+    _, host = hapi.host_of(room_course)
+    code, _ = hapi.room(host, room_course, hapi.host_game(host, room_course))
+    guest = hapi.guest(code)
+    for token in (player, other_host, guest):
+        assert _list(hapi, course, token).status_code == 403
+        assert hapi.req("DELETE", f"/images/{image}", token).status_code == 403
+    assert hapi.req("GET", f"/images/{image}").status_code == 200  # still there
+
+
+def test_delete_unknown_image_is_404(hapi):
+    assert hapi.req("DELETE", "/images/999999999").status_code == 404
+
+
+# ── 8. Deleting an image that is in use ─────────────────────────────────────
+
+
+def _hotspot(image_id: int) -> dict:
+    return {
+        "type": "hotspot",
+        "grading_type": "COMPLETENESS",
+        "prompt": "Tap anywhere",
+        "config": {"imageId": image_id, "aspectRatio": 1.1},
+        "answer_data": {},
+        "time_limit_seconds": 30,
+        "points_value": 10,
+    }
+
+
+@pytest.mark.parametrize("kind", ["prompt", "option", "hotspot"])
+def test_delete_refused_while_used(hapi, kind):
+    token, _, game, (image, _) = _host_with_images(hapi)
+    body = {
+        "prompt": _mc(prompt_image_id=image),
+        "option": _mc(config={"options": ["", "B"], "optionImageIds": [image, None]}),
+        "hotspot": _hotspot(image),
+    }[kind]
+    url = f"/host/games/{game}/questions"
+    q = hapi.ok("POST", url, token, json=body)
+
+    r = hapi.req("DELETE", f"/images/{image}", token)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "Image is used by 1 question"
+    assert hapi.req("GET", f"/images/{image}", token).status_code == 200
+
+    hapi.ok("DELETE", f"{url}/{q['id']}", token)
+    assert hapi.req("DELETE", f"/images/{image}", token).status_code == 204
+    assert hapi.req("GET", f"/images/{image}", token).status_code == 404
+
+
+def test_delete_counts_every_using_question(hapi):
+    token, _, game, (image, _) = _host_with_images(hapi)
+    url = f"/host/games/{game}/questions"
+    hapi.ok("POST", url, token, json=_mc(prompt_image_id=image))
+    hapi.ok("POST", url, token, json=_hotspot(image))
+    r = hapi.req("DELETE", f"/images/{image}", token)
+    assert r.json()["message"] == "Image is used by 2 questions"
+
+
+# ── 19. The forward lookup and the reverse SQL agree ────────────────────────
+
+
+def test_reference_count_and_delete_check_agree(hapi):
+    """The list's reference_count comes from question_image_ids (Python); the delete 409
+    comes from find_references (SQL). They must agree for every type, including null
+    option entries and integers in config that are not image references."""
+    token, course, game, ids = _host_with_images(hapi, 5)
+    a, b, c, d, decoy = ids
+    url = f"/host/games/{game}/questions"
+    for body in [
+        _mc(
+            config={"options": ["", "x", "y"], "optionImageIds": [a, None, b]},
+            answer_data={"answer_points": [10, 0, 0]},
+        ),
+        _mc(
+            type="multi_select",
+            config={"options": ["p", ""], "optionImageIds": [None, a]},
+            answer_data={"answer_points": [1, 1]},
+        ),
+        _hotspot(c),
+        {
+            "type": "true_false",
+            "grading_type": "COMPLETENESS",
+            "prompt": "Yes?",
+            "prompt_image_id": d,
+            "config": {
+                "imageId": decoy
+            },  # not a reference: true_false has no image config
+            "time_limit_seconds": 30,
+            "points_value": 1,
+        },
+        {
+            "type": "fill_in_the_blank",
+            "grading_type": "COMPLETENESS",
+            "prompt": "Type it",
+            "config": {"maxLength": decoy},
+            "time_limit_seconds": 30,
+            "points_value": 1,
+        },
+    ]:
+        hapi.ok("POST", url, token, json=body)
+
+    counts = {
+        i["id"]: i["reference_count"]
+        for i in _list(hapi, course, token).json()["items"]
+    }
+    assert counts == {a: 2, b: 1, c: 1, d: 1, decoy: 0}
+    for image, n in counts.items():
+        r = hapi.req("DELETE", f"/images/{image}", token)
+        if n:
+            assert r.status_code == 409
+            word = "question" if n == 1 else "questions"
+            assert r.json()["message"] == f"Image is used by {n} {word}"
+        else:
+            assert r.status_code == 204
+
+
+# ── 10–12. Replace (D6) ─────────────────────────────────────────────────────
+
+
+def _replace(hapi, image_id: int, data: bytes, token: str | None = None):
+    return hapi.req(
+        "POST",
+        f"/images/{image_id}/replace",
+        token,
+        files={"file": ("new.png", data, "application/octet-stream")},
+    )
+
+
+def _questions(hapi, game: int, token: str) -> list[dict]:
+    return hapi.ok("GET", f"/host/games/{game}/questions", token)
+
+
+def _hotspot_2to1(image_id: int) -> dict:
+    return {**_hotspot(image_id), "config": {"imageId": image_id, "aspectRatio": 2.0}}
+
+
+def test_replace_repoints_every_kind_and_deletes_the_old_image(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((40, 20), (200, 0, 0)), token)
+    url = f"/host/games/{game}/questions"
+    hapi.ok("POST", url, token, json=_mc(prompt_image_id=old))
+    hapi.ok(
+        "POST",
+        url,
+        token,
+        json=_mc(config={"options": ["", "B"], "optionImageIds": [old, None]}),
+    )
+    hapi.ok("POST", url, token, json=_hotspot_2to1(old))
+
+    r = _replace(hapi, old, png((80, 40), (0, 0, 200)), token)
+    assert r.status_code == 200, r.text
+    result = r.json()
+    new = result["id"]
+    hapi._images.append(new)
+    assert result == {
+        "id": new,
+        "replaced_id": old,
+        "repointed_questions": 3,
+        "old_deleted": True,
+    }
+    assert new != old
+    prompt_q, option_q, hotspot_q = _questions(hapi, game, token)
+    assert prompt_q["prompt_image_id"] == new
+    assert option_q["config"]["optionImageIds"] == [new, None]
+    assert hotspot_q["config"] == {"imageId": new, "aspectRatio": 2.0}
+    assert hapi.req("GET", f"/images/{old}", token).status_code == 404
+
+
+def test_replace_keeps_the_old_image_for_games_the_caller_cannot_edit(hapi):
+    course = hapi.course()
+    _, host1 = hapi.host_of(course)
+    _, host2 = hapi.host_of(course)
+    old = hapi.image(course, png((30, 30), (1, 1, 1)), host1)
+    g1 = hapi.host_game(host1, course, questions=0)
+    g2 = hapi.host_game(host2, course, questions=0)
+    hapi.ok("POST", f"/host/games/{g1}/questions", host1, json=_mc(prompt_image_id=old))
+    hapi.ok("POST", f"/host/games/{g2}/questions", host2, json=_mc(prompt_image_id=old))
+
+    r = _replace(hapi, old, png((30, 30), (2, 2, 2)), host1)
+    assert r.status_code == 200, r.text
+    hapi._images.append(r.json()["id"])
+    assert r.json()["repointed_questions"] == 1
+    assert r.json()["old_deleted"] is False
+    assert _questions(hapi, g1, host1)[0]["prompt_image_id"] == r.json()["id"]
+    assert _questions(hapi, g2, host2)[0]["prompt_image_id"] == old
+
+
+def test_replace_an_unused_image(hapi):
+    course = hapi.course()
+    old = hapi.image(course, png((12, 12), (3, 3, 3)))
+    r = _replace(hapi, old, png((12, 12), (4, 4, 4)))
+    assert r.status_code == 200, r.text
+    hapi._images.append(r.json()["id"])
+    assert r.json()["repointed_questions"] == 0
+    assert r.json()["old_deleted"] is True
+    assert hapi.req("GET", f"/images/{old}").status_code == 404
+
+
+def _course_of(hapi, image_id: int) -> int:
+    return int(mysql(f"SELECT course_id FROM images WHERE id = {image_id}").strip())
+
+
+def _course_of(image_id: int) -> int:
+    return int(
+        mysql(f"SELECT course_id FROM images WHERE id = {int(image_id)}").strip()
+    )
+
+
+def _image_count(course: int) -> str:
+    return mysql(f"SELECT COUNT(*) FROM images WHERE course_id = {course}").strip()
+
+
+def test_replace_refused_while_a_game_is_live(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((20, 20), (5, 5, 5)), token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=old)
+    )
+    hapi.room(token, course, game)
+    before = _image_count(course)
+    r = _replace(hapi, old, png((20, 20), (6, 6, 6)), token)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "This game has a live session"
+    assert _image_count(course) == before
+    assert _questions(hapi, game, token)[0]["prompt_image_id"] == old
+
+
+def test_replace_refused_when_hotspot_shape_changes(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((40, 20), (7, 7, 7)), token)
+    hapi.ok("POST", f"/host/games/{game}/questions", token, json=_hotspot_2to1(old))
+    before = _image_count(course)
+    r = _replace(hapi, old, png((40, 40), (8, 8, 8)), token)
+    assert r.status_code == 409, r.text
+    assert "hotspot" in r.json()["message"]
+    assert _image_count(course) == before
+    assert _questions(hapi, game, token)[0]["config"]["imageId"] == old
+
+
+def test_replace_with_identical_bytes_is_422(hapi):
+    course = hapi.course()
+    data = png((9, 9), (9, 9, 9))
+    old = hapi.image(course, data)
+    r = _replace(hapi, old, data)
+    assert r.status_code == 422, r.text
+    assert _detail_msg(r) == "The new file is identical to the current image"
+
+
+def test_replace_refused_when_caller_can_edit_none_of_the_uses(hapi):
+    course = hapi.course()
+    _, owner = hapi.host_of(course)
+    _, cohost = hapi.host_of(course)
+    old = hapi.image(course, png((14, 14), (10, 10, 10)), owner)
+    game = hapi.host_game(owner, course, questions=0)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", owner, json=_mc(prompt_image_id=old)
+    )
+    before = _image_count(course)
+    r = _replace(hapi, old, png((14, 14), (11, 11, 11)), cohost)
+    assert r.status_code == 409, r.text
+    assert r.json()["message"] == "You can't edit the question that uses this image"
+    assert _image_count(course) == before
+
+
+def test_replace_invalid_file_is_422(hapi):
+    old = hapi.image(hapi.course(), png((15, 15), (12, 12, 12)))
+    r = _replace(hapi, old, b"not an image")
+    assert r.status_code == 422
+    assert _detail_msg(r) == "File is not a PNG, JPEG or WebP image"
+
+
+def test_replace_with_a_duplicate_of_another_image_reuses_it(hapi):
+    course = hapi.course()
+    _, token = hapi.host_of(course)
+    game = hapi.host_game(token, course, questions=0)
+    old = hapi.image(course, png((16, 16), (13, 13, 13)), token)
+    other_bytes = png((16, 16), (14, 14, 14))
+    other = hapi.image(course, other_bytes, token)
+    hapi.ok(
+        "POST", f"/host/games/{game}/questions", token, json=_mc(prompt_image_id=old)
+    )
+    before = int(_image_count(course))
+    r = _replace(hapi, old, other_bytes, token)
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == other
+    assert r.json()["old_deleted"] is True
+    assert int(_image_count(course)) == before - 1  # old gone, nothing new
+    assert _questions(hapi, game, token)[0]["prompt_image_id"] == other
+
+
+def test_replace_refused_for_non_hosts_and_unknown_images(hapi):
+    course, other = hapi.course(), hapi.course()
+    old = hapi.image(course, png((17, 17), (15, 15, 15)))
+    player_id, player = hapi.user()
+    hapi.grant_course(player_id, course, role="PLAYER")
+    _, other_host = hapi.host_of(other)
+    for token in (player, other_host):
+        assert (
+            _replace(hapi, old, png((17, 17), (16, 16, 16)), token).status_code == 403
+        )
+    assert _replace(hapi, 999999999, png()).status_code == 404
+
+
+# ── 20. An admin moves a game with images to another course (D3) ───────────
+
+
+def test_moving_a_game_copies_its_images(hapi):
+    course_a, course_b = hapi.course(), hapi.course()
+    a1 = hapi.image(course_a, png((40, 20), (20, 0, 0)))
+    a2 = hapi.image(course_a, png((40, 20), (21, 0, 0)))
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Mover", "course_id": course_a})[
+            "id"
+        ]
+    )
+    url = f"/admin/games/{game}/questions"
+    hapi.ok("POST", url, json=_mc(prompt_image_id=a1))
+    hapi.ok(
+        "POST",
+        url,
+        json=_mc(config={"options": ["", "B"], "optionImageIds": [a2, None]}),
+    )
+    hapi.ok("POST", url, json=_hotspot_2to1(a1))
+    # The same bytes as a2 already exist in course B: the move reuses that row.
+    b2 = hapi.image(course_b, hapi.req("GET", f"/images/{a2}").content)
+
+    hapi.ok("PUT", f"/admin/games/{game}", json={"course_id": course_b})
+
+    prompt_q, option_q, hotspot_q = hapi.ok("GET", url)
+    b1 = prompt_q["prompt_image_id"]
+    assert b1 not in (a1, a2)
+    hapi._images.append(b1)
+    assert _course_of(b1) == course_b
+    assert (
+        hapi.req("GET", f"/images/{b1}").content
+        == hapi.req("GET", f"/images/{a1}").content
+    )
+    assert option_q["config"]["optionImageIds"] == [b2, None]
+    assert hotspot_q["config"] == {"imageId": b1, "aspectRatio": 2.0}
+    # Originals stay in course A, now unused.
+    page = _list(hapi, course_a).json()
+    assert {i["id"]: i["reference_count"] for i in page["items"]} == {a1: 0, a2: 0}
+    assert int(_image_count(course_b)) == 2
+
+
+def test_moving_a_game_to_its_own_course_changes_nothing(hapi):
+    course = hapi.course()
+    image = hapi.image(course, png((22, 22), (22, 22, 22)))
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Stay", "course_id": course})[
+            "id"
+        ]
+    )
+    hapi.ok("POST", f"/admin/games/{game}/questions", json=_mc(prompt_image_id=image))
+    hapi.ok("PUT", f"/admin/games/{game}", json={"course_id": course})
+    assert (
+        hapi.ok("GET", f"/admin/games/{game}/questions")[0]["prompt_image_id"] == image
+    )
+    assert _image_count(course) == "1"
+
+
+# ── 13–15, 21. Version 2 export / import (D7) ───────────────────────────────
+
+
+def _import(hapi, course: int, bundle: dict | bytes, token: str | None = None):
+    raw = bundle if isinstance(bundle, bytes) else json.dumps(bundle).encode()
+    return hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", raw, "application/json")},
+        data={"course_id": str(course)},
+    )
+
+
+def _games(hapi, course: int) -> list[dict]:
+    return hapi.ok("GET", f"/host/courses/{course}/games")
+
+
+def _image_game(hapi) -> tuple[int, int, dict[str, int]]:
+    """A game in a new course using all three image kinds → (course, game, images)."""
+    course = hapi.course()
+    game = hapi.track_game(
+        hapi.ok(
+            "POST", "/admin/games", json={"title": "Pictures", "course_id": course}
+        )["id"]
+    )
+    imgs = {
+        "prompt": hapi.image(course, png((30, 30), (30, 0, 0))),
+        "option": hapi.image(course, image_bytes("JPEG", (20, 20), (0, 30, 0))),
+        "map": hapi.image(course, png((40, 20), (0, 0, 30))),
+    }
+    url = f"/admin/games/{game}/questions"
+    hapi.ok("POST", url, json=_mc(prompt_image_id=imgs["prompt"]))
+    hapi.ok(
+        "POST",
+        url,
+        json=_mc(
+            config={"options": ["", "Text"], "optionImageIds": [imgs["option"], None]}
+        ),
+    )
+    hapi.ok("POST", url, json=_hotspot_2to1(imgs["map"]))
+    hapi.ok(
+        "POST", url, json=_mc(prompt_image_id=imgs["prompt"])
+    )  # reused: exported once
+    return course, game, imgs
+
+
+def test_export_with_images_is_version_2(hapi):
+    _, game, imgs = _image_game(hapi)
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    assert bundle["version"] == 2
+    assert [i["ref"] for i in bundle["images"]] == ["img1", "img2", "img3"]
+    assert [i["content_type"] for i in bundle["images"]] == [
+        "image/png",
+        "image/jpeg",
+        "image/png",
+    ]
+    q1, q2, q3, q4 = bundle["questions"]
+    assert q1["prompt_image_ref"] == "img1" and "prompt_image_id" not in q1
+    assert q2["config"] == {"options": ["", "Text"], "optionImageRefs": ["img2", None]}
+    assert q3["config"] == {"imageRef": "img3", "aspectRatio": 2.0}
+    assert q4["prompt_image_ref"] == "img1"
+    assert "imageId" not in json.dumps(bundle) and "optionImageIds" not in json.dumps(
+        bundle
+    )
+
+
+def test_export_without_images_stays_version_1(hapi):
+    course = hapi.course()
+    game = hapi.track_game(
+        hapi.ok("POST", "/admin/games", json={"title": "Plain", "course_id": course})[
+            "id"
+        ]
+    )
+    hapi.ok("POST", f"/admin/games/{game}/questions", json=_mc())
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    assert bundle["version"] == 1
+    assert "images" not in bundle
+    assert "prompt_image_ref" not in bundle["questions"][0]
+
+
+def test_version_2_round_trip_into_another_course(hapi):
+    _, game, imgs = _image_game(hapi)
+    bundle = hapi.ok("GET", f"/admin/games/{game}/export")
+    target = hapi.course()
+    _, host = hapi.host_of(target)
+
+    r = _import(hapi, target, bundle, host)
+    assert r.status_code in (200, 201), r.text
+    new_game = hapi.track_game(r.json()["game_id"])
+    q1, q2, q3, q4 = hapi.ok("GET", f"/host/games/{new_game}/questions", host)
+    new = {
+        "prompt": q1["prompt_image_id"],
+        "option": q2["config"]["optionImageIds"][0],
+        "map": q3["config"]["imageId"],
+    }
+    hapi._images.extend(new.values())
+    assert q4["prompt_image_id"] == new["prompt"]
+    assert q2["config"]["optionImageIds"][1] is None
+    assert q3["config"]["aspectRatio"] == 2.0
+    for kind, image_id in new.items():
+        assert image_id != imgs[kind]
+        assert _course_of(image_id) == target
+        assert (
+            hapi.req("GET", f"/images/{image_id}").content
+            == hapi.req("GET", f"/images/{imgs[kind]}").content
+        )
+
+    # Importing the same file again into the same course reuses the images.
+    before = _image_count(target)
+    again = _import(hapi, target, bundle, host)
+    assert again.status_code in (200, 201), again.text
+    hapi.track_game(again.json()["game_id"])
+    assert _image_count(target) == before
+
+
+def _v2(questions: list[dict], images: list[dict] | None = None) -> dict:
+    return {
+        "format": "buzzer/game",
+        "version": 2,
+        "game": {"title": "v2 test"},
+        "images": images
+        if images is not None
+        else [
+            {
+                "ref": "img1",
+                "content_type": "image/png",
+                "data_base64": base64.b64encode(png((8, 8))).decode(),
+            }
+        ],
+        "questions": questions,
+    }
+
+
+_REF_Q = _mc(prompt_image_ref="img1")
+
+
+@pytest.mark.parametrize(
+    "bundle, msg",
+    [
+        (
+            _v2([_mc(prompt_image_ref="nope")]),
+            "Question 1: unknown image reference 'nope'",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [
+                    {"ref": "img1", "content_type": "image/png", "data_base64": "aaaa"},
+                    {"ref": "img1", "content_type": "image/png", "data_base64": "aaaa"},
+                ],
+            ),
+            "Image 2: duplicate ref 'img1'",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [{"ref": "img1", "content_type": "image/png", "data_base64": "%%%"}],
+            ),
+            "Image 1: data_base64 is not valid base64",
+        ),
+        (
+            _v2(
+                [_REF_Q],
+                [
+                    {
+                        "ref": "img1",
+                        "content_type": "image/png",
+                        "data_base64": base64.b64encode(b"not an image").decode(),
+                    }
+                ],
+            ),
+            "Image 1: File is not a PNG, JPEG or WebP image",
+        ),
+        (
+            _v2([_mc(prompt_image_id=5)]),
+            "Question 1: image IDs can't be imported; export the game again to get a "
+            "version 2 file",
+        ),
+        (
+            {**_v2([_REF_Q]), "version": 1},
+            "Question 1: image references require a version 2 bundle",
+        ),
+        (
+            _v2([_mc(prompt_image_ref="img1", prompt_image_id=5)]),
+            "Question 1: image IDs can't be imported; export the game again to get a "
+            "version 2 file",
+        ),
+        (
+            _v2(
+                [
+                    _mc(
+                        config={
+                            "options": ["A", "B"],
+                            "optionImageRefs": ["img1"],
+                        }
+                    )
+                ]
+            ),
+            "Question 1: optionImageRefs must be a list the same length as options",
+        ),
+        (
+            {**_v2([_REF_Q]), "version": 3},
+            "Unsupported version 3; server supports versions 1 and 2",
+        ),
+    ],
+    ids=[
+        "unknown-ref",
+        "duplicate-ref",
+        "bad-base64",
+        "bad-bytes",
+        "raw-id-v2",
+        "ref-in-v1",
+        "id-and-ref",
+        "option-ref-length",
+        "version-3",
+    ],
+)
+def test_broken_bundles_create_nothing(hapi, bundle, msg):
+    course = hapi.course()
+    _, host = hapi.host_of(course)
+    r = _import(hapi, course, bundle, host)
+    assert r.status_code == 422, r.text
+    assert _detail_msg(r) == msg
+    assert _games(hapi, course) == []
+    assert _image_count(course) == "0"
+
+
+def test_a_late_question_error_rolls_back_created_images(hapi):
+    """Images are created before the questions; a structural error in a later question is
+    caught by pre-validation, so no image is ever written."""
+    course = hapi.course()
+    bad = _mc(config={"options": ["only one"]}, answer_data={"answer_points": [1]})
+    r = _import(hapi, course, _v2([_REF_Q, bad]))
+    assert r.status_code == 422, r.text
+    assert _image_count(course) == "0"
+
+
+def test_bundle_content_type_is_not_trusted(hapi):
+    course = hapi.course()
+    jpeg = image_bytes("JPEG", (12, 12), (40, 40, 40))
+    bundle = _v2(
+        [_REF_Q],
+        [
+            {
+                "ref": "img1",
+                "content_type": "image/png",  # wrong: the bytes are a JPEG
+                "data_base64": base64.b64encode(jpeg).decode(),
+            }
+        ],
+    )
+    r = _import(hapi, course, bundle)
+    assert r.status_code in (200, 201), r.text
+    game = hapi.track_game(r.json()["game_id"])
+    [q] = hapi.ok("GET", f"/admin/games/{game}/questions")
+    hapi._images.append(q["prompt_image_id"])
+    got = hapi.req("GET", f"/images/{q['prompt_image_id']}")
+    assert got.headers["content-type"] == "image/jpeg"
+    assert got.content == jpeg
+
+
+def test_unreferenced_bundle_images_are_ignored(hapi):
+    course = hapi.course()
+    r = _import(hapi, course, _v2([_mc()]))
+    assert r.status_code in (200, 201), r.text
+    hapi.track_game(r.json()["game_id"])
+    assert _image_count(course) == "0"

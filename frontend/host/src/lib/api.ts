@@ -91,3 +91,60 @@ export const api = {
   },
   download: downloadFetch,
 };
+
+// ── Question images (T8, docs/plans/t8-image-support.md D4) ───────────────────
+// Bytes are never fetched here: lib/images.ts loads them with the bearer token.
+
+export interface ImageItem {
+  id: number;
+  course_id: number;
+  content_type: string;
+  width: number;
+  height: number;
+  byte_size: number;
+  created_at: string | null;
+  uploaded_by_name: string | null;
+  reference_count: number;
+}
+
+export interface ImagePage {
+  items: ImageItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ReplaceResult {
+  id: number; // the image the questions now use
+  replaced_id: number;
+  repointed_questions: number;
+  old_deleted: boolean;
+}
+
+/** One page (24) of a course's images, newest first. */
+export function listImages(courseId: number, page = 1, unusedOnly = false): Promise<ImagePage> {
+  const unused = unusedOnly ? '&unused=true' : '';
+  return api.get<ImagePage>(`/images?course_id=${courseId}&page=${page}${unused}`);
+}
+
+/** Upload into a course. Identical bytes already in the course return that image. */
+export function uploadImage(courseId: number, file: File): Promise<ImageItem> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('course_id', String(courseId));
+  return api.postForm<ImageItem>('/images', form);
+}
+
+/** Replace an image everywhere the caller may edit; the old id is deleted once unused. */
+export function replaceImage(imageId: number, file: File): Promise<ReplaceResult> {
+  const form = new FormData();
+  form.append('file', file);
+  return api.postForm<ReplaceResult>(`/images/${imageId}/replace`, form);
+}
+
+export function deleteImage(imageId: number): Promise<void> {
+  return api.delete<void>(`/images/${imageId}`);
+}
+
+/** The file types the server accepts (it checks the bytes, not this list). */
+export const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp';

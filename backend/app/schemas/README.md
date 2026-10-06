@@ -13,6 +13,7 @@ its dicts by hand.
 | `__init__.py` | Empty package marker. |
 | `admin.py` | Admin API bodies and responses: courses, roster, games, questions (with per-type validation), users, access grants, admin session list. |
 | `auth.py` | Login, token responses, guest join. |
+| `image.py` | `ImageItem` (an image's metadata, uploader name and `reference_count`; never its bytes) `ImagePage` (`items, total, page, page_size`) and `ReplaceResult` (`id, replaced_id, repointed_questions, old_deleted`) for the image API (T8). |
 | `game.py` | Host-facing room/session/resource-list models, plus the internal `ScoreResult`. |
 
 ## Key entry points
@@ -33,6 +34,11 @@ its dicts by hand.
     0.02 ≤ inner ≤ 0.5; inner ≤ outer ≤ 1; fraction in [0, 1]). Bool is rejected everywhere.
     camelCase keys. Spec: `docs/plans/t7-hotspot.md` §5.1. Whether `imageId` exists is not checked
     here (needs the DB).
+  - **T8 image fields** (`docs/plans/t8-image-support.md` §5): `prompt_image_id` (optional
+    `StrictInt` > 0, any type) and `config.optionImageIds` (`option_images_error`: only on
+    `multiple_choice` / `multi_select`, same length as `options`, entries positive int or `null`,
+    bool rejected; an option's text may be blank only when it has an image). Existence and course
+    are checked in `content_service`, not here.
   - Field bounds: `prompt` 1–2000 chars, `time_limit_seconds` 2–300, `points_value` 0–100000.
   Also reused by `admin.import_game` to validate every question in an imported JSON bundle.
 - **Hotspot checker** (`admin.py`, module level) — `hotspot_config_error(config)` and
@@ -40,7 +46,10 @@ its dicts by hand.
   `is_hotspot_aspect_ratio(value)`. The one implementation of the §5.1 rules: `QuestionCreate`
   raises with these messages, and scoring code reuses them to detect bad stored data. Never
   raise, whatever JSON they are given.
-- **`QuestionUpdate`** — all fields optional, same `type` regex, **no structural validation**.
+- **`QuestionUpdate`** — all fields optional, same `type` regex, **no structural validation**
+  (`content_service.update_question` re-validates the merged question with `QuestionCreate`, T4
+  D8). Includes `prompt_image_id`, the one field where an explicit `null` is accepted (it removes
+  the prompt image). `QuestionResponse` returns `prompt_image_id`.
 - **`GameMeta`** — a game's own fields (`title`, `description`, `max_players`); validates the
   `game` block of an import bundle, which never carries a course.
 - **`GameCreate(GameMeta)`** — adds a required positive `course_id`.

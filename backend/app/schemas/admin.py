@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictInt,
     field_validator,
     model_validator,
 )
@@ -201,6 +202,35 @@ def hotspot_answer_error(answer_data: object) -> str | None:
     return None
 
 
+# T8 option images (docs/plans/t8-image-support.md D5, §5): only these types may carry
+# config.optionImageIds.
+OPTION_IMAGE_TYPES = ("multiple_choice", "multi_select")
+
+
+def option_images_error(question_type: str, config: object) -> str | None:
+    """Why config.optionImageIds (or an option's text) breaks T8 §5, or None if valid.
+    Without optionImageIds the existing option rules are unchanged."""
+    if not isinstance(config, dict) or "optionImageIds" not in config:
+        return None
+    if question_type not in OPTION_IMAGE_TYPES:
+        return "optionImageIds is only allowed on multiple_choice and multi_select"
+    ids, options = config["optionImageIds"], config.get("options")
+    if (
+        not isinstance(ids, list)
+        or not isinstance(options, list)
+        or len(ids) != len(options)
+    ):
+        return "optionImageIds must be a list the same length as options"
+    for i, (image_id, text) in enumerate(zip(ids, options)):
+        if image_id is not None and (
+            isinstance(image_id, bool) or not isinstance(image_id, int) or image_id < 1
+        ):
+            return f"optionImageIds[{i}] must be a positive integer or null"
+        if image_id is None and (not isinstance(text, str) or not text.strip()):
+            return f"option {i + 1} needs text or an image"
+    return None
+
+
 class QuestionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str = Field(
@@ -214,9 +244,14 @@ class QuestionCreate(BaseModel):
     time_limit_seconds: int = Field(30, ge=2, le=300)
     points_value: float = Field(1.0, ge=0, le=100000)
     order_index: int | None = Field(None, ge=0)
+    # T8: image shown with the prompt; existence and course are checked in content_service.
+    prompt_image_id: StrictInt | None = Field(None, gt=0)
 
     @model_validator(mode="after")
     def validate_structure(self) -> QuestionCreate:
+        error = option_images_error(self.type, self.config)
+        if error is not None:
+            raise ValueError(error)
         if self.type == "multiple_choice":
             opts = self.config.get("options")
             if not isinstance(opts, list) or len(opts) < 2:
@@ -293,6 +328,8 @@ class QuestionUpdate(BaseModel):
     time_limit_seconds: int | None = Field(None, ge=2, le=300)
     points_value: float | None = Field(None, ge=0, le=100000)
     order_index: int | None = Field(None, ge=0)
+    # The one field where an explicit null is allowed on update: it removes the image.
+    prompt_image_id: StrictInt | None = Field(None, gt=0)
 
 
 class QuestionResponse(BaseModel):
@@ -307,6 +344,7 @@ class QuestionResponse(BaseModel):
     time_limit_seconds: int
     points_value: float
     order_index: int
+    prompt_image_id: int | None
     created_at: datetime
 
 

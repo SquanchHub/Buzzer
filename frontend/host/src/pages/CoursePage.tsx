@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Download, Pencil, Plus, Trash2, Upload, Users } from 'lucide-react';
+import { Download, Image as ImageIcon, Pencil, Plus, Trash2, Upload, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -133,9 +133,14 @@ export default function CoursePage() {
           <h1 className="text-2xl font-bold text-slate-100">{course ? course.name : `Course ${id}`}</h1>
           {course && <p className="text-slate-400 text-sm">{course.semester}</p>}
         </div>
-        <Link to={`/courses/${id}/roster`} className={linkButton}>
-          <Users size={14} className="mr-1" />Roster
-        </Link>
+        <div className="flex gap-2">
+          <Link to={`/courses/${id}/images`} className={linkButton}>
+            <ImageIcon size={14} className="mr-1" />Images
+          </Link>
+          <Link to={`/courses/${id}/roster`} className={linkButton}>
+            <Users size={14} className="mr-1" />Roster
+          </Link>
+        </div>
       </div>
 
       {error && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">{error}</p>}

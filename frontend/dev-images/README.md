@@ -7,10 +7,11 @@ admin question editor) `frontend/admin/vite.config.ts` answers
 `GET /api/images/{id}` with `{id}.png` from this folder. It runs only under `vite` (dev server,
 `apply: 'serve'`); production builds and nginx never see these files.
 
-The backend reads the folder too (T7 stage B, §13.2 G1): `docker-compose.yml` mounts it read-only
-at `/dev-images`, and `content_service._image_exists` treats an image as existing iff `{id}.png`
-is there — only when `APP_ENV=development`. So the host editor and the server agree on which
-IDs exist. Adding an image here needs no backend restart.
+**The backend half is gone (T8 V3):** the server now checks real uploaded images
+(`POST /api/images`), so the IDs here mean nothing to it. Until the frontend half below is removed
+(T8 step A6, `docs/plans/t8-image-support.md` §3), the Vite dev servers still answer
+`/api/images/{id}` from this folder, so under `npm run dev` an uploaded image is **not** what the
+editors and game screens show. Use the nginx build (`localhost:8080`) to see real images.
 
 | File | Size | Aspect ratio | Source and licence |
 |---|---|---|---|
@@ -30,10 +31,12 @@ IDs exist. Adding an image here needs no backend restart.
 An unknown ID falls through to Vite's HTML fallback, which the apps reject, so the canvas shows
 "Image unavailable" — handy for testing that path (e.g. `imageId: 99`).
 
-## Removal (stage C)
+## Removal (T8 step A6)
 
-Delete this folder, the `devImages` plugin and the `server.fs.allow` line from the three
-`vite.config.ts` files (host, player, admin), the `/dev-images` mount in `docker-compose.yml`, `_DEV_IMAGES_DIR` and
-`_image_exists` in `backend/app/services/content_service.py` (replaced by T8's C4 check) with
-`tests/unit/test_hotspot_image_check.py`, and the gotchas in `frontend/README.md` and
-`backend/app/services/README.md`.
+Done already (T8 V3): the `/dev-images` mount in `docker-compose.yml`, `_DEV_IMAGES_DIR` and
+`_image_exists` in `backend/app/services/content_service.py`, and
+`tests/unit/test_hotspot_image_check.py`.
+
+Still to delete (frontend half): this folder, the `devImages` plugin and the `server.fs.allow`
+line from the three `vite.config.ts` files (host, player, admin), and the gotcha in
+`frontend/README.md`.
