@@ -55,6 +55,8 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
   (player button sizing, `TimerBar` props, API client methods). Fixes and theming (T9) must be
   applied per app. The hotspot canvas layout rule is copied too: player `HotspotCanvas`, host
   `HotspotView` and `HotspotEditor` (host, plus an identical admin copy since T4 phase 3).
+  `OrderingEditor` (T7 ordering, `docs/plans/t7-ordering.md` §6.9) follows the same rule: host
+  original, admin copy identical apart from its header note.
 - **One token for three apps:** on the nginx origin, signing in or joining as a guest in one app
   replaces the token in the others; nothing refreshes expired tokens.
 - **Hardcoded dark palette** everywhere, including each `index.css` `body` background (T9).

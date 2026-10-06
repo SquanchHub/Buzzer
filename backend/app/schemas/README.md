@@ -19,7 +19,7 @@ its dicts by hand.
 ## Key entry points
 
 - **`QuestionCreate`** (`admin.py`) — the central validator. Allowed `type` is a regex:
-  `multiple_choice | true_false | fill_in_the_blank | multi_select | hotspot`. `validate_structure`
+  `multiple_choice | true_false | fill_in_the_blank | multi_select | hotspot | ordering`. `validate_structure`
   (model validator) checks per type:
   - `multiple_choice` — `config.options` list with ≥2 items; if ACCURACY, `answer_data.answer_points`
     same length, non-negative numbers.
@@ -34,6 +34,12 @@ its dicts by hand.
     0.02 ≤ inner ≤ 0.5; inner ≤ outer ≤ 1; fraction in [0, 1]). Bool is rejected everywhere.
     camelCase keys. Spec: `docs/plans/t7-hotspot.md` §5.1. Whether `imageId` exists is not checked
     here (needs the DB).
+  - `ordering` — `config` is exactly `{items}` under **both** grading types: 3–6 strings, each
+    1–80 chars with whitespace already normalised (no leading/trailing/repeated spaces), unique
+    case-insensitively; stored in **display (shuffled) order**. If ACCURACY, `answer_data` is exactly
+    `{correctOrder, partialCredit}`: `correctOrder[k]` is the display index of the item at correct
+    position k, a permutation of `0..n-1` that must **not** be the identity (the shuffle never shows
+    the answer); `partialCredit` a real bool. Spec: `docs/plans/t7-ordering.md` §4.1.
   - **T8 image fields** (`docs/plans/t8-image-support.md` §5): `prompt_image_id` (optional
     `StrictInt` > 0, any type) and `config.optionImageIds` (`option_images_error`: only on
     `multiple_choice` / `multi_select`, same length as `options`, entries positive int or `null`,
@@ -46,6 +52,10 @@ its dicts by hand.
   `is_hotspot_aspect_ratio(value)`. The one implementation of the §5.1 rules: `QuestionCreate`
   raises with these messages, and scoring code reuses them to detect bad stored data. Never
   raise, whatever JSON they are given.
+- **Ordering checker** (`admin.py`, module level) — `ordering_config_error(config)` and
+  `ordering_answer_error(config, answer_data)` (reports a config error first), plus
+  `ORDERING_MIN_ITEMS` / `ORDERING_MAX_ITEMS` / `ORDERING_ITEM_MAX_LEN`. Same contract as the
+  hotspot checker; checks run in the §4.1 order so the first failing one names the problem.
 - **`QuestionUpdate`** — all fields optional, same `type` regex, **no structural validation**
   (`content_service.update_question` re-validates the merged question with `QuestionCreate`, T4
   D8). Includes `prompt_image_id`, the one field where an explicit `null` is accepted (it removes
@@ -86,16 +96,16 @@ its dicts by hand.
 - `backend/app/routers/game.py` — the room/session/list models in `schemas/game.py`.
 - `backend/app/services/roster_service.py` — `RosterUploadResult`.
 - `backend/app/services/game_service.py` — `ScoreResult`; the hotspot checker
-  (`is_hotspot_aspect_ratio`, `hotspot_answer_error`) via `hotspot_target`.
+  (`is_hotspot_aspect_ratio`, `hotspot_answer_error`) via `hotspot_target`; the ordering checker
+  via `ordering_key` / `ordering_item_count`.
 
 ## Gotchas found while reading
 
-- **Updates bypass validation.** `QuestionUpdate` has no `validate_structure`, and
-  `admin.update_question` writes `config` / `answer_data` as given. A PUT can store a
-  multiple-choice question with one option, mismatched `answer_points`, or a type change with the
-  old type's data — and `game_service.calculate_score` will then award wrong points or raise
-  mid-game. Any new
-  type must add validation to both paths (T7 calls this out).
+- **`QuestionUpdate` itself has no `validate_structure`** — updates are validated only because
+  `content_service.update_question` (T4 D8) re-validates the merged question with
+  `QuestionCreate`. Any route that writes a question without going through `content_service` would
+  bypass every type rule, so keep updates on that path. The merge is per field: an `answer_data`
+  patch replaces it whole.
 - **The type list is duplicated** — the same regex appears in `QuestionCreate` and
   `QuestionUpdate`; adding a type means editing both.
 - **TF points aren't type-checked:** `answer_points` values for `true_false` can be any JSON value.

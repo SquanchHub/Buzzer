@@ -1,7 +1,8 @@
 # frontend/host/src/components/
 
 Presentational building blocks for the Host app: generic primitives in `ui/`, plus two
-hotspot components, `HotspotView.tsx` (display) and `HotspotEditor.tsx` (authoring). Other
+hotspot components, `HotspotView.tsx` (display) and `HotspotEditor.tsx` (authoring), and two
+ordering components, `OrderingView.tsx` (display) and `OrderingEditor.tsx` (authoring). Other
 game-specific pieces (charts, word cloud, histogram, question cards) are defined inline inside
 the page files in `frontend/host/src/pages/game/`. None of the `ui/` components touch the
 network, sockets, or global state; both hotspot components fetch their image via `lib/images.ts`.
@@ -16,6 +17,8 @@ network, sockets, or global state; both hotspot components fetch their image via
 | `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
 | `HotspotView.tsx` | `HotspotView` — display-only hotspot `<canvas>` (`docs/plans/t7-hotspot.md` §7.8): image, optional rings, optional taps coloured by band, optional legend; `ringsFromReveal(reveal)` helper. |
 | `HotspotEditor.tsx` | `HotspotEditor` — hotspot authoring panel (§7.9, §13.2): Image ID field (or T8 picker slot), canvas preview with live rings, click to place the centre, sliders for the radii and partial fraction. Exports `HOTSPOT_DEFAULT_TARGET`, `HOTSPOT_ASPECT_MIN`/`MAX` and its prop types. |
+| `OrderingView.tsx` | `OrderingItems({items})` — the items in display order while a question is open (`data-testid="ordering-host-items"`); `OrderingView({items, correctOrder?, distribution?, meanPositions?, accuracy, invalidKey?, compact?})` — results: correct order, one bar per "k out of place" bucket, and the room's order sorted by mean position (`docs/plans/t7-ordering.md` §6.8). Colours from `--ordering-correct` / `--ordering-bar` (fallbacks until T9). |
+| `OrderingEditor.tsx` | `OrderingEditor({state, grading, onChange})` — ordering authoring (§6.9): item rows typed in the **correct** order (move up/down, remove, add; 3–6), partial-credit checkbox and a "Players see" preview of the stored shuffle with **Shuffle again**. Pure helpers the page uses: `orderingFromQuestion`, `orderingToPayload`, `orderingProblems`, `shuffleDisplay` (never the identity; "submit as shown" worth ≤ half), `longestRunLength`. Moves keep each item's display slot unless that breaks the shuffle rule. Admin copy: `frontend/admin/src/components/OrderingEditor.tsx`. |
 | `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin and host — keep in sync. |
 | `ImagePicker.tsx` | `ImagePicker({courseId, value, onChange, label?})` — choose a question image (T8 §3 contract): the chosen thumbnail with Choose / Change / Remove, and a dialog listing the course's images 24 per page (`listImages`) with **Upload new** (`uploadImage`, selected straight away). Returns only the id; `null` = no image. Escape or a backdrop click closes it. Copied between admin and host — keep in sync. |
 
@@ -66,10 +69,10 @@ network, sockets, or global state; both hotspot components fetch their image via
 - `frontend/host/src/pages/`:
   - `LoginPage.tsx`, `CoursePage.tsx`, `RosterPage.tsx` — `Button`, `Input`, `Card*`
   - `HomePage.tsx`, `SessionsPage.tsx` — `Button`, `Card*`
-  - `QuestionEditorPage.tsx` — `HotspotEditor`, `Button`, `Input`, `Card*`
+  - `QuestionEditorPage.tsx` — `HotspotEditor`, `OrderingEditor` (+ helpers), `Button`, `Input`, `Card*`
   - `game/LobbyPage.tsx` — `Button`
-  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`
-  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`
+  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `OrderingItems`
+  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`, `OrderingView`
 - Nothing outside the host app imports these; the player and admin apps have their own copies.
 
 ## Gotchas found while reading

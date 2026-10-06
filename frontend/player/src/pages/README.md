@@ -14,10 +14,10 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 | `LoginPage.tsx` | `/login` | OAuth2 return landing: exchanges the temp token, then returns to `/name/:code` using `sessionStorage.joinRoomCode`. |
 | `game/GameLayout.tsx` | `/game/:code` | Checks token expiry, opens the socket, joins as PLAYER, handles server events, exposes state via context, routes between child pages, shows a "host disconnected" banner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Room code, spinner, "N players in room". |
-| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit, hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit). Timer bar. Answer time measured from mount. |
+| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit, hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit), ordering (prompt + `OrderingPicker`: tap items in sequence, Undo / Reset, Submit order; the sequence resets when the question changes). Timer bar. Answer time measured from mount. |
 | `game/FeedbackPage.tsx` | `…/feedback` | Static "Answer locked in!" screen shown after `answer_received`. |
-| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings. |
-| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings). "Play Again" clears the token. |
+| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings; ordering labels from the server's `yourOrdering` ("Perfect order!", "k items out of place", "Not scored", "No answer") and lists your order (out-of-place items marked) and the correct order. |
+| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings; ordering rows join the items with →, and only the exact order counts as ✓). "Play Again" clears the token. |
 
 ## Key entry points
 
@@ -29,7 +29,7 @@ and five child pages render each phase. Routes are declared in `frontend/player/
   by `GameLayout` the moment `new_question` arrives (`docs/plans/t7-hotspot.md` H11), shared by
   `QuestionPage` and `ResultsPage`, revoked when the next question replaces it or on unmount.
 - `answer_data` shapes sent by `QuestionPage`: `{selectedIndex}`, `{selectedValue}`, `{text}`,
-  `{selectedIndices}`, `{x, y}` (hotspot). They must match `game_service.calculate_score` on the backend.
+  `{selectedIndices}`, `{x, y}` (hotspot), `{order}` (ordering: display indices, a full permutation). They must match `game_service.calculate_score` on the backend.
 - Socket events handled: `sync_state`, `player_joined`, `new_question`, `question_locked`,
   `question_unlocked`, `answer_received`, `question_results`, `game_over` (then disconnects),
   `host_disconnected`, `game_abandoned`, `error`. Emitted: `join_room` (every connect), `submit_answer`.
@@ -38,6 +38,7 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 
 - `frontend/player/src/lib/` — `api`, `isTokenExpired`, `loadImageUrl`.
 - `frontend/player/src/components/HotspotCanvas.tsx` — hotspot canvas and `useImageUrl`.
+- `frontend/player/src/components/OrderingPicker.tsx` — `OrderingPicker` (answering) and `OrderingList` (results).
 - `frontend/player/src/components/ui/` — `Button`, `Card*`, `Input`, `TimerBar`.
 - `frontend/player/src/types/game.ts` — payload types. npm: `react-router-dom`, `socket.io-client`.
 - Backend `/api/auth/*`, `/api/game/rooms/*` and the Socket.io protocol (`backend/app/websocket/`).
