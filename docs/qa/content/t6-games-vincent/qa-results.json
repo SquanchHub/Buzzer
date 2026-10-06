@@ -1,0 +1,89 @@
+{
+  "results": [
+    {
+      "flow": "F1 import classroom game via Admin UI (+ question list renders)",
+      "role": "admin",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F2 import party game via Host UI (+ editor shows imported hotspot)",
+      "role": "host",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F3 play party game: Ada all correct, Bo all wrong (13 questions)",
+      "role": "host+player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4 play classroom game: Ada all correct, Bo all wrong (13 questions)",
+      "role": "host+player",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F5 host downloads report of a sample-game session",
+      "role": "host",
+      "origin": "http://localhost:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F1 import classroom game via Admin UI (+ question list renders)",
+      "role": "admin",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F2 import party game via Host UI (+ editor shows imported hotspot)",
+      "role": "host",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F3 play party game: Ada all correct, Bo all wrong (13 questions)",
+      "role": "host+player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F4 play classroom game: Ada all correct, Bo all wrong (13 questions)",
+      "role": "host+player",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "flow": "F5 host downloads report of a sample-game session",
+      "role": "host",
+      "origin": "http://127.0.0.1:8080",
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "problems": {
+    "localhost/admin": [],
+    "localhost/host": [],
+    "localhost/party/player-Ada": [],
+    "localhost/party/player-Bo": [],
+    "localhost/classroom/player-Ada": [],
+    "localhost/classroom/player-Bo": [],
+    "127/admin": [],
+    "127/host": [],
+    "127/party/player-Ada": [],
+    "127/party/player-Bo": [],
+    "127/classroom/player-Ada": [],
+    "127/classroom/player-Bo": []
+  },
+  "notes": []
+}
