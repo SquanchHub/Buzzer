@@ -50,11 +50,16 @@ export function useGame(): GameContextValue {
 export default function GameLayout() {
   const { code = '' } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  // navigate changes identity on every route change; the socket effect reads it through
+  // this ref so it depends only on `code` and one socket lives for the whole game.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const socketRef = useRef<Socket | null>(null);
   // Ref mirrors phase so socket event closures (registered once) can read current value.
   const phaseRef = useRef<PlayerPhase>('lobby');
 
   const [phase, setPhase] = useState<PlayerPhase>('lobby');
+  phaseRef.current = phase;
   const [gameStatus, setGameStatus] = useState<'LOBBY' | 'IN_PROGRESS'>('LOBBY');
   const [playerCount, setPlayerCount] = useState(0);
   const [hostDisconnected, setHostDisconnected] = useState(false);
@@ -73,11 +78,11 @@ export default function GameLayout() {
     const token = localStorage.getItem('token');
     if (!token || isTokenExpired(token)) {
       localStorage.removeItem('token');
-      navigate(code ? `/name/${code}` : '/join', { replace: true });
+      navigateRef.current(code ? `/name/${code}` : '/join', { replace: true });
       return;
     }
     if (!code) {
-      navigate('/join', { replace: true });
+      navigateRef.current('/join', { replace: true });
       return;
     }
 
@@ -107,11 +112,17 @@ export default function GameLayout() {
       if (data.status === 'LOBBY') {
         setGameStatus('LOBBY');
         setPhase('lobby');
-        navigate(`/game/${code}/lobby`, { replace: true });
+        navigateRef.current(`/game/${code}/lobby`, { replace: true });
       } else if (data.status === 'IN_PROGRESS') {
         // Game already running — update state but don't navigate; new_question
         // (or question_results) will drive routing to the correct page.
         setGameStatus('IN_PROGRESS');
+        // Rejoined after answering (reload or reconnect): the answer is already in, so
+        // go to the waiting screen. An unanswered open question is re-sent as new_question.
+        if (data.hasAnswered && phaseRef.current !== 'results') {
+          setPhase('feedback');
+          navigateRef.current(`/game/${code}/feedback`, { replace: true });
+        }
       }
     });
 
@@ -154,7 +165,7 @@ export default function GameLayout() {
       setQuestionResults(null);
       setHostDisconnected(false);
       setPhase('question');
-      navigate(`/game/${code}/question`);
+      navigateRef.current(`/game/${code}/question`);
     });
 
     sock.on('question_locked', () => {
@@ -169,20 +180,20 @@ export default function GameLayout() {
       if (data.alreadyAnswered) return; // ignore duplicate-submit echo
       setAnswerResult(data);
       setPhase('feedback');
-      navigate(`/game/${code}/feedback`);
+      navigateRef.current(`/game/${code}/feedback`);
     });
 
     sock.on('question_results', (data: PlayerResultsPayload) => {
       setQuestionResults(data);
       setPhase('results');
-      navigate(`/game/${code}/results`);
+      navigateRef.current(`/game/${code}/results`);
     });
 
     sock.on('game_over', (data: PlayerGameOverPayload) => {
       phaseRef.current = 'gameover';
       setGameOver(data);
       setPhase('gameover');
-      navigate(`/game/${code}/gameover`);
+      navigateRef.current(`/game/${code}/gameover`);
       sock.disconnect();
     });
 
@@ -191,7 +202,7 @@ export default function GameLayout() {
     });
 
     sock.on('game_abandoned', () => {
-      navigate('/join', { replace: true });
+      navigateRef.current('/join', { replace: true });
     });
 
     sock.on('error', (data: { message: string }) => {
@@ -204,7 +215,7 @@ export default function GameLayout() {
       sock.disconnect();
       socketRef.current = null;
     };
-  }, [code, navigate]);
+  }, [code]);
 
   // Release the hotspot image only when the layout unmounts. Not in the socket
   // effect's cleanup: `navigate` changes on every route change, so that effect

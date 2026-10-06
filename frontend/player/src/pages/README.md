@@ -50,12 +50,10 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 
 ## Gotchas found while reading
 
-- **The socket reconnects on every page change.** `GameLayout`'s socket effect depends on
-  `[code, navigate]`, and with `BrowserRouter` `navigate` changes identity on each navigation, so
-  the effect tears down and reopens the socket (16 connections for one player in a 4-question
-  game, measured); each reconnect re-sends `join_room`. Anything placed in that effect's cleanup
-  runs on every navigation — which is why the hotspot image is released in a separate
-  unmount-only effect. Pre-existing; not fixed by T7.
+- **One socket per game.** `GameLayout`'s socket effect depends only on `[code]`; `navigate` is
+  read through `navigateRef` (it changes identity on every route change, which used to reopen the
+  socket and lose answers sent just after `new_question`). Keep new route-dependent values out of
+  that effect's dependency list the same way. `tests/e2e/test_player_socket.py` guards this.
 
 - **Any `error` event ends the game UI.** `GameLayout` swaps in a full-screen error with only
   "Back to Join", and clears it only on socket reconnect. A normal race, such as submitting just
@@ -69,8 +67,8 @@ and five child pages render each phase. Routes are declared in `frontend/player/
   but the backend's `is_correct` requires full points, so partial credit (MC or multi-select)
   shows "Correct!". Also, `ResultsPage` shows the correct answer only for fill-in-the-blank, and
   `describeAnswer` has no multi-select case.
-- **Reconnect gaps.** `sync_state`'s `currentQuestion`/`hasAnswered`/`yourScore` are ignored
-  (and missing from the TS type). A reload on `/results`, or during a locked question, shows
+- **Reconnect gaps.** `sync_state`'s `hasAnswered` sends a rejoining player to the waiting
+  screen; `currentQuestion` (raw snake_case, not a `QuestionPayload`) and `yourScore` are still ignored. A reload on `/results`, or during a locked question, shows
   "Loading…" until the next phase. A reload on `/gameover` shows "This game is not accepting
   players".
 - **The player never sees the prompt.** `QuestionPage` renders options but not the prompt (it
