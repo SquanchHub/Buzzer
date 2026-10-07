@@ -123,6 +123,12 @@ body::before {
 .slab :focus-visible {
   outline-color: rgb(var(--canvas));
 }
+/* Night: a cream slab overpowered the dark canvas (t9-theming.md §7.4 critique), so inside
+ * the slab `ink` and `canvas` swap to the raised surface and the cream line. */
+:root[data-theme='dark'] .slab {
+  --ink: var(--surface);
+  --canvas: var(--line);
+}
 
 /* Riso halftone dots on saturated fills (S2). */
 .halftone {

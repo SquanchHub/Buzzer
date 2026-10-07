@@ -104,6 +104,10 @@ TEXT_PAIRS = (
     + [("on-fill", fill, None) for fill in FILLS]
     + [(fg, (fill, a, bg), None) for fg, fill, a in TINTS for bg in ("surface", "canvas")]
     + [("canvas", "ink", None), (("canvas", 0.7, "ink"), "ink", None)]
+    # Admin slab in Night remaps ink -> surface and canvas -> line (§7.4); the pairs hold in
+    # Paper too, so both themes check them.
+    + [("line", "surface", None), (("line", 0.7, "surface"), "surface", None),
+       ("surface", "line", None)]
 )
 UI_PAIRS = [("focus", bg) for bg in BACKDROPS] + [
     ("canvas", "ink"),

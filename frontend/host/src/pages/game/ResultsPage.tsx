@@ -152,14 +152,14 @@ function AnswerBarChart({ bars, totalAnswered, totalPlayers }: BarChartProps) {
             )}
             {/* Every option keeps its ink; the answer is marked by a stamp, never by dimming. */}
             <div className="flex-1 h-14 rounded-2xl border-2 border-line bg-sunken overflow-hidden">
-              <div
-                className={`h-full flex items-center justify-end pr-4 border-r-2 border-line transition-all duration-500 halftone ${OPT_BG[bar.ink % 8]} ${bar.count === 0 ? 'border-r-0' : ''}`}
-                style={{ width: `${Math.max(pct, bar.count > 0 ? 6 : 0)}%` }}
-              >
-                {bar.count > 0 && (
+              {bar.count > 0 && (
+                <div
+                  className={`h-full flex items-center justify-end pr-4 border-r-2 border-line transition-all duration-500 halftone ${OPT_BG[bar.ink % 8]}`}
+                  style={{ width: `${Math.max(pct, 6)}%` }}
+                >
                   <span className="font-mono text-2xl font-extrabold text-on-fill">{bar.count}</span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
             <span className="w-40 shrink-0">
               {bar.correct === true ? (

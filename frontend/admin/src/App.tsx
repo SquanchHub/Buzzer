@@ -57,7 +57,7 @@ function AdminLayout() {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="slab sticky top-0 h-screen w-56 shrink-0 bg-ink text-canvas flex flex-col">
+      <aside className="slab sticky top-0 h-screen w-56 shrink-0 bg-ink text-canvas border-r-2 border-line flex flex-col">
         <div className="px-5 py-5">
           <p className="font-display text-2xl font-extrabold leading-none tracking-tight">
             buzzer<span className="text-accent">.</span>

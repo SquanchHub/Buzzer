@@ -293,12 +293,12 @@ export default function GameOverPage() {
       {/* Histogram */}
       <div className="w-full max-w-3xl">
         <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-soft text-center mb-4">Score distribution</p>
-        <div className="flex items-end gap-2 h-48">
+        <div className="flex items-start gap-2">
           {buckets.map((bucket, i) => {
             const heightPct = (bucket.count / maxCount) * 100;
             return (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="font-mono text-ink text-base font-extrabold">
+                <span className="h-6 font-mono text-ink text-base font-extrabold">
                   {bucket.count > 0 ? bucket.count : ''}
                 </span>
                 <div className="w-full border-b-2 border-line relative" style={{ height: '160px' }}>
@@ -307,7 +307,7 @@ export default function GameOverPage() {
                     style={{ height: `${Math.max(heightPct, bucket.count > 0 ? 4 : 0)}%` }}
                   />
                 </div>
-                <span className="font-mono text-ink-soft text-xs">{bucket.label}</span>
+                <span className="font-mono text-ink-soft text-[11px] text-center leading-tight">{bucket.label}</span>
               </div>
             );
           })}
