@@ -41,9 +41,10 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
 - `npm run build` builds all three into `frontend/*/dist/`, which nginx (`docker compose up`) serves
   at `localhost:8080`. Some behaviour (shared origin, admin→host links, WebSocket through nginx)
   only matches production there.
-- CI runs `npm install` and `tsc --noEmit` for each app on every merge request, and
-  `frontend-theme-tokens` (`tests/unit/test_theme_tokens.py`: no raw palette utilities or colour
-  literals, identical token blocks, WCAG AA contrast for every token pair).
+- CI runs `npm install` and `tsc --noEmit` for each app on every merge request. Run
+  `pytest tests/unit/test_theme_tokens.py` locally after styling changes: it checks for raw
+  palette utilities and colour literals, identical token blocks, and WCAG AA contrast for every
+  token pair.
 
 ## Gotchas collected from the app READMEs
 
@@ -62,7 +63,7 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
 - **One token for three apps:** on the nginx origin, signing in or joining as a guest in one app
   replaces the token in the others; nothing refreshes expired tokens.
 - **Tokens only (T9):** raw palette utilities (`bg-slate-800`), hex/`rgb()` literals and template
-  class names (`` `bg-opt-${n}` ``) fail CI; use static class maps. Canvas code reads colours with
+  class names (`` `bg-opt-${n}` ``) fail `tests/unit/test_theme_tokens.py`; use static class maps. Canvas code reads colours with
   `cssColor('--token')` and must depend on `useTheme()` so a toggle repaints. The token block must
   stay byte-identical in all three `index.css` files.
 - **Fragile live screens** in host and player: socket `error` events replace the whole UI, and

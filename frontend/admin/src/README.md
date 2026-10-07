@@ -51,6 +51,6 @@ has its own README; this file covers how they fit and the top-level files.
 - Tokens are shared with the host and player apps via the same `localStorage` key on the nginx origin.
 - Write `…` / `·` / `±` as characters in JSX text: `\u2026` escapes only work inside JS strings
   (T9 fixed the pages that rendered them literally).
-- Colours are T9 tokens only; CI's `frontend-theme-tokens` job rejects raw palette utilities.
+- Colours are T9 tokens only; `tests/unit/test_theme_tokens.py` rejects raw palette utilities.
 - Roster, game and question management and the hotspot editor are copied into the host app
   (T4 phase 2, T7); fixes must be repeated in both copies.

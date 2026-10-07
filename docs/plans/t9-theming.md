@@ -229,9 +229,9 @@ screenshots show poor density, admin body falls back to the system stack (a one-
 6. **Palette replaced.** Each `tailwind.config.ts` sets `colors:` directly under `theme` (not
    under `extend`).
 
-CI gets a new `frontend-theme-tokens` job in stage `lint` (python:3.12-slim,
-`pip install pytest`, `pytest tests/unit/test_theme_tokens.py -q`) with the same MR-only rule as
-the other jobs.
+The file needs only the standard library and pytest (`pytest tests/unit/test_theme_tokens.py -q`).
+*(Dropped at push time: a planned `frontend-theme-tokens` CI job. Rubric R2 forbids altering the
+pipeline, so these tests run locally and with the rest of `tests/unit`.)*
 
 ### D10. Canvas drawing reads tokens at draw time
 
@@ -614,7 +614,7 @@ Fail the review for any of these:
 
 - `tests/unit/test_theme_tokens.py` (new), `tests/e2e/test_theme.py` (new);
 - `scripts/ui_screenshots.py` (new);
-- `.gitlab-ci.yml` (new job).
+- ~~`.gitlab-ci.yml` (new job)~~ — dropped (R2: the pipeline is not altered).
 
 **Docs:**
 
@@ -637,7 +637,7 @@ Fail the review for any of these:
 5. `feat(theme): host screens` (including the T7/T8 editors and canvases).
 6. `feat(theme): admin screens`, which also fixes the literal escapes. After this, unit tests
    1–3 pass and all e2e pass.
-7. `ci: theme token check`.
+7. ~~`ci: theme token check`~~ — dropped before push (R2).
 8. `docs: T9 after screenshots, READMEs, session log`.
 
 A `mean-review` pass runs before step 8, and its fixes go into their own commits.
@@ -713,5 +713,7 @@ A `mean-review` pass runs before step 8, and its fixes go into their own commits
     drawn bitmap by 4px and shifted `HotspotEditor`'s click-to-place by the border width. A ring
     is a box-shadow, so it leaves layout and `getBoundingClientRect()` alone.
   - **Result bars:** a zero count renders no fill. Before, the `pr-4` padding drew a 16px sliver.
+  - **No CI job.** The planned `frontend-theme-tokens` job was removed before the push: R2 says
+    the pipeline must not be altered, and the user did not ask for a pipeline change.
   - **Screenshots** are saved as 256-colour PNGs. The paper grain defeats PNG compression, and
     quantising halves the size with no visible change.

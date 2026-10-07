@@ -41,7 +41,7 @@ unchanged copies of the host app's components. Pages otherwise build their own t
 
 ## Gotchas found while reading
 
-- **Tokens only (T9).** Raw palette utilities and colour literals fail CI (`frontend-theme-tokens`);
+- **Tokens only (T9).** Raw palette utilities and colour literals fail `tests/unit/test_theme_tokens.py`;
   the hotspot editor canvas reads `cssColor()` and repaints on `useTheme()`.
 - **Copied, not shared.** These three files are byte-for-byte identical to
   `frontend/host/src/components/ui/`; the player app's `button.tsx` differs (larger padding,
