@@ -368,3 +368,4 @@ prompting it.
 ### Branch: `docs/t10-vincent`
 
 - **2026-10-06, 21:45–21:55** — Wrote my T10 individual document (the four sections above the session log) from my commits, design docs, `ai_log/` sessions and chat histories: codebase organization and game-round data flow, the Elephant/Goldfish process and what each Goldfish changed, an AI-usage account per session, and best practices around READMEs, skills, hooks, memory and context management. Branched from `feat/t9-theming` so the T9 screenshots it references exist.
+- **2026-10-06, 22:25–23:05** — Got this branch ready to merge after T9: merged `origin/feat/t9-theming` (which already carries main's player socket-reconnect fix) into it, then checked that main → T9 → T10 merges with no conflicts.
