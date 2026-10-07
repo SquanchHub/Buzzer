@@ -77,24 +77,24 @@ export default function HomePage() {
   return (
     <div className="flex flex-col items-center gap-4">
       {activeSessions.length > 0 && (
-        <Card className="w-full max-w-lg border-amber-500/40">
+        <Card className="w-full max-w-lg border-warning">
           <CardHeader>
-            <h2 className="text-lg font-semibold text-amber-400">Active Sessions</h2>
-            <p className="text-slate-400 text-sm">You have running games — rejoin one or create a new room below.</p>
+            <h2 className="text-lg font-semibold text-warning-ink">Active Sessions</h2>
+            <p className="text-ink-muted text-sm">You have running games — rejoin one or create a new room below.</p>
           </CardHeader>
           <CardContent className="space-y-2">
             {activeSessions.map(s => (
               <div
                 key={s.session_id}
-                className="flex items-center justify-between rounded-lg bg-slate-800 border border-slate-700 px-4 py-3"
+                className="flex items-center justify-between rounded-lg bg-surface border border-line-soft px-4 py-3"
               >
                 <div>
-                  <p className="text-slate-100 font-medium">{s.game_title}</p>
-                  <p className="text-slate-400 text-sm">{s.course_name} · {s.course_semester}</p>
-                  <p className="text-slate-500 text-xs mt-0.5">
-                    Room <span className="font-mono text-slate-300">{s.room_code}</span>
+                  <p className="text-ink font-medium">{s.game_title}</p>
+                  <p className="text-ink-muted text-sm">{s.course_name} · {s.course_semester}</p>
+                  <p className="text-ink-soft text-xs mt-0.5">
+                    Room <span className="font-mono text-ink-muted">{s.room_code}</span>
                     {' · '}
-                    <span className={s.status === 'IN_PROGRESS' ? 'text-green-400' : 'text-amber-400'}>
+                    <span className={s.status === 'IN_PROGRESS' ? 'text-success-ink' : 'text-warning-ink'}>
                       {s.status === 'IN_PROGRESS' ? 'In Progress' : 'Lobby'}
                     </span>
                   </p>
@@ -102,7 +102,7 @@ export default function HomePage() {
                 <div className="flex items-center gap-2 shrink-0">
                   {confirmDelete === s.session_id ? (
                     <>
-                      <span className="text-red-400 text-xs">Delete all data?</span>
+                      <span className="text-danger-ink text-xs">Delete all data?</span>
                       <Button size="sm" variant="destructive" onClick={() => deleteSession(s.session_id)}>
                         Confirm
                       </Button>
@@ -129,16 +129,16 @@ export default function HomePage() {
 
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <h1 className="text-2xl font-bold text-slate-100">Create Game Room</h1>
-          <p className="text-slate-400 text-sm mt-1">Select a course and quiz to begin</p>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">Create Game Room</h1>
+          <p className="text-ink-muted text-sm mt-1">Select a course and quiz to begin</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Course</label>
+            <label className="block text-sm font-medium text-ink-muted mb-1">Course</label>
             <select
               value={courseId}
               onChange={e => setCourseId(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-focus"
             >
               <option value="">Select a course…</option>
               {courses.map(c => (
@@ -147,11 +147,11 @@ export default function HomePage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Quiz</label>
+            <label className="block text-sm font-medium text-ink-muted mb-1">Quiz</label>
             <select
               value={gameId}
               onChange={e => setGameId(Number(e.target.value))}
-              className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-focus"
             >
               <option value="">{courseId === '' ? 'Select a course first' : 'Select a quiz…'}</option>
               {courseGames.map(g => (
@@ -160,11 +160,11 @@ export default function HomePage() {
             </select>
           </div>
           {courseId !== '' && courseGames.length === 0 && (
-            <p className="text-slate-500 text-sm">
+            <p className="text-ink-soft text-sm">
               No quizzes you can run in this course yet — create one from the course page below.
             </p>
           )}
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-danger-ink text-sm">{error}</p>}
           <Button
             className="w-full"
             size="lg"
@@ -178,19 +178,19 @@ export default function HomePage() {
 
       {courses.length > 0 && (
         <section className="w-full max-w-lg">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2">Your courses</h2>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-soft mb-2">Your courses</h2>
           <div className="space-y-2">
             {courses.map(c => (
               <Link
                 key={c.id}
                 to={`/courses/${c.id}`}
-                className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3 hover:border-indigo-500 hover:bg-slate-800 transition-colors"
+                className="flex items-center justify-between rounded-lg border border-line-soft bg-surface px-4 py-3 hover:border-accent hover:bg-surface transition-colors"
               >
                 <div>
-                  <p className="text-slate-100 font-medium">{c.name}</p>
-                  <p className="text-slate-400 text-sm">{c.semester}</p>
+                  <p className="text-ink font-medium">{c.name}</p>
+                  <p className="text-ink-muted text-sm">{c.semester}</p>
                 </div>
-                <span className="text-indigo-400 text-sm">Games &amp; roster →</span>
+                <span className="text-accent-ink text-sm">Games &amp; roster →</span>
               </Link>
             ))}
           </div>

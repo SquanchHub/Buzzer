@@ -5,6 +5,12 @@ import { TimerBar } from '../../components/ui/TimerBar';
 import { HotspotView } from '../../components/HotspotView';
 import { OrderingItems } from '../../components/OrderingView';
 import { ImageThumb } from '../../components/ImageThumb';
+import { Stamp } from '../../components/ui/Stamp';
+
+// Static maps so Tailwind sees every class (docs/plans/t9-theming.md D10a).
+const OPT_BORDER = ['border-opt-1', 'border-opt-2', 'border-opt-3', 'border-opt-4', 'border-opt-5', 'border-opt-6', 'border-opt-7', 'border-opt-8'];
+const OPT_BG = ['bg-opt-1', 'bg-opt-2', 'bg-opt-3', 'bg-opt-4', 'bg-opt-5', 'bg-opt-6', 'bg-opt-7', 'bg-opt-8'];
+const CHIP = 'rounded-full border-2 border-line px-3 py-1';
 
 const optionLabel = (i: number) => String.fromCharCode(65 + i); // A, B, C, …
 
@@ -20,7 +26,7 @@ export default function QuestionPage() {
   if (!currentQuestion) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Loading question…</p>
+        <p className="font-mono text-lg font-bold uppercase tracking-[0.2em] text-ink-muted">Loading question…</p>
       </div>
     );
   }
@@ -50,23 +56,18 @@ export default function QuestionPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8 gap-8">
-      <div className="flex items-center gap-3 text-sm uppercase tracking-wider">
-        <span className="text-slate-400">
-          Question {currentQuestion.questionNumber} of {currentQuestion.totalQuestions}
+      <div className="flex flex-wrap items-center justify-center gap-2 font-mono text-sm font-bold uppercase tracking-[0.15em]">
+        <span className={`${CHIP} bg-ink text-canvas`}>
+          Q {currentQuestion.questionNumber} / {currentQuestion.totalQuestions}
         </span>
-        <span className="text-slate-600">·</span>
-        <span className="text-slate-400">{typeLabel[currentQuestion.type] ?? currentQuestion.type}</span>
-        <span className="text-slate-600">·</span>
-        <span className={currentQuestion.gradingType === 'COMPLETENESS' ? 'text-amber-400' : 'text-indigo-400'}>
+        <span className={`${CHIP} bg-surface text-ink`}>{typeLabel[currentQuestion.type] ?? currentQuestion.type}</span>
+        <span className={`${CHIP} ${currentQuestion.gradingType === 'COMPLETENESS' ? 'bg-warning/20 text-warning-ink' : 'bg-accent/15 text-accent-ink'}`}>
           {currentQuestion.gradingType === 'COMPLETENESS' ? 'Participation' : 'Accuracy'}
         </span>
         {currentQuestion.type === 'fill_in_the_blank' && currentQuestion.gradingType === 'ACCURACY' && (
-          <>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400 normal-case">
-              {editDistanceLabel(currentQuestion.editDistance ?? 0)}
-            </span>
-          </>
+          <span className={`${CHIP} bg-surface text-ink-muted normal-case tracking-normal`}>
+            {editDistanceLabel(currentQuestion.editDistance ?? 0)}
+          </span>
         )}
       </div>
 
@@ -89,7 +90,7 @@ export default function QuestionPage() {
       )}
 
       {!questionLocked && (
-        <h2 className="text-4xl font-bold text-slate-100 text-center max-w-3xl leading-tight">
+        <h2 className="font-display text-5xl md:text-6xl font-extrabold tracking-tight text-ink text-center max-w-5xl leading-[1.05]">
           {currentQuestion.prompt}
         </h2>
       )}
@@ -101,15 +102,17 @@ export default function QuestionPage() {
           {(currentQuestion.config.options ?? []).map((text, i) => {
             const id = optionImageIds[i];
             return (
-              <div key={i} className="flex flex-col gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+              <div key={i} className={`flex flex-col gap-2 rounded-2xl border-4 ${OPT_BORDER[i % 8]} bg-surface p-3 shadow-hard`}>
                 {typeof id === 'number' ? (
                   <ImageThumb imageId={id} alt={`Option ${optionLabel(i)}`} className="h-36 w-full" />
                 ) : (
-                  <span className="flex h-36 items-center justify-center text-center text-lg text-slate-200">{text}</span>
+                  <span className="flex h-36 items-center justify-center text-center text-lg text-ink">{text}</span>
                 )}
-                <span className="text-lg font-bold text-slate-100">
-                  {optionLabel(i)}
-                  {typeof id === 'number' && text.trim() && <span className="ml-2 font-medium text-slate-300">{text}</span>}
+                <span className="flex items-center text-lg font-bold text-ink">
+                  <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-line ${OPT_BG[i % 8]} font-mono text-on-fill`}>
+                    {optionLabel(i)}
+                  </span>
+                  {typeof id === 'number' && text.trim() && <span className="ml-2 font-medium text-ink-muted">{text}</span>}
                 </span>
               </div>
             );
@@ -134,10 +137,13 @@ export default function QuestionPage() {
         <OrderingItems items={currentQuestion.config.items ?? []} />
       )}
 
-      <div className="text-slate-300 text-xl">
-        {answeredCount} / {playerCount} answered
-        {allAnswered && <span className="ml-3 text-green-400 font-semibold">All answered!</span>}
-        {questionLocked && <span className="ml-3 text-amber-400 font-semibold">· Answers locked</span>}
+      <div className="flex flex-wrap items-center justify-center gap-6">
+        <p className="text-ink-muted text-xl font-semibold">
+          <span className="font-mono text-4xl font-extrabold text-ink">{answeredCount}</span>
+          <span className="font-mono text-2xl font-bold text-ink-soft"> / {playerCount}</span> answered
+        </p>
+        {allAnswered && <Stamp tone="success" className="text-xl">All in!</Stamp>}
+        {questionLocked && <Stamp tone="warning" className="text-xl">Locked</Stamp>}
       </div>
 
       <div className="flex gap-4">
@@ -145,7 +151,7 @@ export default function QuestionPage() {
           size="lg"
           variant="outline"
           onClick={emitLockQuestion}
-          className={`px-10 ${questionLocked ? 'border-amber-500 text-amber-400 hover:bg-amber-500/10' : ''}`}
+          className={`px-10 ${questionLocked ? 'bg-warning text-on-fill hover:bg-warning' : ''}`}
         >
           {questionLocked ? 'Unlock Question' : 'Lock Question'}
         </Button>

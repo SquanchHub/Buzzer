@@ -4,10 +4,25 @@ import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
 import { OrderingView } from '../../components/OrderingView';
 import { ImageThumb } from '../../components/ImageThumb';
+import { Stamp } from '../../components/ui/Stamp';
 import { optionImageId, optionText } from '../../lib/options';
 import type { AnswerReveal } from '../../types/game';
 
 const RESULTS_DISPLAY_SECONDS = 10;
+
+// Option inks, matching the player's tiles (static so Tailwind sees them; D10a).
+const OPT_BG = ['bg-opt-1', 'bg-opt-2', 'bg-opt-3', 'bg-opt-4', 'bg-opt-5', 'bg-opt-6', 'bg-opt-7', 'bg-opt-8'];
+// True / False use the same inks as the phone's True (opt-4) and False (opt-1) tiles.
+const TRUE_INK = 3;
+const FALSE_INK = 0;
+
+function AnsweredCount({ answered, total }: { answered: number; total: number }) {
+  return (
+    <p className="font-mono text-base font-bold uppercase tracking-[0.15em] text-ink-soft">
+      <span className="text-ink">{answered}</span> / {total} answered
+    </p>
+  );
+}
 
 function optionLabel(i: number): string {
   return String.fromCharCode(65 + i);
@@ -76,37 +91,35 @@ function WordCloud({ distribution, answerReveal, totalAnswered, totalPlayers }: 
   return (
     <div className="w-full max-w-3xl flex flex-col gap-4">
       {isAccuracy && acceptedAnswers.length > 0 && (
-        <p className="text-center text-slate-400 text-base">
+        <p className="text-center text-ink-muted text-xl">
           Correct answer:{' '}
-          <span className="text-green-400 font-semibold">
+          <span className="text-success-ink font-bold">
             {(answerReveal as { acceptedAnswers: string[] }).acceptedAnswers.join(' / ')}
             {editDistance > 0 && (
-              <span className="text-slate-500 font-normal text-sm ml-1">(±{editDistance})</span>
+              <span className="text-ink-soft font-normal text-sm ml-1">(±{editDistance})</span>
             )}
           </span>
         </p>
       )}
 
-      <div className="flex flex-wrap gap-x-5 gap-y-3 justify-center items-center min-h-32 p-4 bg-slate-800/40 rounded-2xl">
+      <div className="flex flex-wrap gap-x-6 gap-y-3 justify-center items-center min-h-32 p-6 bg-surface rounded-3xl border-2 border-line shadow-hard">
         {entries.map(([word, count]) => (
           <span
             key={word}
             title={`${count} player${count !== 1 ? 's' : ''}`}
-            className={`${sizeClass(count)} transition-colors ${
-              isCorrectWord(word) ? 'text-green-400' : 'text-slate-300'
+            className={`${sizeClass(count)} font-display transition-colors ${
+              isCorrectWord(word) ? 'text-success-ink underline decoration-success decoration-4 underline-offset-4' : 'text-ink-muted'
             }`}
           >
             {word}
           </span>
         ))}
         {entries.length === 0 && (
-          <p className="text-slate-600 text-sm">No answers submitted</p>
+          <p className="text-ink-soft text-sm">No answers submitted</p>
         )}
       </div>
 
-      <p className="text-slate-500 text-sm text-right">
-        {totalAnswered} / {totalPlayers} answered
-      </p>
+      <div className="text-right"><AnsweredCount answered={totalAnswered} total={totalPlayers} /></div>
     </div>
   );
 }
@@ -116,7 +129,7 @@ function WordCloud({ distribution, answerReveal, totalAnswered, totalPlayers }: 
 // ---------------------------------------------------------------------------
 
 interface BarChartProps {
-  bars: { label: string; count: number; correct: boolean | null; imageId?: number | null }[];
+  bars: { label: string; count: number; correct: boolean | null; ink: number; imageId?: number | null }[];
   totalAnswered: number;
   totalPlayers: number;
 }
@@ -125,47 +138,41 @@ function AnswerBarChart({ bars, totalAnswered, totalPlayers }: BarChartProps) {
   const maxCount = Math.max(...bars.map(b => b.count), 1);
 
   return (
-    <div className="w-full max-w-2xl space-y-3">
+    <div className="w-full max-w-4xl space-y-4">
       {bars.map((bar, i) => {
         const pct = Math.round((bar.count / maxCount) * 100);
-        const barColor =
-          bar.correct === true
-            ? 'bg-green-500'
-            : bar.correct === false
-            ? 'bg-slate-600'
-            : 'bg-indigo-500';
 
         return (
-          <div key={i} className="flex items-center gap-3">
-            <span className="text-slate-300 font-bold font-mono min-w-[2rem] max-w-[12rem] text-right shrink-0 whitespace-nowrap overflow-hidden text-ellipsis">
+          <div key={i} className="flex items-center gap-4">
+            <span className="text-ink font-bold text-xl min-w-[2rem] max-w-[16rem] text-right shrink-0 whitespace-nowrap overflow-hidden text-ellipsis">
               {bar.label}
             </span>
             {typeof bar.imageId === 'number' && (
-              <ImageThumb imageId={bar.imageId} alt={bar.label} className="h-10 w-14 shrink-0" />
+              <ImageThumb imageId={bar.imageId} alt={bar.label} className="h-12 w-16 shrink-0" />
             )}
-            <div className="flex-1 bg-slate-800 rounded-full h-10 overflow-hidden">
+            {/* Every option keeps its ink; the answer is marked by a stamp, never by dimming. */}
+            <div className="flex-1 h-14 rounded-2xl border-2 border-line bg-sunken overflow-hidden">
               <div
-                className={`h-full rounded-full flex items-center justify-end pr-3 transition-all duration-500 ${barColor}`}
-                style={{ width: `${Math.max(pct, bar.count > 0 ? 4 : 0)}%` }}
+                className={`h-full flex items-center justify-end pr-4 border-r-2 border-line transition-all duration-500 halftone ${OPT_BG[bar.ink % 8]} ${bar.count === 0 ? 'border-r-0' : ''}`}
+                style={{ width: `${Math.max(pct, bar.count > 0 ? 6 : 0)}%` }}
               >
                 {bar.count > 0 && (
-                  <span className="text-white font-bold text-sm">{bar.count}</span>
+                  <span className="font-mono text-2xl font-extrabold text-on-fill">{bar.count}</span>
                 )}
               </div>
             </div>
-            {bar.correct === true && (
-              <span className="text-green-400 text-sm font-semibold shrink-0">✓ Correct</span>
-            )}
-            {bar.count === 0 && bar.correct !== true && (
-              <span className="text-slate-600 text-sm shrink-0">0</span>
-            )}
+            <span className="w-40 shrink-0">
+              {bar.correct === true ? (
+                <Stamp tone="success" className="text-lg">✓ Answer</Stamp>
+              ) : bar.count === 0 ? (
+                <span className="font-mono text-xl font-bold text-ink-soft">0</span>
+              ) : null}
+            </span>
           </div>
         );
       })}
 
-      <p className="text-slate-500 text-sm text-right pt-1">
-        {totalAnswered} / {totalPlayers} answered
-      </p>
+      <div className="text-right pt-1"><AnsweredCount answered={totalAnswered} total={totalPlayers} /></div>
     </div>
   );
 }
@@ -182,6 +189,7 @@ function buildBars(
       label: `${optionLabel(i)}  ${optionText(opts, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: reveal.correctIndices.includes(i),
+      ink: i,
       imageId: optionImageId(imageIds, i),
     }));
   }
@@ -192,14 +200,15 @@ function buildBars(
       label: `${optionLabel(i)}  ${optionText(opts, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: (reveal.answerPoints[i] ?? 0) > 0,
+      ink: i,
       imageId: optionImageId(imageIds, i),
     }));
   }
 
   if (reveal.type === 'true_false') {
     return [
-      { label: 'True', count: distribution['true'] ?? 0, correct: reveal.correctValue === true },
-      { label: 'False', count: distribution['false'] ?? 0, correct: reveal.correctValue === false },
+      { label: 'True', count: distribution['true'] ?? 0, correct: reveal.correctValue === true, ink: TRUE_INK },
+      { label: 'False', count: distribution['false'] ?? 0, correct: reveal.correctValue === false, ink: FALSE_INK },
     ];
   }
 
@@ -209,14 +218,15 @@ function buildBars(
       label: `${optionLabel(i)}  ${optionText(options, imageIds, i)}`,
       count: distribution[String(i)] ?? 0,
       correct: null,
+      ink: i,
       imageId: optionImageId(imageIds, i),
     }));
   }
 
   if ('true' in distribution || 'false' in distribution) {
     return [
-      { label: 'True', count: distribution['true'] ?? 0, correct: null },
-      { label: 'False', count: distribution['false'] ?? 0, correct: null },
+      { label: 'True', count: distribution['true'] ?? 0, correct: null, ink: TRUE_INK },
+      { label: 'False', count: distribution['false'] ?? 0, correct: null, ink: FALSE_INK },
     ];
   }
 
@@ -263,9 +273,12 @@ export default function ResultsPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8 gap-8">
-      <h2 className="text-3xl font-bold text-slate-100">
-        Question {currentQuestion?.questionNumber} Results
-      </h2>
+      <div className="flex flex-col items-center gap-3">
+        <p className="rounded-full border-2 border-line bg-ink px-4 py-1 font-mono text-sm font-bold uppercase tracking-[0.2em] text-canvas">
+          Q {currentQuestion?.questionNumber} · Results
+        </p>
+        <h2 className="sr-only">Question {currentQuestion?.questionNumber} Results</h2>
+      </div>
 
       {currentQuestion && (
         <div className="flex items-center justify-center gap-4 max-w-3xl">
@@ -277,7 +290,7 @@ export default function ResultsPage() {
               className="h-20 w-32 shrink-0"
             />
           )}
-          <p className="text-slate-300 text-xl text-center max-w-2xl">
+          <p className="font-display text-4xl font-extrabold tracking-tight text-ink text-center max-w-4xl leading-tight">
             {currentQuestion.prompt}
           </p>
         </div>
@@ -298,9 +311,7 @@ export default function ResultsPage() {
             }}
             maxHeightVh={50}
           />
-          <p className="mt-1 text-center text-slate-500 text-sm">
-            {questionResults.totalAnswered} / {questionResults.totalPlayers} answered
-          </p>
+          <div className="mt-2 text-center"><AnsweredCount answered={questionResults.totalAnswered} total={questionResults.totalPlayers} /></div>
         </div>
       ) : questionResults && isOrdering && currentQuestion ? (
         <div className="w-full flex flex-col items-center">
@@ -319,9 +330,7 @@ export default function ResultsPage() {
               !(questionResults.answerReveal.type === 'ordering' && questionResults.answerReveal.correctOrder)
             }
           />
-          <p className="mt-3 text-center text-slate-500 text-sm">
-            {questionResults.totalAnswered} / {questionResults.totalPlayers} answered
-          </p>
+          <div className="mt-3 text-center"><AnsweredCount answered={questionResults.totalAnswered} total={questionResults.totalPlayers} /></div>
         </div>
       ) : questionResults && isFitb ? (
         <WordCloud
@@ -343,7 +352,7 @@ export default function ResultsPage() {
           {isLast ? 'Show Final Results' : 'Next Question'}
         </Button>
         {autoAdvance && (
-          <p className="text-slate-500 text-sm tabular-nums">
+          <p className="font-mono text-sm font-bold uppercase tracking-[0.15em] text-ink-soft tabular-nums">
             Auto-advancing in {countdown}s
           </p>
         )}

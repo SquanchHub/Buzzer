@@ -20,7 +20,7 @@ interface Game {
 
 // Links styled like <Button variant="outline" size="sm"> (a <button> inside an <a> is invalid).
 const linkButton =
-  'inline-flex items-center justify-center rounded-lg font-semibold transition-colors border border-slate-600 text-slate-200 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-900 px-3 py-1.5 text-sm';
+  'inline-flex items-center justify-center rounded-lg font-semibold transition-colors border border-line-soft text-ink hover:bg-sunken focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2 focus:ring-offset-canvas px-3 py-1.5 text-sm';
 
 /** The delete confirmation names what is lost (T4 §6.3, D6). */
 function deletePrompt(g: Game): string {
@@ -123,15 +123,15 @@ export default function CoursePage() {
     }
   }
 
-  if (loading) return <p className="text-center text-slate-400">Loading course…</p>;
+  if (loading) return <p className="text-center text-ink-muted">Loading course…</p>;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link to="/home" className="text-sm text-slate-400 hover:text-slate-200">← Home</Link>
-          <h1 className="text-2xl font-bold text-slate-100">{course ? course.name : `Course ${id}`}</h1>
-          {course && <p className="text-slate-400 text-sm">{course.semester}</p>}
+          <Link to="/home" className="text-sm text-ink-muted hover:text-ink">← Home</Link>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">{course ? course.name : `Course ${id}`}</h1>
+          {course && <p className="text-ink-muted text-sm">{course.semester}</p>}
         </div>
         <div className="flex gap-2">
           <Link to={`/courses/${id}/images`} className={linkButton}>
@@ -143,12 +143,12 @@ export default function CoursePage() {
         </div>
       </div>
 
-      {error && <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-300">{error}</p>}
+      {error && <p className="rounded-lg border border-danger bg-danger/15 px-4 py-2 text-sm text-danger-ink">{error}</p>}
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-slate-100">Games</h2>
+            <h2 className="font-display text-xl font-extrabold text-ink">Games</h2>
             <div className="flex gap-2">
               <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={importGame} />
               <Button variant="outline" size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
@@ -162,7 +162,7 @@ export default function CoursePage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {showCreate && (
-            <form onSubmit={createGame} className="space-y-2 rounded-lg border border-slate-700 p-3">
+            <form onSubmit={createGame} className="space-y-2 rounded-lg border border-line-soft p-3">
               <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={255} />
               <textarea
                 placeholder="Description (optional)"
@@ -170,9 +170,9 @@ export default function CoursePage() {
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={5000}
                 rows={2}
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-2 focus:ring-focus"
               />
-              <label className="flex items-center gap-2 text-sm text-slate-300">
+              <label className="flex items-center gap-2 text-sm text-ink-muted">
                 Max players
                 <Input type="number" min={1} max={500} value={maxPlayers} onChange={(e) => setMaxPlayers(e.target.value)} className="w-28" />
               </label>
@@ -184,21 +184,21 @@ export default function CoursePage() {
           )}
 
           {games.length === 0 && !showCreate && (
-            <p className="text-slate-400 text-sm">No games you can run in this course yet. Create one or import a JSON file.</p>
+            <p className="text-ink-muted text-sm">No games you can run in this course yet. Create one or import a JSON file.</p>
           )}
 
           {games.map((g) => (
-            <div key={g.id} className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+            <div key={g.id} className="rounded-lg border border-line-soft bg-surface px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-medium text-slate-100">{g.title}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="font-medium text-ink">{g.title}</p>
+                  <p className="text-xs text-ink-muted">
                     {g.session_count === 1 ? '1 session' : `${g.session_count} sessions`} · Max {g.max_players} players
                   </p>
                 </div>
                 {confirmDelete === g.id ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-red-300">{deletePrompt(g)}</span>
+                    <span className="text-sm text-danger-ink">{deletePrompt(g)}</span>
                     <Button size="sm" variant="destructive" onClick={() => deleteGame(g)}>Delete</Button>
                     <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Button>
                   </div>
@@ -216,7 +216,7 @@ export default function CoursePage() {
                   </div>
                 )}
               </div>
-              {rowError?.id === g.id && <p className="mt-2 text-sm text-red-300">{rowError.message}</p>}
+              {rowError?.id === g.id && <p className="mt-2 text-sm text-danger-ink">{rowError.message}</p>}
             </div>
           ))}
         </CardContent>

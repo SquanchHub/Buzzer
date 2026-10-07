@@ -2,6 +2,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Users } from 'lucide-react';
 import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
+import { Ticket } from '../../components/ui/Ticket';
+import { cn } from '../../lib/utils';
 
 export default function LobbyPage() {
   const { roomCode, gameTitle, playerCount, emitAdvance, autoAdvance, setAutoAdvance } = useGame();
@@ -9,56 +11,71 @@ export default function LobbyPage() {
   const playerJoinUrl = `${window.location.origin}/player/join?code=${roomCode}`;
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8 gap-8">
+    <div className="min-h-screen flex flex-col items-center justify-center p-8 gap-10">
       {/* Quiz name */}
-      {gameTitle && (
-        <h1 className="text-3xl font-bold text-slate-100 text-center">{gameTitle}</h1>
-      )}
-
-      {/* Join instructions */}
-      <p className="text-slate-400 text-base uppercase tracking-widest">
-        Scan QR code or go to <span className="text-white">{window.location.host}/player</span>
-      </p>
+      <div className="flex flex-col items-center gap-3 text-center">
+        {gameTitle && (
+          <h1 className="font-display text-5xl font-extrabold tracking-tight text-ink max-w-4xl leading-tight">
+            {gameTitle}
+          </h1>
+        )}
+        {/* Join instructions */}
+        <p className="font-mono text-lg font-bold uppercase tracking-[0.2em] text-ink-muted">
+          Scan or go to <span className="text-ink underline decoration-accent decoration-4 underline-offset-4">{window.location.host}/player</span>
+        </p>
+      </div>
 
       {/* QR code + room code side by side */}
-      <div className="flex items-center gap-10">
-        <div className="bg-white rounded-2xl p-4">
-          <QRCodeSVG value={playerJoinUrl} size={200} />
+      <div className="flex flex-wrap items-center justify-center gap-12">
+        <div className="rounded-3xl border-2 border-line bg-qr p-5 shadow-hard-lg">
+          <QRCodeSVG value={playerJoinUrl} size={220} />
         </div>
-
-        <div className="text-center">
-          <p className="text-slate-400 text-xs uppercase tracking-widest mb-2">Room Code</p>
-          <div className="bg-slate-800 border-2 border-indigo-500 rounded-2xl px-10 py-5 inline-block">
-            <p className="text-8xl font-black tracking-widest text-white font-mono">{roomCode}</p>
-          </div>
-        </div>
+        <Ticket code={roomCode} size="lg" />
       </div>
 
       {/* Player count */}
-      <div className="flex items-center gap-3 text-slate-300 text-xl">
-        <Users className="w-6 h-6 text-indigo-400" />
-        <span>
-          {playerCount === 0
-            ? 'Waiting for players to join…'
-            : `${playerCount} player${playerCount !== 1 ? 's' : ''} joined`}
-        </span>
+      <div className="flex items-center gap-4 rounded-full border-2 border-line bg-surface px-6 py-2 shadow-hard">
+        <Users className="h-7 w-7 text-accent-ink" aria-hidden />
+        {playerCount === 0 ? (
+          <p className="font-mono text-xl font-bold uppercase tracking-[0.15em] text-ink-muted">
+            Waiting for players to join…
+          </p>
+        ) : (
+          <p className="text-2xl font-bold text-ink-muted">
+            <span className="font-mono text-4xl font-extrabold text-ink">{playerCount}</span>{' '}
+            player{playerCount !== 1 ? 's' : ''} joined
+          </p>
+        )}
       </div>
 
-      {/* Auto-advance toggle */}
+      {/* Auto-advance switch, in the theme toggle's pill language */}
       <button
-        className="flex items-center gap-3 group"
+        type="button"
+        role="switch"
+        aria-checked={autoAdvance}
+        className="flex items-center gap-3 group rounded-full"
         onClick={() => setAutoAdvance(!autoAdvance)}
       >
-        <div className={`w-12 h-6 rounded-full transition-colors relative ${autoAdvance ? 'bg-indigo-500' : 'bg-slate-600'}`}>
-          <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${autoAdvance ? 'translate-x-7' : 'translate-x-1'}`} />
-        </div>
-        <span className="text-slate-400 text-sm group-hover:text-slate-200 transition-colors select-none">
+        <span
+          className={cn(
+            'relative h-8 w-14 rounded-full border-2 border-line transition-colors',
+            autoAdvance ? 'bg-accent' : 'bg-sunken'
+          )}
+        >
+          <span
+            className={cn(
+              'absolute top-0.5 h-6 w-6 rounded-full border-2 border-line bg-surface transition-transform',
+              autoAdvance ? 'translate-x-6' : 'translate-x-0.5'
+            )}
+          />
+        </span>
+        <span className="text-ink-muted text-base font-semibold group-hover:text-ink transition-colors select-none">
           Auto-advance — run game hands-free
         </span>
       </button>
 
       {/* Start button */}
-      <Button size="lg" onClick={emitAdvance} disabled={playerCount === 0} className="px-12">
+      <Button size="lg" onClick={emitAdvance} disabled={playerCount === 0} className="px-14 text-xl">
         {playerCount === 0 ? 'Waiting for players…' : 'Start Game'}
       </Button>
     </div>
