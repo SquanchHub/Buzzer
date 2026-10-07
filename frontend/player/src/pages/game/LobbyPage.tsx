@@ -1,4 +1,6 @@
 import { useGame } from './GameLayout';
+import { Stamp } from '../../components/ui/Stamp';
+import { Ticket } from '../../components/ui/Ticket';
 
 export default function LobbyPage() {
   const { roomCode, playerCount, gameStatus } = useGame();
@@ -8,19 +10,18 @@ export default function LobbyPage() {
     : 'Waiting for host to start…';
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-6 text-center">
-      <div className="space-y-2">
-        <p className="text-slate-400 text-sm uppercase tracking-widest">Room</p>
-        <p className="text-4xl font-black font-mono tracking-widest text-white">{roomCode}</p>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <div className="flex justify-center">
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    <div className="min-h-[calc(100dvh-3rem)] flex flex-col items-center justify-center p-6 gap-8 text-center">
+      <Stamp tone="success" className="text-2xl">You're in</Stamp>
+      <Ticket code={roomCode} size="md" />
+      <div className="space-y-3">
+        <div className="flex justify-center gap-2" aria-hidden>
+          <span className="h-3 w-3 rounded-full bg-accent animate-bounce [animation-delay:-0.3s]" />
+          <span className="h-3 w-3 rounded-full bg-accent animate-bounce [animation-delay:-0.15s]" />
+          <span className="h-3 w-3 rounded-full bg-accent animate-bounce" />
         </div>
-        <p className="text-slate-300 text-lg font-medium">{statusText}</p>
-        <p className="text-slate-500 text-sm">
-          {playerCount} player{playerCount !== 1 ? 's' : ''} in room
+        <p className="font-display text-ink text-xl font-bold">{statusText}</p>
+        <p className="inline-flex items-center gap-2 rounded-full border-2 border-line bg-surface px-4 py-1 font-mono text-sm font-bold text-ink-muted">
+          <span className="text-ink">{playerCount}</span> player{playerCount !== 1 ? 's' : ''} in room
         </p>
       </div>
     </div>

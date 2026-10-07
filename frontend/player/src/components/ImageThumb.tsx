@@ -50,19 +50,19 @@ export function ImageThumb({ imageId, alt, className }: ImageThumbProps) {
   return (
     <div
       className={cn(
-        'flex items-center justify-center overflow-hidden rounded-md bg-slate-900/60',
+        'flex items-center justify-center overflow-hidden rounded-lg border-2 border-line bg-sunken',
         className,
       )}
     >
       {state.url ? (
         <img src={state.url} alt={alt} className="h-full w-full object-contain" />
       ) : state.failed ? (
-        <span className="flex flex-col items-center gap-1 text-xs text-slate-400">
+        <span className="flex flex-col items-center gap-1 text-xs text-ink-muted">
           <ImageOff size={18} aria-hidden="true" />
           Image unavailable
         </span>
       ) : (
-        <span className="text-xs text-slate-500">Loading…</span>
+        <span className="text-xs text-ink-soft">Loading…</span>
       )}
     </div>
   );

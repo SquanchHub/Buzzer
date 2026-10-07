@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useGame } from './GameLayout';
+import { Stamp } from '../../components/ui/Stamp';
 import { Button } from '../../components/ui/button';
 import { HotspotCanvas, useImageUrl } from '../../components/HotspotCanvas';
 import { OptionThumbs } from '../../components/OptionThumbs';
@@ -135,29 +136,29 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
     : [];
 
   return (
-    <div className="bg-slate-800/60 rounded-xl p-4 border border-slate-700/50">
-      <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Q{index + 1}</p>
-      <p className="text-slate-100 text-sm font-medium leading-snug mb-3">{item.prompt}</p>
+    <div className="bg-surface rounded-2xl p-4 border-2 border-line shadow-hard-sm">
+      <p className="mb-1 font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-ink-soft">Q{index + 1}</p>
+      <p className="text-ink text-base font-bold leading-snug mb-3">{item.prompt}</p>
       {item.type === 'hotspot' && <HotspotRecap item={item} />}
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-slate-500 text-xs mb-0.5">Your answer</p>
+          <p className="mb-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-soft">Your answer</p>
           <div className="flex items-center gap-2">
             {noAnswer ? (
-              <span className="text-slate-600 text-base">—</span>
+              <span className="text-ink-soft text-base">—</span>
             ) : isCompleteness ? (
-              <span className="text-indigo-400 text-base">●</span>
+              <span className="text-accent-ink text-base">●</span>
             ) : isCorrect ? (
-              <span className="text-green-400 text-base">✓</span>
+              <span className="text-success-ink text-base">✓</span>
             ) : (
-              <span className="text-red-400 text-base">✗</span>
+              <span className="text-danger-ink text-base">✗</span>
             )}
             {/* An ordering answer is a whole sequence: wrap it rather than cut it off. */}
             <span className={`text-sm font-semibold ${item.type === 'ordering' ? 'break-words' : 'truncate'} ${
-              noAnswer ? 'text-slate-600' :
-              isCompleteness ? 'text-indigo-300' :
-              isCorrect ? 'text-green-300' : 'text-red-300'
+              noAnswer ? 'text-ink-soft' :
+              isCompleteness ? 'text-accent-ink' :
+              isCorrect ? 'text-success-ink' : 'text-danger-ink'
             }`}>
               {playerAnswerLabel}
             </span>
@@ -165,8 +166,8 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
           {withImages && <div className="mt-1"><OptionThumbs indices={chosen} imageIds={imageIds} size="h-10 w-14" /></div>}
 
           {showCorrectAnswer && correctAnswerLabel && (
-            <p className="text-slate-500 text-xs mt-1">
-              Correct: <span className="text-green-400 font-medium">{correctAnswerLabel}</span>
+            <p className="text-ink-soft text-xs mt-1">
+              Correct: <span className="text-success-ink font-medium">{correctAnswerLabel}</span>
             </p>
           )}
           {withImages && showCorrectAnswer && (
@@ -175,12 +176,12 @@ function QuestionRow({ item, index }: { item: QuestionSummaryItem; index: number
         </div>
 
         <div className="text-right shrink-0">
-          <p className={`text-sm font-bold ${
-            item.pointsAwarded > 0 ? 'text-green-400' : 'text-slate-600'
+          <p className={`font-mono text-lg font-extrabold ${
+            item.pointsAwarded > 0 ? 'text-success-ink' : 'text-ink-soft'
           }`}>
             +{item.pointsAwarded.toLocaleString()}
           </p>
-          <p className="text-slate-600 text-xs">pts</p>
+          <p className="text-ink-soft text-xs">pts</p>
         </div>
       </div>
     </div>
@@ -193,8 +194,8 @@ export default function GameOverPage() {
 
   if (!gameOver) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Loading final results…</p>
+      <div className="min-h-[70dvh] flex items-center justify-center">
+        <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-muted">Loading final results…</p>
       </div>
     );
   }
@@ -202,20 +203,21 @@ export default function GameOverPage() {
   const { yourFinalScore, yourFinalRank, playerCount, questionSummary } = gameOver;
 
   return (
-    <div className="min-h-screen flex flex-col p-4 gap-5">
-      <div className="text-center pt-4 pb-2">
-        <h1 className="text-4xl font-black text-slate-100">Game Over!</h1>
-        <div className="mt-3 flex items-baseline justify-center gap-3">
-          <span className="text-5xl font-black text-indigo-400">#{yourFinalRank}</span>
-          <span className="text-slate-400 text-lg">of {playerCount}</span>
+    <div className="flex flex-col p-4 gap-5">
+      <div className="text-center pt-4 pb-2 flex flex-col items-center gap-4">
+        <Stamp tone="accent" className="text-2xl">Final</Stamp>
+        <h1 className="font-display text-5xl font-extrabold tracking-tight text-ink">Game over!</h1>
+        <div className="w-full max-w-xs rounded-3xl border-2 border-line bg-accent px-5 py-4 text-on-fill shadow-hard halftone">
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.25em]">Your rank</p>
+          <p className="font-mono text-7xl font-extrabold leading-none">
+            #{yourFinalRank}<span className="text-2xl"> / {playerCount}</span>
+          </p>
+          <p className="mt-2 font-mono text-xl font-extrabold">{yourFinalScore.toLocaleString()} pts</p>
         </div>
-        <p className="text-white text-2xl font-bold mt-1">
-          {yourFinalScore.toLocaleString()} pts
-        </p>
       </div>
 
       <div className="flex flex-col gap-3 pb-4">
-        <p className="text-slate-500 text-xs uppercase tracking-widest text-center">Question Recap</p>
+        <p className="text-center font-mono text-[11px] font-bold uppercase tracking-[0.25em] text-ink-soft">Question recap</p>
         {questionSummary.map((item, i) => (
           <QuestionRow key={item.questionId} item={item} index={i} />
         ))}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadImageUrl } from '../lib/images';
+import { cssColor, useTheme } from '../lib/theme';
 import type { HotspotBand, HotspotPoint } from '../types/game';
 
 /*
@@ -55,18 +56,17 @@ export function useImageUrl(imageId: number | undefined): HotspotImage {
   return image;
 }
 
-// Colours come from CSS variables so theming (T9) reaches the canvas; these are
-// the fallbacks until T9 defines them.
-const FALLBACK_COLOURS = {
-  inner: '#4ade80',
-  outer: '#fbbf24',
-  miss: '#f87171',
-  neutral: '#94a3b8',
+// Canvas colours are read from the theme tokens at draw time (docs/plans/t9-theming.md §6),
+// and the draw effect depends on the theme so a toggle repaints.
+const BAND_TOKEN = {
+  inner: 'success',
+  outer: 'warning',
+  miss: 'danger',
+  neutral: 'ink-soft',
 } as const;
 
-function colour(name: keyof typeof FALLBACK_COLOURS): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(`--hotspot-${name}`).trim();
-  return v || FALLBACK_COLOURS[name];
+function colour(name: keyof typeof BAND_TOKEN): string {
+  return cssColor(`--${BAND_TOKEN[name]}`);
 }
 
 interface Layout {
@@ -147,6 +147,8 @@ export function HotspotCanvas({
     };
   }, [url]);
 
+  const [theme] = useTheme();
+
   // Draw.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -160,13 +162,13 @@ export function HotspotCanvas({
     const L = letterbox(size.w, size.h, aspect);
 
     ctx.clearRect(0, 0, L.w, L.h);
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = cssColor('--sunken');
     ctx.fillRect(L.imgX, L.imgY, L.imgW, L.imgH);
     if (imgEl) {
       ctx.drawImage(imgEl, L.imgX, L.imgY, L.imgW, L.imgH);
     } else {
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '600 16px system-ui, sans-serif';
+      ctx.fillStyle = cssColor('--ink-soft');
+      ctx.font = "600 16px 'Bricolage Grotesque Variable', system-ui, sans-serif";
       ctx.textAlign = 'center';
       if (image.status === 'error') {
         // Bottom edge, so rings and taps drawn over the blank box don't cover it.
@@ -197,16 +199,22 @@ export function HotspotCanvas({
     }
 
     if (marker) {
-      const fill = marker.band ? colour(marker.band) : '#818cf8';
+      const fill = marker.band ? colour(marker.band) : cssColor('--accent');
       ctx.beginPath();
       ctx.arc(toX(marker.x), toY(marker.y), 8, 0, Math.PI * 2);
       ctx.fillStyle = fill;
       ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = '#ffffff';
+      // Two-tone outline: on-fill inside, canvas outside, so the marker reads on any photo.
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = cssColor('--on-fill');
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(toX(marker.x), toY(marker.y), 10.5, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = cssColor('--canvas');
       ctx.stroke();
     }
-  }, [size, imgEl, image.status, aspect, rings, marker]);
+  }, [size, imgEl, image.status, aspect, rings, marker, theme]);
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!interactive || !onPick || !size) return;
@@ -231,7 +239,7 @@ export function HotspotCanvas({
           touchAction: interactive ? 'none' : undefined,
           cursor: interactive ? 'crosshair' : undefined,
         }}
-        className="block rounded-xl bg-slate-900"
+        className="block rounded-xl bg-canvas"
       />
     </div>
   );

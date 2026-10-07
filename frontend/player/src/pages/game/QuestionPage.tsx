@@ -5,21 +5,40 @@ import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas
 import { ImageThumb } from '../../components/ImageThumb';
 import { OrderingPicker } from '../../components/OrderingPicker';
 import { Button } from '../../components/ui/button';
+import { Stamp } from '../../components/ui/Stamp';
+import { Check, X } from 'lucide-react';
 import type { HotspotPoint } from '../../types/game';
 
-const OPTION_COLORS = [
-  'bg-red-600 hover:bg-red-500 border-red-500',
-  'bg-blue-600 hover:bg-blue-500 border-blue-500',
-  'bg-yellow-500 hover:bg-yellow-400 border-yellow-400',
-  'bg-green-600 hover:bg-green-500 border-green-500',
-  'bg-purple-600 hover:bg-purple-500 border-purple-500',
-  'bg-orange-500 hover:bg-orange-400 border-orange-400',
-  'bg-pink-600 hover:bg-pink-500 border-pink-500',
-  'bg-teal-600 hover:bg-teal-500 border-teal-500',
+// Riso option inks A–H (docs/plans/t9-theming.md S2): dark text on a fluorescent fill, the
+// same ink per letter as the host screen. Static strings so Tailwind sees them (D10a).
+const OPTION_TILE = [
+  'bg-opt-1', 'bg-opt-2', 'bg-opt-3', 'bg-opt-4', 'bg-opt-5', 'bg-opt-6', 'bg-opt-7', 'bg-opt-8',
 ];
+const OPTION_TEXT = [
+  'text-opt-1', 'text-opt-2', 'text-opt-3', 'text-opt-4', 'text-opt-5', 'text-opt-6', 'text-opt-7', 'text-opt-8',
+];
+// Multi-select selection: an ink ring offset onto the canvas, not the focus colour (§7.2).
+const SELECTED_RING = 'ring-4 ring-ink ring-offset-2 ring-offset-canvas';
+const TILE =
+  'halftone border-2 border-on-fill text-on-fill shadow-hard transition-[transform,box-shadow] duration-75';
+const PRESS = 'active:translate-x-1 active:translate-y-1 active:shadow-none';
+const SUBMIT =
+  'w-full rounded-2xl border-2 border-line bg-accent py-4 font-display text-2xl font-extrabold text-on-fill shadow-hard transition-[transform,box-shadow] duration-75 active:translate-x-1 active:translate-y-1 active:shadow-none disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed';
 
 function optionLabel(i: number): string {
   return String.fromCharCode(65 + i); // A, B, C, … Z
+}
+
+/** The option letter in an inverted ink disc. */
+function LetterDisc({ index, className = 'h-10 w-10 text-xl' }: { index: number; className?: string }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center rounded-full bg-on-fill font-mono font-extrabold ${OPTION_TEXT[index % OPTION_TEXT.length]} ${className}`}
+      aria-hidden
+    >
+      {optionLabel(index)}
+    </span>
+  );
 }
 
 /** T8 D8: the image and text of an option shown as a large tap tile. Text is optional
@@ -28,15 +47,21 @@ function OptionTileBody({ text, imageId, index }: { text: string; imageId: numbe
   return (
     <>
       {imageId !== null ? (
-        <ImageThumb imageId={imageId} alt={`Option ${optionLabel(index)}`} className="h-32 w-full bg-white/90" />
+        <ImageThumb imageId={imageId} alt={`Option ${optionLabel(index)}`} className="h-32 w-full rounded-lg border-2 border-on-fill bg-qr" />
       ) : (
-        <span className="flex h-32 w-full items-center justify-center text-center text-lg leading-tight">{text}</span>
+        <span className="flex h-32 w-full items-center justify-center text-center text-lg font-bold leading-tight">{text}</span>
       )}
       <span className="flex items-center gap-2">
-        <span className="text-xl font-black">{optionLabel(index)}</span>
-        {imageId !== null && text.trim() && <span className="text-base leading-tight">{text}</span>}
+        <LetterDisc index={index} className="h-8 w-8 text-base" />
+        {imageId !== null && text.trim() && <span className="text-base font-bold leading-tight">{text}</span>}
       </span>
     </>
+  );
+}
+
+function Waiting({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-3 text-center font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">{children}</p>
   );
 }
 
@@ -63,8 +88,8 @@ export default function QuestionPage() {
 
   if (!currentQuestion) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Loading question…</p>
+      <div className="min-h-[70dvh] flex items-center justify-center">
+        <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-muted">Loading question…</p>
       </div>
     );
   }
@@ -84,35 +109,39 @@ export default function QuestionPage() {
   }
 
   const questionLabel = (
-    <p className="text-slate-400 text-sm text-center tracking-wide uppercase mb-1">
-      Question {currentQuestion.questionNumber} of {currentQuestion.totalQuestions}
+    <p className="mb-2 flex items-baseline justify-between font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">
+      <span>Question</span>
+      <span className="text-ink">
+        {currentQuestion.questionNumber}<span className="text-ink-soft"> / {currentQuestion.totalQuestions}</span>
+      </span>
     </p>
   );
 
   const lockedMsg = (
-    <p className="text-center text-amber-400 text-sm mt-4 font-semibold">
-      Answers locked — waiting for results…
-    </p>
+    <div className="mt-4 text-center">
+      <Stamp tone="warning" className="text-sm">Locked</Stamp>
+      <Waiting>Waiting for results…</Waiting>
+    </div>
   );
 
   if (currentQuestion.type === 'multiple_choice') {
     const options = currentQuestion.config.options ?? [];
     return (
-      <div className="py-6 px-4 flex flex-col gap-3">
-        <div className="pb-2">
+      <div className="py-5 px-4 flex flex-col gap-3.5">
+        <div className="pb-1">
           {questionLabel}
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
         {hasOptionImages ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3.5">
             {options.map((opt, i) => (
               <button
                 key={i}
                 disabled={submitted || questionLocked}
                 onClick={() => submit({ selectedIndex: i })}
-                className={`flex flex-col gap-2 rounded-2xl p-3 text-left text-white font-semibold border-2 transition-all
-                  ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
-                  ${OPTION_COLORS[i % OPTION_COLORS.length]}`}
+                className={`flex flex-col gap-2 rounded-2xl p-3 text-left ${TILE}
+                  ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}
+                  ${OPTION_TILE[i % OPTION_TILE.length]}`}
               >
                 <OptionTileBody text={opt} imageId={imageOf(i)} index={i} />
               </button>
@@ -123,15 +152,15 @@ export default function QuestionPage() {
             key={i}
             disabled={submitted || questionLocked}
             onClick={() => submit({ selectedIndex: i })}
-            className={`w-full flex items-center gap-4 rounded-2xl px-5 py-4 text-left text-white font-semibold text-lg border-2 transition-all
-              ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
-              ${OPTION_COLORS[i % OPTION_COLORS.length]}`}
+            className={`w-full min-h-[72px] flex items-center gap-4 rounded-2xl px-4 py-3 text-left text-xl font-bold leading-tight ${TILE}
+              ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}
+              ${OPTION_TILE[i % OPTION_TILE.length]}`}
           >
-            <span className="text-2xl font-black w-8 shrink-0">{optionLabel(i)}</span>
+            <LetterDisc index={i} />
             <span>{opt}</span>
           </button>
         ))}
-        {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
+        {submitted && <Waiting>Answer submitted — waiting for results…</Waiting>}
         {!submitted && questionLocked && lockedMsg}
       </div>
     );
@@ -139,26 +168,28 @@ export default function QuestionPage() {
 
   if (currentQuestion.type === 'true_false') {
     return (
-      <div className="min-h-screen flex flex-col justify-center p-4 gap-4">
-        {questionLabel}
-        <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+      <div className="min-h-[calc(100dvh-3rem)] flex flex-col p-4 gap-4">
+        <div>
+          {questionLabel}
+          <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+        </div>
         <button
           disabled={submitted || questionLocked}
           onClick={() => submit({ selectedValue: true })}
-          className={`w-full rounded-2xl py-8 text-white font-black text-3xl border-2 border-green-500 transition-all
-            ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed bg-green-700' : 'bg-green-600 hover:bg-green-500 active:scale-95'}`}
+          className={`flex flex-1 min-h-[120px] w-full items-center justify-center gap-3 rounded-3xl bg-opt-4 font-display text-5xl font-extrabold ${TILE}
+            ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}`}
         >
-          True
+          <Check className="h-12 w-12" strokeWidth={3.5} aria-hidden /> True
         </button>
         <button
           disabled={submitted || questionLocked}
           onClick={() => submit({ selectedValue: false })}
-          className={`w-full rounded-2xl py-8 text-white font-black text-3xl border-2 border-red-500 transition-all
-            ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed bg-red-700' : 'bg-red-600 hover:bg-red-500 active:scale-95'}`}
+          className={`flex flex-1 min-h-[120px] w-full items-center justify-center gap-3 rounded-3xl bg-opt-1 font-display text-5xl font-extrabold ${TILE}
+            ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}`}
         >
-          False
+          <X className="h-12 w-12" strokeWidth={3.5} aria-hidden /> False
         </button>
-        {submitted && <p className="text-center text-slate-400 text-sm mt-2">Answer submitted — waiting for results…</p>}
+        {submitted && <Waiting>Answer submitted — waiting for results…</Waiting>}
         {!submitted && questionLocked && lockedMsg}
       </div>
     );
@@ -167,16 +198,18 @@ export default function QuestionPage() {
   if (currentQuestion.type === 'fill_in_the_blank') {
     const maxLength = currentQuestion.config.maxLength ?? 100;
     return (
-      <div className="min-h-screen flex flex-col justify-center p-4 gap-5">
-        {questionLabel}
-        <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+      <div className="min-h-[calc(100dvh-3rem)] flex flex-col p-4 gap-5">
+        <div>
+          {questionLabel}
+          <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
+        </div>
 
         {submitted ? (
-          <div className="flex flex-col items-center gap-3">
-            <div className="text-5xl">🔒</div>
-            <p className="text-slate-100 text-xl font-bold">Answer locked in!</p>
-            <p className="text-slate-400 text-base italic">"{inputValue.trim()}"</p>
-            <p className="text-slate-500 text-sm mt-2">Waiting for results…</p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-4">
+            <Stamp tone="accent" className="text-2xl">Locked in</Stamp>
+            <p className="text-ink text-xl font-bold">Answer locked in!</p>
+            <p className="max-w-full break-words rounded-xl border-2 border-line bg-surface px-4 py-2 font-mono text-lg text-ink">{inputValue.trim()}</p>
+            <Waiting>Waiting for results…</Waiting>
           </div>
         ) : questionLocked ? (
           <div className="flex flex-col items-center gap-3 mt-4">
@@ -189,7 +222,7 @@ export default function QuestionPage() {
               const trimmed = inputValue.trim();
               if (trimmed) submit({ text: trimmed });
             }}
-            className="flex flex-col gap-4"
+            className="flex flex-1 flex-col justify-end gap-4"
           >
             <input
               type="text"
@@ -198,12 +231,13 @@ export default function QuestionPage() {
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Type your answer…"
               autoFocus
-              className="w-full rounded-xl px-4 py-4 text-slate-900 text-xl bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              aria-label="Your answer"
+              className="w-full rounded-2xl border-2 border-line bg-surface px-4 py-5 text-2xl font-bold text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus"
             />
             <button
               type="submit"
               disabled={!inputValue.trim()}
-              className="w-full rounded-2xl py-5 text-white font-black text-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className={SUBMIT}
             >
               Submit
             </button>
@@ -216,14 +250,14 @@ export default function QuestionPage() {
   if (currentQuestion.type === 'multi_select') {
     const options = currentQuestion.config.options ?? [];
     return (
-      <div className="py-6 px-4 flex flex-col gap-3">
-        <div className="pb-2">
+      <div className="py-5 px-4 flex flex-col gap-3.5">
+        <div className="pb-1">
           {questionLabel}
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
-        <p className="text-center text-slate-400 text-sm">Select all that apply</p>
+        <p className="text-center font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Select all that apply</p>
         {hasOptionImages && (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3.5">
             {options.map((opt, i) => {
               const isSelected = selectedIndices.has(i);
               return (
@@ -232,15 +266,12 @@ export default function QuestionPage() {
                   aria-pressed={isSelected}
                   disabled={submitted || questionLocked}
                   onClick={() => toggleIndex(i)}
-                  className={`flex flex-col gap-2 rounded-2xl p-3 text-left font-semibold border-2 transition-all
-                    ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
-                    ${isSelected
-                      ? 'bg-indigo-600 border-indigo-300 ring-2 ring-white text-white'
-                      : 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600'
-                    }`}
+                  className={`flex flex-col gap-2 rounded-2xl p-3 text-left ${TILE} ${OPTION_TILE[i % OPTION_TILE.length]}
+                    ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}
+                    ${isSelected ? SELECTED_RING : ''}`}
                 >
                   <OptionTileBody text={opt} imageId={imageOf(i)} index={i} />
-                  {isSelected && <span className="text-sm font-bold">✓ Selected</span>}
+                  {isSelected && <span className="font-mono text-xs font-extrabold uppercase tracking-widest">✓ Selected</span>}
                 </button>
               );
             })}
@@ -251,17 +282,15 @@ export default function QuestionPage() {
           return (
             <button
               key={i}
+              aria-pressed={isSelected}
               disabled={submitted || questionLocked}
               onClick={() => toggleIndex(i)}
-              className={`w-full flex items-center gap-4 rounded-2xl px-5 py-4 text-left font-semibold text-lg border-2 transition-all
-                ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
-                ${isSelected
-                  ? 'bg-indigo-600 border-indigo-400 text-white'
-                  : 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600'
-                }`}
+              className={`w-full min-h-[64px] flex items-center gap-4 rounded-2xl px-4 py-3 text-left text-lg font-bold leading-tight ${TILE} ${OPTION_TILE[i % OPTION_TILE.length]}
+                ${submitted || questionLocked ? 'opacity-50 shadow-none cursor-not-allowed' : PRESS}
+                ${isSelected ? SELECTED_RING : ''}`}
             >
-              <span className={`text-xl font-black w-8 shrink-0 flex items-center justify-center rounded-md border-2 transition-colors
-                ${isSelected ? 'border-white bg-white text-indigo-700' : 'border-slate-500 text-slate-400'}`}>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-[3px] border-on-fill font-mono text-lg font-extrabold
+                ${isSelected ? `bg-on-fill ${OPTION_TEXT[i % OPTION_TEXT.length]}` : ''}`} aria-hidden>
                 {isSelected ? '✓' : optionLabel(i)}
               </span>
               <span>{opt}</span>
@@ -272,12 +301,12 @@ export default function QuestionPage() {
           <button
             disabled={selectedIndices.size === 0}
             onClick={() => submit({ selectedIndices: Array.from(selectedIndices) })}
-            className="w-full rounded-2xl py-5 text-white font-black text-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed mt-2"
+            className={`${SUBMIT} mt-2`}
           >
             Submit ({selectedIndices.size} selected)
           </button>
         )}
-        {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
+        {submitted && <Waiting>Answer submitted — waiting for results…</Waiting>}
         {!submitted && questionLocked && lockedMsg}
       </div>
     );
@@ -298,12 +327,12 @@ export default function QuestionPage() {
       submit({ x, y });
     };
     return (
-      <div className="py-6 px-4 flex flex-col gap-3">
-        <div className="pb-2">
+      <div className="py-5 px-4 flex flex-col gap-3">
+        <div className="pb-1">
           {questionLabel}
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
-        <p className="text-slate-100 text-lg font-semibold text-center leading-snug">{currentQuestion.prompt}</p>
+        <p className="font-display text-xl font-bold leading-snug text-ink">{currentQuestion.prompt}</p>
         <HotspotCanvas
           aspectRatio={currentQuestion.config.aspectRatio ?? 1}
           image={image}
@@ -313,10 +342,10 @@ export default function QuestionPage() {
           marker={hotspotPoint}
         />
         {image.status === 'error' ? (
-          <p className="text-center text-red-400 text-sm mt-2">Image unavailable — this question can't be answered.</p>
+          <p className="text-center text-danger-ink text-sm font-semibold mt-2">Image unavailable — this question can't be answered.</p>
         ) : !submitted && !questionLocked ? (
           <>
-            <p className="text-center text-slate-400 text-sm">
+            <p className="text-center font-mono text-xs font-bold uppercase tracking-[0.15em] text-ink-muted">
               {image.status === 'loading'
                 ? 'Loading image…'
                 : hotspotPoint
@@ -326,13 +355,13 @@ export default function QuestionPage() {
             <button
               disabled={!hotspotPoint || !canAnswer}
               onClick={submitTap}
-              className="w-full rounded-2xl py-5 text-white font-black text-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className={SUBMIT}
             >
               Submit
             </button>
           </>
         ) : null}
-        {submitted && <p className="text-center text-slate-400 text-sm mt-4">Answer submitted — waiting for results…</p>}
+        {submitted && <Waiting>Answer submitted — waiting for results…</Waiting>}
         {!submitted && questionLocked && image.status !== 'error' && lockedMsg}
       </div>
     );
@@ -354,14 +383,14 @@ export default function QuestionPage() {
       if (isPermutation) submit({ order: sequence });
     };
     return (
-      <div className="py-4 px-4 flex flex-col gap-3">
+      <div className="py-3 px-4 flex flex-col gap-2.5">
         <div>
           {questionLabel}
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
-        <p className="text-slate-100 text-lg font-semibold text-center leading-snug">{currentQuestion.prompt}</p>
+        <p className="font-display text-lg font-bold leading-snug text-ink">{currentQuestion.prompt}</p>
         {canAnswer && (
-          <p className="text-slate-400 text-sm text-center">Tap the items in order. Use Undo to change.</p>
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.15em] text-ink-muted">Tap in order · Undo to change</p>
         )}
         <OrderingPicker items={items} sequence={sequence} onTap={tap} disabled={!canAnswer} />
         {canAnswer && (
@@ -393,7 +422,7 @@ export default function QuestionPage() {
             </Button>
           </div>
         )}
-        {submitted && <p className="text-center text-slate-400 text-sm">Answer submitted — waiting for results…</p>}
+        {submitted && <Waiting>Answer submitted — waiting for results…</Waiting>}
         {!submitted && questionLocked && lockedMsg}
       </div>
     );
@@ -401,7 +430,7 @@ export default function QuestionPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
-      <p className="text-slate-400">Unsupported question type.</p>
+      <p className="text-ink-muted">Unsupported question type.</p>
     </div>
   );
 }
