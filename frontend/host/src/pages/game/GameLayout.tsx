@@ -3,6 +3,9 @@ import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { loadImageUrl } from '../../lib/images';
 import { QRCodeSVG } from 'qrcode.react';
+import { ThemeToggle } from '../../components/ThemeToggle';
+import { Stamp } from '../../components/ui/Stamp';
+import { Button } from '../../components/ui/button';
 import { io, Socket } from 'socket.io-client';
 import type {
   AnswerPhaseEndedPayload,
@@ -220,10 +223,11 @@ export default function GameLayout() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="text-center space-y-4">
-          <p className="text-red-400 text-lg">{error}</p>
-          <button className="text-indigo-400 underline" onClick={() => navigate('/home')}>
+          <Stamp tone="danger" className="text-lg">Error</Stamp>
+          <p className="text-ink text-xl font-semibold">{error}</p>
+          <Button variant="outline" onClick={() => navigate('/home')}>
             Back to Home
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -237,15 +241,15 @@ export default function GameLayout() {
     >
       <Outlet />
 
+      {/* T9: the theme switch stays reachable on every game screen (compact, top-right). */}
+      <ThemeToggle compact className="fixed right-4 top-4 z-30" />
+
       {/* Persistent join panel — always visible in the bottom-right corner */}
-      <div className="fixed bottom-4 right-4 flex flex-col items-center gap-2 bg-slate-900/90 border border-slate-700 rounded-2xl p-3 shadow-xl backdrop-blur-sm">
-        <div className="bg-white rounded-lg p-1.5">
-          <QRCodeSVG value={playerJoinUrl} size={96} />
+      <div className="fixed bottom-4 right-4 z-30 flex flex-col items-center gap-2 rounded-2xl border-2 border-line bg-surface p-2.5 shadow-hard">
+        <div className="rounded-lg border-2 border-line bg-qr p-1.5">
+          <QRCodeSVG value={playerJoinUrl} size={88} />
         </div>
-        <div className="text-center">
-          <p className="text-slate-500 text-[10px] uppercase tracking-widest leading-none mb-0.5">Room Code</p>
-          <p className="text-white font-mono font-black tracking-widest text-lg leading-none">{code}</p>
-        </div>
+        <p className="font-mono text-lg font-extrabold leading-none tracking-[0.12em] text-ink">{code}</p>
       </div>
     </GameContext.Provider>
   );

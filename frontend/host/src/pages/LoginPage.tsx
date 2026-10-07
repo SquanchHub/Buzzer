@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 
 export default function LoginPage() {
@@ -70,29 +71,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="relative min-h-screen flex items-center justify-center p-4">
+      <ThemeToggle className="absolute right-4 top-4" />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <h1 className="text-2xl font-bold text-slate-100">Buzzer</h1>
-          <p className="text-slate-400 text-sm mt-1">Host Sign In</p>
+          <p className="font-display text-5xl font-extrabold leading-none tracking-tight text-ink [text-shadow:3px_3px_0_rgb(var(--accent))]">
+            buzzer
+          </p>
+          <p className="mt-3 font-mono text-[11px] font-bold uppercase tracking-[0.3em] text-ink-soft">Host sign in</p>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Primary: UW NetID SSO */}
           <a
             href="/api/auth/oauth2-callback?redirect_to=/host/login"
-            className={`flex items-center justify-center w-full py-2.5 px-4 rounded-lg font-medium transition-colors
+            className={`flex items-center justify-center w-full py-2.5 px-4 rounded-xl border-2 border-line font-bold transition-[transform,box-shadow] duration-75
               ${loading
-                ? 'bg-slate-700 text-slate-500 pointer-events-none'
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                ? 'bg-sunken text-ink-soft pointer-events-none'
+                : 'bg-accent text-on-fill shadow-hard active:translate-x-1 active:translate-y-1 active:shadow-none'
               }`}
           >
             Sign in with UW NetID
           </a>
 
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-slate-700" />
-            <span className="text-slate-500 text-xs">or local account</span>
-            <div className="flex-1 h-px bg-slate-700" />
+            <div className="flex-1 border-t-2 border-dashed border-line-soft" />
+            <span className="font-mono text-[11px] uppercase tracking-widest text-ink-soft">or local account</span>
+            <div className="flex-1 border-t-2 border-dashed border-line-soft" />
           </div>
 
           {/* Secondary: username/password for admin & local accounts */}
@@ -113,7 +117,7 @@ export default function LoginPage() {
               autoComplete="current-password"
               required
             />
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="text-danger-ink text-sm">{error}</p>}
             <Button type="submit" variant="outline" className="w-full" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
             </Button>

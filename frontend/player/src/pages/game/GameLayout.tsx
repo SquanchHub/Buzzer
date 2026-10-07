@@ -13,6 +13,9 @@ import type {
   QuestionPayload,
   SyncStatePayload,
 } from '../../types/game';
+import { ThemeToggle } from '../../components/ThemeToggle';
+import { Stamp } from '../../components/ui/Stamp';
+import { Button } from '../../components/ui/button';
 
 // ---------------------------------------------------------------------------
 // Context
@@ -228,12 +231,13 @@ export default function GameLayout() {
 
   if (error && phase !== 'gameover') {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <p className="text-red-400 text-lg">{error}</p>
-          <button className="text-indigo-400 underline" onClick={() => navigate('/join')}>
+      <div className="min-h-[100dvh] flex items-center justify-center p-4">
+        <div className="text-center space-y-5">
+          <Stamp tone="danger">Oops</Stamp>
+          <p className="text-ink text-lg font-semibold">{error}</p>
+          <Button variant="outline" onClick={() => navigate('/join')}>
             Back to Join
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -243,8 +247,16 @@ export default function GameLayout() {
     <GameContext.Provider
       value={{ phase, gameStatus, roomCode: code, playerCount, hostDisconnected, currentQuestion, questionLocked, lastAnswerData, answerResult, questionResults, gameOver, questionImage, emitAnswer }}
     >
+      {/* T9 top bar: room code and the theme switch on every game screen (§5.4). */}
+      <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b-2 border-line bg-surface px-3">
+        <span className="font-display text-xl font-extrabold tracking-tight text-ink">
+          buzzer<span className="text-accent">.</span>
+        </span>
+        <span className="font-mono text-sm font-extrabold tracking-[0.15em] text-ink-muted" aria-label={`Room ${code}`}>{code}</span>
+        <ThemeToggle compact className="min-h-[44px] -my-1 border-0 shadow-none bg-transparent" />
+      </header>
       {hostDisconnected && phase !== 'gameover' && (
-        <div className="fixed top-0 inset-x-0 bg-yellow-600/90 text-yellow-100 text-center py-2 text-sm z-50">
+        <div className="sticky top-12 inset-x-0 z-30 border-b-2 border-line bg-warning text-on-fill text-center py-2 text-sm font-bold" role="status">
           Host disconnected — waiting for them to reconnect…
         </div>
       )}

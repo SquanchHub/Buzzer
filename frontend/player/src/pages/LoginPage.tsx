@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { PageShell } from '../components/PageShell';
+import { Stamp } from '../components/ui/Stamp';
+import { Button } from '../components/ui/button';
 
 /**
  * Landing page for OAuth2 returns (/player/login?from=oauth2#oauth2_data=...).
@@ -59,23 +62,21 @@ export default function LoginPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center space-y-4">
-          <p className="text-red-400">{error}</p>
-          <button
-            onClick={() => navigate('/join')}
-            className="text-indigo-400 hover:underline text-sm"
-          >
+      <PageShell>
+        <div className="text-center space-y-5">
+          <Stamp tone="danger">Sign-in failed</Stamp>
+          <p className="text-ink font-semibold">{error}</p>
+          <Button variant="outline" onClick={() => navigate('/join')}>
             ← Back to join
-          </button>
+          </Button>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <p className="text-slate-400">Signing in…</p>
-    </div>
+    <PageShell>
+      <p className="font-mono text-sm font-bold uppercase tracking-[0.3em] text-ink-muted animate-pulse">Signing in…</p>
+    </PageShell>
   );
 }

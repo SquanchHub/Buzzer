@@ -212,10 +212,10 @@ def test_hotspot_canvas_repaints_on_toggle(browser, api):
     assert box
     phone.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     phone.wait_for_timeout(300)
-    before = canvas.evaluate("c => c.toDataURL()")
+    before = hash(canvas.evaluate("c => c.toDataURL()"))
     phone.get_by_test_id("theme-toggle").click()
     phone.wait_for_timeout(300)
-    after = canvas.evaluate("c => c.toDataURL()")
+    after = hash(canvas.evaluate("c => c.toDataURL()"))
     assert before != after, "hotspot canvas did not repaint on theme change"
     phone.context.close()
     host_ctx.close()

@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate, NavLink } from 'react-router-dom';
 import { tokenRole } from './lib/utils';
 import { BookOpen, Users, Gamepad2, UserX, LogOut, History, MonitorPlay, Smartphone } from 'lucide-react';
+import { ThemeToggle } from './components/ThemeToggle';
 import LoginPage from './pages/LoginPage';
 import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
@@ -38,30 +39,34 @@ function AdminLayout() {
     navigate('/login');
   }
 
+  // T9: the sidebar is an ink slab in both themes (docs/plans/t9-theming.md §7.4); `slab`
+  // switches the focus outline to a colour that contrasts with it.
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+    `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
       isActive
-        ? 'bg-indigo-600 text-white'
-        : 'text-slate-300 hover:bg-slate-700 hover:text-slate-100'
+        ? 'bg-accent text-on-fill'
+        : 'text-canvas hover:bg-canvas/10'
     }`;
 
   const secondaryLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-3 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+    `flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
       isActive
-        ? 'bg-slate-700 text-slate-100'
-        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+        ? 'bg-accent text-on-fill'
+        : 'text-canvas/70 hover:bg-canvas/10 hover:text-canvas'
     }`;
 
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 bg-slate-900 border-r border-slate-700 flex flex-col">
-        <div className="px-6 py-5 border-b border-slate-700">
-          <h1 className="text-lg font-bold text-white">Buzzer Admin</h1>
+      <aside className="slab sticky top-0 h-screen w-56 shrink-0 bg-ink text-canvas flex flex-col">
+        <div className="px-5 py-5">
+          <p className="font-display text-2xl font-extrabold leading-none tracking-tight">
+            buzzer<span className="text-accent">.</span>
+          </p>
+          <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.3em] text-canvas/70">Admin desk</p>
         </div>
-        <nav className="flex-1 p-3 space-y-6">
-          <div className="space-y-1">
-            <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <nav className="flex-1 px-3 space-y-6">
+          <div className="space-y-0.5">
+            <p className="px-3 pb-1 font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-canvas/70">
               Administration
             </p>
             <NavLink to="/users" className={linkClass}>
@@ -75,8 +80,8 @@ function AdminLayout() {
             </NavLink>
           </div>
           {/* Host-side content tools, kept for admins but visually secondary. */}
-          <div className="space-y-1">
-            <p className="px-4 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="space-y-0.5">
+            <p className="px-3 pb-1 font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-canvas/70">
               Content &amp; hosting
             </p>
             <NavLink to="/games" className={secondaryLinkClass}>
@@ -87,7 +92,8 @@ function AdminLayout() {
             </NavLink>
           </div>
         </nav>
-        <div className="p-3 border-t border-slate-700 space-y-1">
+        <div className="p-3 border-t border-canvas/20 space-y-1">
+          <ThemeToggle onSlab className="mb-2 w-full justify-between" />
           {/* Same origin under nginx, so the admin arrives signed in. The host link targets
               /host/home: the host app's root redirects to its login form even with a token.
               In `npm run dev` each app has its own port and these paths don't resolve. */}
@@ -99,7 +105,7 @@ function AdminLayout() {
           </a>
           <button
             onClick={logout}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-700 hover:text-slate-100 w-full transition-colors"
+            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold text-canvas hover:bg-canvas/10 w-full transition-colors"
           >
             <LogOut size={16} /> Logout
           </button>
