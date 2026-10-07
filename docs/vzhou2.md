@@ -34,3 +34,7 @@
 ### Branch: `feat/t7-ordering`
 
 - **2026-10-05, 20:03–21:15** — Built the team's second T7 type, **ordering** (tap items into sequence, partial credit by longest in-order run), end to end on a branch stacked on the unmerged T8 and commit-timing work: design in a fresh subagent (corrected the brief's COMPLETENESS-as-partial-credit premise), Goldfish-tested and revised, then test-first through validation, scoring, socket results, engine mirror and simulator, export/import, report, a new Playwright e2e harness, player/host UIs and host + admin editors; mean-review fixes, a two-origin browser QA pass (no bugs), and 158 unit / 276 integration / 5 e2e tests green. Also split T6/T7 into their own branches and pruned stale local branches.
+
+### Branch: `fix/player-socket-reconnect`
+
+- **2026-10-05, 23:06 – 2026-10-06, 20:00** — Fixed the player socket reconnecting on every page change (`GameLayout`'s socket effect depended on `navigate`, which lost answers sent right after `new_question`): `navigate` now lives in a ref so one socket carries the whole game, and the player `sync_state` sends a full `currentQuestion` and `questionPhase` so a reload restores an open question (answered or not, locked or not). Added a Playwright e2e file (socket count, immediate answer, two reload cases); lint, tsc, 438 unit/integration and 9 e2e tests green. Not restored: a rejoin during the results phase. Goldfish test waived for this bugfix.
