@@ -162,7 +162,7 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
                     type="button"
                     onClick={() => onPick(image.id)}
                     className={
-                      'w-full rounded-lg border p-1.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-focus ' +
+                      'w-full rounded-lg border p-1.5 text-left transition-colors focus:outline-none focus:ring-[3px] focus:ring-focus ' +
                       (image.id === current
                         ? 'border-accent bg-accent/15'
                         : 'border-line-soft hover:border-line-soft')

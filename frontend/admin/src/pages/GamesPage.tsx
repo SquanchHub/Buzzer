@@ -22,7 +22,7 @@ interface Course {
 }
 
 const selectClass =
-  'w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent';
+  'w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-[3px] focus:ring-focus focus:border-transparent';
 
 export default function GamesPage() {
   const [games, setGames] = useState<Game[]>([]);
@@ -171,13 +171,13 @@ export default function GamesPage() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-100">Games</h2>
+        <h2 className="font-display text-3xl font-extrabold tracking-tight text-ink">Games</h2>
         <div className="flex gap-2">
           <select
             aria-label="Course to import into"
             value={importCourseId}
             onChange={(e) => setImportCourseId(e.target.value)}
-            className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="rounded-lg border border-line bg-surface px-2 py-1 text-sm text-ink focus:outline-none focus:ring-[3px] focus:ring-focus"
           >
             <option value="">Import into course{'\u2026'}</option>
             {courses.map((c) => (
@@ -196,16 +196,16 @@ export default function GamesPage() {
         </div>
       </div>
 
-      {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
+      {error && <p className="text-danger-ink mb-4 text-sm">{error}</p>}
 
       {showForm && (
         <Card className="mb-6">
-          <CardHeader><h3 className="text-lg font-semibold text-slate-100">Create Game</h3></CardHeader>
+          <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Create Game</h3></CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-3">
               <Input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
               <div>
-                <label htmlFor="create-course" className="block text-xs text-slate-400 mb-1">Course</label>
+                <label htmlFor="create-course" className="block text-xs text-ink-muted mb-1">Course</label>
                 <select
                   id="create-course"
                   value={courseId}
@@ -223,11 +223,11 @@ export default function GamesPage() {
                 placeholder="Description (optional)"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus focus:border-transparent resize-none"
                 rows={3}
               />
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Max players</label>
+                <label className="block text-xs text-ink-muted mb-1">Max players</label>
                 <Input
                   type="number"
                   value={maxPlayers}
@@ -248,7 +248,7 @@ export default function GamesPage() {
       {editingGame && (
         <div ref={editRef} className="scroll-mt-4">
         <Card className="mb-6">
-          <CardHeader><h3 className="text-lg font-semibold text-slate-100">Edit Game</h3></CardHeader>
+          <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Edit Game</h3></CardHeader>
           <CardContent>
             <form onSubmit={handleEdit} className="space-y-3">
               <Input placeholder="Title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
@@ -256,11 +256,11 @@ export default function GamesPage() {
                 placeholder="Description (optional)"
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
-                className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus focus:border-transparent resize-none"
                 rows={3}
               />
               <div>
-                <label htmlFor="edit-course" className="block text-xs text-slate-400 mb-1">Course</label>
+                <label htmlFor="edit-course" className="block text-xs text-ink-muted mb-1">Course</label>
                 <select
                   id="edit-course"
                   value={editCourseId}
@@ -272,12 +272,12 @@ export default function GamesPage() {
                     <option key={c.id} value={c.id}>{c.name} ({c.semester})</option>
                   ))}
                 </select>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-ink-soft mt-1">
                   Moving a game doesn't change the course of sessions already played.
                 </p>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Max players</label>
+                <label className="block text-xs text-ink-muted mb-1">Max players</label>
                 <Input
                   type="number"
                   value={editMaxPlayers}
@@ -286,7 +286,7 @@ export default function GamesPage() {
                   max="500"
                 />
               </div>
-              {editError && <p className="text-red-400 text-sm">{editError}</p>}
+              {editError && <p className="text-danger-ink text-sm">{editError}</p>}
               <div className="flex gap-3">
                 <Button type="submit" disabled={editSaving}>{editSaving ? 'Saving\u2026' : 'Save'}</Button>
                 <Button type="button" variant="ghost" onClick={() => setEditingGame(null)}>Cancel</Button>
@@ -298,12 +298,12 @@ export default function GamesPage() {
       )}
 
       <div className="flex items-center gap-2 mb-4">
-        <label htmlFor="course-filter" className="text-xs text-slate-400">Show</label>
+        <label htmlFor="course-filter" className="text-xs text-ink-muted">Show</label>
         <select
           id="course-filter"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="rounded-lg border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="rounded-lg border border-line bg-surface px-2 py-1 text-sm text-ink focus:outline-none focus:ring-[3px] focus:ring-focus"
         >
           <option value="all">All courses</option>
           <option value="unassigned">Unassigned ({games.filter((g) => g.course_id === null).length})</option>
@@ -314,19 +314,19 @@ export default function GamesPage() {
       </div>
 
       {loading ? (
-        <p className="text-slate-400">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       ) : visibleGames.length === 0 ? (
-        <p className="text-slate-400">{games.length === 0 ? 'No games yet.' : 'No games match this filter.'}</p>
+        <p className="text-ink-muted">{games.length === 0 ? 'No games yet.' : 'No games match this filter.'}</p>
       ) : (
         <div className="space-y-3">
           {visibleGames.map((g) => (
             <Card key={g.id} className="flex items-center justify-between px-6 py-4">
               <div>
-                <p className="font-semibold text-slate-100">{g.title}</p>
-                {g.description && <p className="text-slate-400 text-sm mt-0.5 line-clamp-1">{g.description}</p>}
-                <p className="text-slate-500 text-xs mt-0.5">
+                <p className="font-semibold text-ink">{g.title}</p>
+                {g.description && <p className="text-ink-muted text-sm mt-0.5 line-clamp-1">{g.description}</p>}
+                <p className="text-ink-soft text-xs mt-0.5">
                   {g.course_id === null ? (
-                    <span className="text-amber-300">Unassigned — edit to choose a course</span>
+                    <span className="text-warning-ink">Unassigned — edit to choose a course</span>
                   ) : (
                     <Link to={`/courses/${g.course_id}`} className="hover:underline">{courseLabel(g.course_id)}</Link>
                   )}

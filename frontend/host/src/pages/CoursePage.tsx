@@ -20,7 +20,7 @@ interface Game {
 
 // Links styled like <Button variant="outline" size="sm"> (a <button> inside an <a> is invalid).
 const linkButton =
-  'inline-flex items-center justify-center rounded-lg font-semibold transition-colors border border-line-soft text-ink hover:bg-sunken focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2 focus:ring-offset-canvas px-3 py-1.5 text-sm';
+  'inline-flex items-center justify-center rounded-lg font-semibold transition-colors border border-line-soft text-ink hover:bg-sunken focus:outline-none focus:ring-[3px] focus:ring-focus focus:ring-offset-2 focus:ring-offset-canvas px-3 py-1.5 text-sm';
 
 /** The delete confirmation names what is lost (T4 §6.3, D6). */
 function deletePrompt(g: Game): string {
@@ -170,7 +170,7 @@ export default function CoursePage() {
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={5000}
                 rows={2}
-                className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-2 focus:ring-focus"
+                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus"
               />
               <label className="flex items-center gap-2 text-sm text-ink-muted">
                 Max players
@@ -188,7 +188,7 @@ export default function CoursePage() {
           )}
 
           {games.map((g) => (
-            <div key={g.id} className="rounded-lg border border-line-soft bg-surface px-4 py-3">
+            <div key={g.id} className="rounded-lg border border-line bg-surface px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-medium text-ink">{g.title}</p>

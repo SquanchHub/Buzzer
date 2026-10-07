@@ -93,17 +93,17 @@ export default function CoursesPage() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-100">Courses</h2>
+        <h2 className="font-display text-3xl font-extrabold tracking-tight text-ink">Courses</h2>
         <Button onClick={() => { setShowForm(!showForm); setEditingCourse(null); }} size="sm">
           <Plus size={16} className="mr-1" /> New Course
         </Button>
       </div>
 
-      {error && <p className="text-red-400 mb-4 text-sm">{error}</p>}
+      {error && <p className="text-danger-ink mb-4 text-sm">{error}</p>}
 
       {showForm && (
         <Card className="mb-6">
-          <CardHeader><h3 className="text-lg font-semibold text-slate-100">Create Course</h3></CardHeader>
+          <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Create Course</h3></CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="flex gap-3 flex-wrap">
               <Input
@@ -130,7 +130,7 @@ export default function CoursesPage() {
       {editingCourse && (
         <div ref={editRef} className="scroll-mt-4">
         <Card className="mb-6">
-          <CardHeader><h3 className="text-lg font-semibold text-slate-100">Edit Course</h3></CardHeader>
+          <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Edit Course</h3></CardHeader>
           <CardContent>
             <form onSubmit={handleEdit} className="flex gap-3 flex-wrap">
               <Input
@@ -156,18 +156,18 @@ export default function CoursesPage() {
       )}
 
       {loading ? (
-        <p className="text-slate-400">Loading…</p>
+        <p className="text-ink-muted">Loading…</p>
       ) : courses.length === 0 ? (
-        <p className="text-slate-400">No courses yet. Create one above.</p>
+        <p className="text-ink-muted">No courses yet. Create one above.</p>
       ) : (
         <div className="space-y-3">
           {courses.map((c) => (
             <Card key={c.id} className="flex items-center justify-between px-6 py-4">
               <div>
-                <Link to={`/courses/${c.id}`} className="font-semibold text-slate-100 hover:underline">
+                <Link to={`/courses/${c.id}`} className="font-semibold text-ink hover:underline">
                   {c.name}
                 </Link>
-                <p className="text-slate-400 text-sm">{c.semester}</p>
+                <p className="text-ink-muted text-sm">{c.semester}</p>
               </div>
               <div className="flex gap-2">
                 <Button

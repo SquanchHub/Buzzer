@@ -60,7 +60,7 @@ export default function SessionsPage() {
             <p className="text-ink-muted text-sm">No completed sessions yet. They appear here once a game you host reaches the final results.</p>
           )}
           {sessions.map((s) => (
-            <div key={s.session_id} className="rounded-lg border border-line-soft bg-surface px-4 py-3">
+            <div key={s.session_id} className="rounded-lg border border-line bg-surface px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-ink">{s.game_title}</p>

@@ -138,7 +138,7 @@ export default function HomePage() {
             <select
               value={courseId}
               onChange={e => setCourseId(Number(e.target.value))}
-              className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-focus"
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-[3px] focus:ring-focus"
             >
               <option value="">Select a course…</option>
               {courses.map(c => (
@@ -151,7 +151,7 @@ export default function HomePage() {
             <select
               value={gameId}
               onChange={e => setGameId(Number(e.target.value))}
-              className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-focus"
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink focus:outline-none focus:ring-[3px] focus:ring-focus"
             >
               <option value="">{courseId === '' ? 'Select a course first' : 'Select a quiz…'}</option>
               {courseGames.map(g => (
@@ -184,7 +184,7 @@ export default function HomePage() {
               <Link
                 key={c.id}
                 to={`/courses/${c.id}`}
-                className="flex items-center justify-between rounded-lg border border-line-soft bg-surface px-4 py-3 hover:border-accent hover:bg-surface transition-colors"
+                className="flex items-center justify-between rounded-lg border border-line bg-surface px-4 py-3 hover:border-accent hover:bg-surface transition-colors"
               >
                 <div>
                   <p className="text-ink font-medium">{c.name}</p>

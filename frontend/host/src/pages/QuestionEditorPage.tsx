@@ -308,7 +308,7 @@ function QuestionForm({
           <label className="block text-xs text-ink-muted mb-1">Question type</label>
           <select
             data-testid="question-type-select"
-            className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink text-sm"
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink text-sm"
             value={form.type}
             onChange={(e) => set('type', e.target.value as QuestionType)}
           >
@@ -323,7 +323,7 @@ function QuestionForm({
         <div className="flex-1">
           <label className="block text-xs text-ink-muted mb-1">Grading</label>
           <select
-            className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink text-sm"
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink text-sm"
             value={form.grading}
             onChange={(e) => set('grading', e.target.value as GradingType)}
           >
@@ -337,7 +337,7 @@ function QuestionForm({
       <div>
         <label className="block text-xs text-ink-muted mb-1">Prompt</label>
         <textarea
-          className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-2 focus:ring-focus resize-none text-sm"
+          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus resize-none text-sm"
           rows={3}
           placeholder="Question text…"
           value={form.prompt}
@@ -735,7 +735,7 @@ function GameDetails({ game, onSaved, onError }: {
             onChange={(e) => { setDescription(e.target.value); setSaved(false); }}
             maxLength={5000}
             rows={2}
-            className="w-full rounded-lg border border-line-soft bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-2 focus:ring-focus"
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder:text-ink-soft focus:outline-none focus:ring-[3px] focus:ring-focus"
           />
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm text-ink-muted">
