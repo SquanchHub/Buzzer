@@ -93,47 +93,10 @@ export default function GameLayout() {
     });
     socketRef.current = sock;
 
-    sock.on('connect', () => {
-      setError('');
-      if (phaseRef.current !== 'gameover') {
-        sock.emit('join_room', { room_code: code, role: 'PLAYER' });
-      }
-    });
-
-    sock.on('connect_error', (err) => {
-      if (phaseRef.current !== 'gameover') {
-        setError(`Connection error: ${err.message}`);
-      }
-    });
-
-    sock.on('sync_state', (data: SyncStatePayload) => {
-      setPlayerCount(data.playerCount ?? 0);
-      if (data.questionLocked) setQuestionLocked(true);
-      if (data.status === 'LOBBY') {
-        setGameStatus('LOBBY');
-        setPhase('lobby');
-        navigateRef.current(`/game/${code}/lobby`, { replace: true });
-      } else if (data.status === 'IN_PROGRESS') {
-        // Game already running — update state but don't navigate; new_question
-        // (or question_results) will drive routing to the correct page.
-        setGameStatus('IN_PROGRESS');
-        // Rejoined after answering (reload or reconnect): the answer is already in, so
-        // go to the waiting screen. An unanswered open question is re-sent as new_question.
-        if (data.hasAnswered && phaseRef.current !== 'results') {
-          setPhase('feedback');
-          navigateRef.current(`/game/${code}/feedback`, { replace: true });
-        }
-      }
-    });
-
-    sock.on('player_joined', (data: PlayerJoinedPayload) => {
-      setPlayerCount(data.playerCount);
-    });
-
-    sock.on('new_question', (data: QuestionPayload) => {
-      // Hotspot image prefetch: start loading before navigating so the fetch overlaps
-      // with the player reading the prompt. A re-sent new_question for the same
-      // question (reconnect) keeps the image already loaded.
+    // Hotspot image prefetch: start loading before showing the question so the fetch
+    // overlaps with the player reading the prompt. A re-sent question (reconnect)
+    // keeps the image already loaded.
+    function prefetchImage(data: QuestionPayload) {
       if (imageRef.current?.questionId !== data.questionId) {
         releaseImage();
         setQuestionImage(null);
@@ -158,6 +121,56 @@ export default function GameLayout() {
             });
         }
       }
+    }
+
+    sock.on('connect', () => {
+      setError('');
+      if (phaseRef.current !== 'gameover') {
+        sock.emit('join_room', { room_code: code, role: 'PLAYER' });
+      }
+    });
+
+    sock.on('connect_error', (err) => {
+      if (phaseRef.current !== 'gameover') {
+        setError(`Connection error: ${err.message}`);
+      }
+    });
+
+    sock.on('sync_state', (data: SyncStatePayload) => {
+      setPlayerCount(data.playerCount ?? 0);
+      if (data.questionLocked) setQuestionLocked(true);
+      if (data.status === 'LOBBY') {
+        setGameStatus('LOBBY');
+        setPhase('lobby');
+        navigateRef.current(`/game/${code}/lobby`, { replace: true });
+      } else if (data.status === 'IN_PROGRESS') {
+        // Game already running — update state but don't navigate; new_question
+        // (or question_results) will drive routing to the correct page.
+        setGameStatus('IN_PROGRESS');
+        // Rejoin during an open question: restore it. Answered → waiting screen; otherwise
+        // the question page (an unlocked one is also re-sent as new_question with the
+        // remaining time, which replaces this copy).
+        const q = data.currentQuestion;
+        if (q && data.questionPhase === 'QUESTION' && phaseRef.current !== 'results') {
+          prefetchImage(q);
+          setCurrentQuestion((prev) => (prev?.questionId === q.questionId ? prev : q));
+          if (data.hasAnswered) {
+            setPhase('feedback');
+            navigateRef.current(`/game/${code}/feedback`, { replace: true });
+          } else {
+            setPhase('question');
+            navigateRef.current(`/game/${code}/question`, { replace: true });
+          }
+        }
+      }
+    });
+
+    sock.on('player_joined', (data: PlayerJoinedPayload) => {
+      setPlayerCount(data.playerCount);
+    });
+
+    sock.on('new_question', (data: QuestionPayload) => {
+      prefetchImage(data);
       setCurrentQuestion(data);
       setQuestionLocked(false);
       setLastAnswerData(null);

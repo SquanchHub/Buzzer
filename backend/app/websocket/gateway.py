@@ -619,7 +619,10 @@ async def on_join_room(sid: str, data: dict) -> None:
                     "status": session.status,
                     "playerCount": player_count,
                     "yourScore": player_data.get("score", 0) if player_data else 0,
-                    "currentQuestion": current_q,
+                    "currentQuestion": await _host_question_payload(db, current_q),
+                    "questionPhase": room_state.get("question_phase")
+                    if room_state
+                    else None,
                     "hasAnswered": has_answered,
                     "questionLocked": question_locked,
                 },
@@ -794,7 +797,10 @@ async def on_rejoin_room(sid: str, data: dict) -> None:
                     "status": session.status,
                     "playerCount": player_count,
                     "yourScore": player_data.get("score", 0) if player_data else 0,
-                    "currentQuestion": current_q,
+                    "currentQuestion": await _host_question_payload(db, current_q),
+                    "questionPhase": room_state.get("question_phase")
+                    if room_state
+                    else None,
                     "hasAnswered": has_answered,
                     "questionLocked": question_locked,
                 },

@@ -67,8 +67,9 @@ and five child pages render each phase. Routes are declared in `frontend/player/
   but the backend's `is_correct` requires full points, so partial credit (MC or multi-select)
   shows "Correct!". Also, `ResultsPage` shows the correct answer only for fill-in-the-blank, and
   `describeAnswer` has no multi-select case.
-- **Reconnect gaps.** `sync_state`'s `hasAnswered` sends a rejoining player to the waiting
-  screen; `currentQuestion` (raw snake_case, not a `QuestionPayload`) and `yourScore` are still ignored. A reload on `/results`, or during a locked question, shows
+- **Reconnect gaps.** on rejoin during an open question, `sync_state` restores `currentQuestion`
+  (a full `QuestionPayload`) and routes by `hasAnswered`; `yourScore` is still ignored, and a rejoin
+  during the results phase is not restored. A reload on `/results`, or during a locked question, shows
   "Loading…" until the next phase. A reload on `/gameover` shows "This game is not accepting
   players".
 - **The player never sees the prompt.** `QuestionPage` renders options but not the prompt (it

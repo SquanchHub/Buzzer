@@ -121,3 +121,21 @@ def test_reload_after_answering_shows_waiting(api, new_context):
 
     host.get_by_role("button", name="Show Results").click()
     expect(phone.get_by_text("Correct!")).to_be_visible()
+
+
+def test_reload_on_locked_unanswered_question_restores_it(api, new_context):
+    """A locked question is not re-sent as new_question; sync_state must restore it."""
+    code = _game(api, questions=1)
+    host = _host(new_context, api, code)
+    phone = _join(new_context(phone=True), code, "Locked")
+
+    host.get_by_role("button", name="Start Game").click()
+    phone.wait_for_url(re.compile(r"/question$"))
+    host.get_by_role("button", name="Lock Question").click()
+    expect(phone.get_by_text("Answers locked — waiting for results…")).to_be_visible()
+
+    phone.reload()
+    expect(phone.get_by_text("Answers locked — waiting for results…")).to_be_visible()
+    expect(phone.get_by_text("Loading question…")).to_have_count(0)
+    for text in OPTIONS:
+        expect(phone.get_by_text(text)).to_be_visible()
