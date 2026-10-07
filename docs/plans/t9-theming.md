@@ -154,17 +154,26 @@ There is no CSP in `nginx/` (checked), so inline scripts are allowed. Also added
 :focus-visible {
   outline: 3px solid rgb(var(--focus));
   outline-offset: 2px;
-  border-radius: inherit;
 }
 ```
 
 This covers every raw `<button>`, `<a>`, `<input>` and `<select>` in about 70 files without
 touching each one.
 
-Existing `focus:outline-none focus:ring-2 focus:ring-indigo-500` on inputs becomes
-`focus:outline-none focus-visible:ring-2 focus:ring-focus`, which still gives a visible focus.
-`focus` must be ≥ 3:1 against `canvas` and `surface` in both themes (WCAG 1.4.11; the test
-checks it).
+Outlines already follow `border-radius`, so the rule needs nothing more.
+
+`focus:outline-none` is allowed **only** together with a ring on the same pseudo-class. Inputs,
+selects and textareas use exactly `focus:outline-none focus:ring-[3px] focus:ring-focus` (the
+ring shows on any focus). `focus-visible:ring-0` is never used. Everything else relies on the
+global outline.
+
+The outline sits 2px *outside* the element, so it must contrast with the backdrop, not with the
+element's own fill. `focus` must be ≥ 3:1 against `canvas`, `surface` and `sunken` in both themes
+(WCAG 1.4.11; tested).
+
+The one failing backdrop is the admin sidebar slab (`bg-ink`; Night `focus` on `ink` is 2.18).
+Inside `.slab`, `:focus-visible` uses `outline-color: rgb(var(--canvas))` instead (≥ 15:1,
+tested).
 
 ### D7. Dark text on saturated fills
 
@@ -197,12 +206,22 @@ screenshots show poor density, admin body falls back to the system stack (a one-
 1. **No raw palette utilities.** No match for
    `(bg|text|border|ring|ring-offset|from|via|to|fill|stroke|divide|placeholder|outline|accent|shadow|decoration|caret)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black)(-\d+)?\b`
    anywhere in `frontend/{host,player,admin}/src/**/*.{ts,tsx}`.
-2. **No colour literals.** No `#[0-9a-fA-F]{3,8}\b` (excluding `#` followed by a digit inside
-   strings like `#1` rank labels; the regex requires an explicit `['"\`(\s:,]#` prefix plus hex)
-   and no `rgb(`/`rgba(`/`hsl(` in those files, except inside the `cssColor()` helper's
-   `rgb(${…})` template.
-3. **`index.css`.** Outside the token block, `index.css` contains no hex and no `rgb(` except
-   `rgb(var(--…))`.
+2. **No colour literals and no dynamic colour classes** in those files:
+   - no `['"\`(\s:,]#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b` (a quote, paren, space, colon or comma
+     before the `#`, so `#1` rank labels pass);
+   - no `rgb(` / `rgba(` / `hsl(` except the one `rgb(${…})` template in `lib/theme.ts`
+     `cssColor()`;
+   - no `(bg|text|border|ring|from|to|fill|stroke)-\$\{` (D10a).
+3. **`index.css`.**
+   - Outside the token block there is no hex literal, and every `rgb(` / `rgba(` / `hsl(` is
+     immediately followed by `var(--`. So `rgb(var(--on-fill) / .12)` is fine and `rgb(0 0 0)`
+     is not.
+   - CSS keywords are allowed where only alpha matters: the `.ticket` notch masks use `black` and
+     `transparent`.
+   - The grain is an SVG data URI (`feTurbulence` plus an alpha-only `feColorMatrix`) with
+     numbers but no colour literals. It is drawn on `body::before`: fixed, full-screen,
+     `pointer-events: none`, opacity from a `--grain` number variable in the token block. So
+     `body`'s `background-color` stays exactly `canvas`.
 4. **Identical token blocks.** The three token blocks are byte-identical, and each declares
    every name in §6.1 for both themes, in `R G B` channel format.
 5. **Text contrast.** Every pair in §6.2's contrast table is ≥ 4.5:1 for text pairs and ≥ 3:1
@@ -224,9 +243,30 @@ copy) currently hardcode hex values. They will:
 - add the current theme (from `useTheme()`) to the draw effect's dependencies, so a toggle
   repaints.
 
-The image-free placeholder (`#1e293b` fill, `#94a3b8` text) becomes `--sunken` / `--ink-soft`.
-The tap marker has an ink edge with an `--on-fill` or `--canvas` outline so it stays visible on
-any photo.
+The existing `--hotspot-inner|outer|miss|neutral` CSS-variable hooks and their hex fallbacks
+are deleted. They map to tokens as follows:
+
+| Band / use | Token |
+|---|---|
+| inner | `--success` |
+| outer | `--warning` |
+| miss | `--danger` |
+| neutral | `--ink-soft` |
+| no-band marker (player, before results) | `--accent` |
+| image-free placeholder (`#1e293b` fill, `#94a3b8` text) | `--sunken` / `--ink-soft` |
+
+Markers are outlined with `--on-fill` inside and `--canvas` outside, so they stay visible on any
+photo.
+
+### D10a. No dynamically built colour class names
+
+Tailwind's JIT only emits classes that appear literally in the source. Every variable colour is
+a **static lookup map** of whole class strings. Examples:
+
+- `const OPTION_BG = ['bg-opt-1', …, 'bg-opt-8']`
+- `const STAMP_TONE = { success: 'text-success-ink', … }`
+
+Templates such as `` `bg-opt-${n}` `` are forbidden, and D9.2 checks for them.
 
 ### D11. Scope boundaries
 
@@ -234,8 +274,9 @@ any photo.
 
 - every page and component in the three apps, including T7 (ordering, hotspot) and T8 (image
   picker, image library) surfaces;
-- the literal `·` / `…` / `±` text bugs in admin JSX (visible in the "before"
-  shots), since they are look-and-feel;
+- admin JSX text containing JavaScript escapes (the backslash-u-00b7 / -2026 / -00b1 sequences
+  render literally, as the "before" admin question-editor shot shows), since this is
+  look-and-feel;
 - the `docs/ui` evidence.
 
 **Out of scope:**
@@ -287,20 +328,24 @@ The script mirrors `effectiveTheme()`:
 
 - A `<button type="button" role="switch" aria-checked={theme === 'dark'}>` with
   `aria-label="Dark theme"` and `data-testid="theme-toggle"`.
-- Visual: a pill with two halves, `PAPER ☀` and `NIGHT ☾`, in mono 11–12px uppercase. The active
-  half is filled with `ink` on `surface`. The pill has a 2px `line` border and `shadow-hard-sm`.
-- The visible text is decorative: the accessible name comes from `aria-label`, and the state
+- Visual:
+  - a `bg-surface` pill with a 2px `line` border and `shadow-hard-sm`, split into two halves;
+  - each half is a lucide icon (`Sun`, `Moon`) followed by `PAPER` / `NIGHT` in mono 11–12px
+    uppercase;
+  - the active half is `bg-ink text-canvas`, the inactive half `text-ink-soft`.
+- Accessibility: the visible text is decorative. The name comes from `aria-label`, the state
   from `aria-checked`.
-- Prop `compact?: boolean` shows only the active half's icon with the label `☀` / `☾`, for the
-  player's game screens. Minimum touch target is 44×44px.
-- The `lucide-react` `Sun` and `Moon` icons are already a dependency; use them instead of
-  glyphs.
+- `compact?: boolean`: only the active half's icon, no words. Used on the player's game top bar
+  and the host's game screens. Minimum touch target 44×44px.
+- `onSlab?: boolean`: for the admin sidebar. The pill is `bg-ink border-canvas`, the active half
+  `bg-canvas text-ink`, the inactive half `text-canvas/70`.
 
 ### 5.4 Where the toggle lives
 
 | App | Location |
 |---|---|
-| Admin | Sidebar footer, above "Open Host app" |
+| Admin, signed in | Sidebar footer, above "Open Host app" (`onSlab`) |
+| Admin, login | Top-right corner |
 | Host, management | `ManagementLayout` header, right side |
 | Host, login | Top-right corner |
 | Host, game screens (`GameLayout`) | Fixed top-right, `compact`. The fixed QR badge stays bottom-right. |
@@ -327,11 +372,23 @@ The script mirrors `effectiveTheme()`:
 | `success` / `success-ink` | correct, saved | `#1FC77A` / `#0A6E3E` | `#3BE08E` / `#5BE8A0` |
 | `danger` / `danger-ink` | errors, destructive, wrong | `#FF5A36` / `#B42A0C` | `#FF7452` / `#FF9479` |
 | `warning` / `warning-ink` | locked, participation, partial | `#FFC530` / `#7A5000` | `#FFD45C` / `#FFD45C` |
-| `info` / `focus` | focus ring, info links, selected outline | `#2F5BFF` | `#7FA2FF` |
+| `focus` | focus outline or ring only (never text, never a selection indicator) | `#2448E0` | `#7FA2FF` |
 | `on-fill` | text on any saturated fill | `#17141F` | `#17141F` |
 | `qr` | QR code background (must stay white) | `#FFFFFF` | `#FFFFFF` |
 | `scrim` | modal backdrop (used at `/60`) | `#17141F` | `#000000` |
 | `opt-1`…`opt-8` | answer inks A–H | `#FF5A36` `#3D7BFF` `#FFC530` `#1FC77A` `#A879FF` `#FF9A1F` `#FF6FC0` `#22C3C3` | same |
+
+**Exact token list (test 4).** 30 names, each a CSS variable `--<name>`:
+
+- surfaces and text: `canvas`, `surface`, `sunken`, `ink`, `ink-muted`, `ink-soft`
+- lines: `line`, `line-soft`, `shadow`
+- fills and their text colours: `accent`, `accent-ink`, `success`, `success-ink`, `danger`,
+  `danger-ink`, `warning`, `warning-ink`
+- utility: `focus`, `on-fill`, `qr`, `scrim`
+- option inks: `opt-1` to `opt-8`
+
+There is no `info` token: links use `accent-ink`. The token block also sets `color-scheme` and
+the non-colour `--grain` opacity.
 
 The option inks are deliberately the same in both themes, so an option is recognisable across
 devices with different themes. On Night their 2px border is `on-fill` (dark), so they read as
@@ -351,10 +408,21 @@ All values below were measured in design. The test recomputes them from the CSS.
     `opt-2` blue at 4.74.
 - Night: the same pairs. The lowest is `ink-soft` on `surface` at 6.71.
 
+**Composite text pairs (≥ 4.5; the tint is alpha-blended over the backdrop first).**
+
+- `accent-ink` on `accent/15`, `success-ink` on `success/15`, `danger-ink` on `danger/15`, and
+  `warning-ink` on `warning/20`, each over both `surface` and `canvas`.
+  - The lowest is Paper `danger-ink` over `canvas` at 4.71.
+  - Tinted chips and notices use **only** these alphas.
+- `canvas` on `ink` (slab text, segmented controls, nav pills): 15.59 / 16.50.
+- `canvas/70` over `ink` (slab eyebrows): 8.07 / 6.59.
+
 **UI pairs (≥ 3).**
 
-- `focus` on `canvas` and `surface`: Paper 4.44, Night 7.58.
+- `focus` on `canvas`, `surface` and `sunken`: Paper ≥ 5.1, Night ≥ 7.
+- `canvas` on `ink` (slab focus outline).
 - `line` on `canvas`.
+- `ink` on `canvas` (the multi-select selection ring).
 
 ### 6.3 Raw → token mapping for the migration
 
@@ -382,7 +450,8 @@ This table is guidance for the mechanical pass. Each hit is still reviewed in co
 | `bg-black/60` modal | `bg-scrim/60` |
 | player `OPTION_COLORS` 8 entries | `bg-opt-1 … bg-opt-8`, text `on-fill`, border `border-on-fill` |
 | `TimerBar` green/yellow/red | `success` / `warning` / `danger` |
-| `OrderingView`/`OrderingPicker` `var(--ordering-*, #hex)` | `cssColor`-free: classes `bg-success`, `bg-accent`, `bg-warning` |
+| `OrderingView`/`OrderingPicker` `var(--ordering-*, #hex)` hooks | Hooks deleted. Classes `bg-success` (correct), `bg-accent` (bar / selected), `bg-warning` (misplaced). |
+| Hotspot canvases' `--hotspot-*` hooks and hex | Hooks deleted; tokens via `cssColor()` as in D10 |
 
 ## 7. Screens (what "deliberate, not recoloured" means per screen)
 
@@ -406,16 +475,26 @@ Admin `Button` uses `shadow-hard-sm`, `active:translate-x-0.5 active:translate-y
 `rounded-xl border border-line bg-surface shadow-hard-sm` in admin.
 
 **`Input`.** `bg-surface text-ink border-2 border-line rounded-xl placeholder:text-ink-soft
-focus:outline-none focus-visible:ring-0 focus:ring-[3px] focus:ring-focus`.
+focus:outline-none focus:ring-[3px] focus:ring-focus` (D6).
 
 **`TimerBar`.** A chunky track: `h-4` (player) or `h-6` (host), `bg-sunken border-2
 border-line rounded-full`. The fill is `success`, then `warning` at ≤ 30%, then `danger` at
 ≤ 10%. Seconds are shown in mono. The host shows them at `text-5xl`.
 
+**Tailwind extras (config):**
+
+- `boxShadow`: `hard-sm` = `2px 2px 0 0 rgb(var(--shadow))`, `hard` = `4px 4px 0 0 …`,
+  `hard-lg` = `6px 6px 0 0 …`.
+- The press-down translates match the shadows: `translate-x/y-0.5`, `-1` and `-1.5`.
+- `ringColor.DEFAULT` = `rgb(var(--focus))`, so a bare `ring-2` never falls back to Tailwind's
+  built-in blue.
+- Tailwind 3 has no text-shadow utility. The wordmark uses the arbitrary property
+  `[text-shadow:4px_4px_0_rgb(var(--accent))]`.
+
 **New: `Stamp`** (host and player). Props `tone: 'success' | 'warning' | 'danger' | 'accent'`
 and `children`. It renders as
 `inline-block -rotate-6 border-[3px] border-current px-4 py-1 font-mono font-black uppercase
-tracking-widest text-{tone}-ink`, with an inner 1px inset outline (`outline outline-1
+tracking-widest` plus the tone's text class from a static map (`text-success-ink`, …; D10a), with an inner 1px inset outline (`outline outline-1
 outline-current outline-offset-[-6px]`).
 
 **New: `Ticket`** (host and player). Props `code` and `size: 'lg' | 'md' | 'sm'`. It renders a
@@ -437,7 +516,7 @@ background-size: 8px 8px`. It is used on option tiles and result bars.
 | Question: MC | Tiles are `bg-opt-N text-on-fill border-2 border-on-fill shadow-hard rounded-2xl halftone`, with press-down. The letter sits in a 40px circle `bg-on-fill text-opt-N` (inverted). Tiles are at least 72px tall. Image tiles get `bg-qr` behind the image. |
 | Question: TF | Two giant tiles, `opt-4` (True ✓) and `opt-1` (False ✗), each with a word and an icon. |
 | Question: fill in the blank | A large `Input`, with the submit `Button lg` full width at the bottom. |
-| Question: multi-select | Tiles show a check box square (`border-2 border-on-fill`; checked = `bg-on-fill` with a ✓ in `opt-N`). The selected tile shows a `ring-4 ring-focus`. Submit sits at the bottom. |
+| Question: multi-select | Tiles show a check box square (`border-2 border-on-fill`; checked = `bg-on-fill` with a ✓ in `opt-N`). The selected tile also gets `ring-4 ring-ink ring-offset-2 ring-offset-canvas`. The ring is drawn on the canvas, not the fill, so it is ≥ 15:1 in both themes. `focus` stays reserved for keyboard focus. Submit sits at the bottom. |
 | Question: ordering (`OrderingPicker`) | Unplaced: `bg-surface border-2 border-line`. Placed: `bg-accent text-on-fill`, with the position badge as an ink circle. |
 | Question: hotspot (`HotspotCanvas`) | Canvas in a `border-2 border-line` frame. Colours come from tokens. |
 | Feedback / answered | A `Stamp tone="accent"` "LOCKED IN" plus "waiting for results…". |
@@ -497,10 +576,13 @@ Each test runs in a fresh browser context.
 | 3 | `test_choice_beats_os_and_is_shared` | Set dark in player, then open `/host/login` in the same context with `color_scheme='light'`: it is `dark`. |
 | 4 | `test_toggle_on_signed_in_screens` | Toggle visible with a token on `/admin/users`, `/host/home`, and the host lobby of a fresh room. A phone that has joined the lobby sees the toggle in the top bar. |
 | 5 | `test_keyboard_focus_visible` | On `/host/login`, Tab to the first input, then to the button. The computed `outline-style` is not `none`, or the `box-shadow` contains the focus colour. |
-| 6 | `test_hotspot_canvas_repaints_on_toggle` | A player on a hotspot question: sample one pixel from the empty letterbox area, toggle, and the pixel colour changes. |
+| 6 | `test_hotspot_canvas_repaints_on_toggle` | Upload a 400×100 PNG generated with Pillow to a fresh course, create one hotspot question with it, and open a room. The player joins and the host starts the game. The player taps the canvas centre, so a marker is drawn in token colours. Read `canvas.toDataURL()`, click the compact toggle, and read it again: the two must differ. |
 
-The existing e2e files (`test_ordering_e2e.py`, `test_player_socket.py`, `test_smoke.py`) must
-still pass. They select by test id and text, which the migration keeps.
+Colours are compared after normalising both sides. The browser reports `rgb(243, 237, 226)`, so
+the test parses the token channels from `index.css` and formats them the same way.
+
+The existing e2e files on `main` (`test_ordering_e2e.py`, `test_smoke.py`) must still pass. So
+must `test_player_socket.py` once `fix/player-socket-reconnect` merges. They select by test id and text, which the migration keeps.
 
 ### 8.3 Visual review
 
@@ -539,11 +621,15 @@ Fail the review for any of these:
 - `docs/ui/t9/*.png`, `docs/ui/README.md`;
 - `frontend/README.md` and the per-app `src/README.md`, `components/README.md` and
   `lib/README.md` (context-sync: the "hardcoded palette" gotchas become token docs);
-- `docs/vzhou2.md`.
+- `docs/vzhou2.md` (session log). T9 also wants the screenshots cited in the individual T10
+  document. The owner writes those sections, not this branch, so `docs/ui/README.md` lists the
+  files to cite.
 
 ## 10. Phases and commits (test-first, atomic)
 
 1. `docs: T9 design` (this file), `scripts/ui_screenshots.py` and the before screenshots.
+   Every §5.4 toggle placement, including both login pages and the player join page, lands in
+   phase 3.
 2. `test: T9 token and theme tests`: unit and e2e, both failing.
 3. `feat(theme): token layer, runtime, toggle, fonts, primitives`, in all three apps. Unit tests
    4–8 pass, and e2e 1–3 and 5 pass.
@@ -568,13 +654,12 @@ A `mean-review` pass runs before step 8, and its fixes go into their own commits
 | Google Fonts CDN | Network and privacy (D8) |
 | Three-state toggle (light / dark / system) | Less legible. The requirement says "toggle" (D3). |
 | Per-app storage keys | Inconsistent across the instructor's tabs on one origin (D4) |
-| Automated axe-core contrast scan in e2e | Needs a new npm or pip dependency and is flaky on canvas and images. Token-pair math covers every text colour that can appear, because components can only use tokens (enforced by D9). |
+| Automated axe-core contrast scan in e2e | Needs a new npm or pip dependency and is flaky on canvas and images. Token-pair math, including the composite tints at their only allowed alphas, covers the text colours components can produce, because components can only use tokens (D9). |
 
 ## 12. Risks and open edges
 
 - **Silent leftovers.** A raw class missed by the migration renders unstyled (inherits colour).
-  Covered by D9.1. Dynamic class construction such as `` `bg-${x}-500` `` would evade the regex.
-  None exists today (grep for `-\${`), and the review checks for it.
+  Covered by D9.1. Dynamic class construction is forbidden by D10a and caught by D9.2.
 - **The brutalist look may make admin noisy.** Mitigated by the lighter admin variants (§7.1,
   §7.4). The screenshot review decides.
 - **Fluorescent inks wash out on projectors.** The host never relies on an ink alone: every
@@ -593,3 +678,27 @@ A `mean-review` pass runs before step 8, and its fixes go into their own commits
 ## 13. Revision log
 
 - 2026-10-06: first draft.
+- 2026-10-06: revised after the Goldfish test (a fresh subagent given only this spec and the
+  context READMEs).
+  - **Must-fix items fixed:**
+    - Input focus string: the old `focus-visible:ring-0` would have hidden keyboard focus.
+    - Dropped `border-radius: inherit` from the focus rule.
+    - Removed `info`. Darkened `focus` to `#2448E0` (Paper 4.44 → 5.85) and reserved it for
+      focus only.
+    - Added the slab focus override (Night `focus` on `ink` was 2.18).
+    - Multi-select selection is now an `ink` ring offset onto the canvas, instead of `focus` on
+      the fill (1.55–2.34).
+    - Added the composite tint, slab and `canvas/70` pairs to the tested set (all ≥ 4.71).
+    - Required static class maps (D10a).
+    - Added the admin login toggle.
+    - Made the `index.css` colour rules exact (halftone, ticket mask, grain).
+    - Deleted the hotspot and ordering CSS-variable hooks, with an explicit band → token map.
+    - Added an explicit 30-name token list.
+  - **Nice-to-haves taken:**
+    - shadow offsets matched to the press translates;
+    - `ringColor.DEFAULT`;
+    - the text-shadow arbitrary property;
+    - a self-consistent toggle visual;
+    - concrete e2e test 6 and colour normalisation;
+    - the `test_player_socket.py` location;
+    - the T10 citation note.
