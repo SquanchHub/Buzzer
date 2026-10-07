@@ -222,7 +222,7 @@ export function HotspotView({
         role="img"
         aria-label={label}
         style={{ width: size ? `${size.w}px` : '100%', height: size ? `${size.h}px` : undefined }}
-        className="block rounded-2xl border-2 border-line bg-canvas"
+        className="block rounded-2xl ring-2 ring-line bg-canvas"
       />
       {legendText && <p className="mt-3 text-center text-ink-muted text-xl font-semibold">{legendText}</p>}
     </div>

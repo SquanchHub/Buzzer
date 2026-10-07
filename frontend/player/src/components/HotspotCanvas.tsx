@@ -239,7 +239,7 @@ export function HotspotCanvas({
           touchAction: interactive ? 'none' : undefined,
           cursor: interactive ? 'crosshair' : undefined,
         }}
-        className="block rounded-xl bg-canvas"
+        className="block rounded-xl ring-2 ring-line bg-canvas"
       />
     </div>
   );

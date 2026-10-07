@@ -288,7 +288,7 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
           aria-label="Hotspot preview: click the image to place the target centre"
           onClick={placeCentre}
           style={{ width: size ? `${size.w}px` : '100%', height: size ? `${size.h}px` : undefined }}
-          className={cn('block rounded-lg border-2 border-line bg-canvas', image.status === 'ready' && 'cursor-crosshair')}
+          className={cn('block rounded-lg ring-2 ring-line bg-canvas', image.status === 'ready' && 'cursor-crosshair')}
         />
         <p className="mt-1 text-xs text-ink-soft">
           {image.status === 'ready'
