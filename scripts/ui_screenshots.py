@@ -68,7 +68,9 @@ class Shooter:
 def import_game(api: Api) -> tuple[int, int]:
     tag = uuid.uuid4().hex[:4]
     course = api.ok(
-        "POST", "/admin/courses", json={"name": f"Food Science {tag}", "semester": "Fall 2026"}
+        "POST",
+        "/admin/courses",
+        json={"name": f"Food Science {tag}", "semester": "Fall 2026"},
     )["id"]
     r = httpx.post(
         url("/api/admin/games/import"),
@@ -148,9 +150,7 @@ def live_game(s: Shooter, api: Api, course: int, game: int) -> None:
     s.shot(ada, "player", "lobby")
 
     def start_next() -> None:
-        host.get_by_role(
-            "button", name=re.compile("Start Game|Next Question")
-        ).click()
+        host.get_by_role("button", name=re.compile("Start Game|Next Question")).click()
         for p in (ada, bo):
             p.wait_for_url(re.compile(r"/question$"))
 

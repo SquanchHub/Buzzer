@@ -37,6 +37,18 @@ frontend-typecheck:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# T9: no raw palette utilities or colour literals in components, identical token
+# blocks in all three apps, and WCAG AA contrast for every documented token pair.
+frontend-theme-tokens:
+  stage: lint
+  image: python:3.12-slim
+  before_script:
+    - pip install pytest --quiet
+  script:
+    - pytest tests/unit/test_theme_tokens.py -q -p no:cacheprovider
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
 # ── Security scans ────────────────────────────────────────────────────────────
 
 sast:
