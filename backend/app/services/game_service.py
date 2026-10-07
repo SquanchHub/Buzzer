@@ -864,6 +864,7 @@ async def get_host_question_summary(
             Question.id.label("question_id"),
             Question.order_index,
             Question.prompt,
+            Question.prompt_image_id,
             Question.type.label("q_type"),
             Question.grading_type,
             Question.config,
@@ -896,6 +897,7 @@ async def get_host_question_summary(
             questions_meta[qid] = {
                 "order_index": r.order_index,
                 "prompt": r.prompt,
+                "prompt_image_id": r.prompt_image_id,
                 "type": r.q_type,
                 "grading_type": r.grading_type,
                 "config": r.config or {},
@@ -1020,6 +1022,8 @@ async def get_host_question_summary(
                 "questionId": qid,
                 "questionNumber": qnum,
                 "prompt": q["prompt"],
+                # T8 D8: the host's game-over card shows the prompt image (null if none).
+                "promptImageId": q["prompt_image_id"],
                 "type": q_type,
                 "gradingType": grading_type,
                 "config": q["config"],

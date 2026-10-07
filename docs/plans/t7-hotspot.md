@@ -1,7 +1,7 @@
 # T7 — Hotspot question type (canvas, tap-a-point, banded distance)
 
-Status: **agreed design, pre-implementation; goldfish-tested 2026-10-01 and revised** (§13 lists
-what the revision changed). Owner: Arjun Kaneriya.
+Status: **implemented, stages A–E (2026-10-06)**; goldfish-tested 2026-10-01 and revised (§13 lists
+what the revision changed; §13.1–§13.3 record what implementation decided). Owner: Arjun Kaneriya.
 This is the team's canvas-based T7 type; the second T7 type is designed separately by Vincent
 Zhou. Depends on T4 (`docs/plans/t4-ui-restructuring.md`, not yet implemented) and on T8 image
 storage (owned by Vincent, not yet designed). §4 is the contract this design needs from T8.
@@ -506,8 +506,10 @@ image ≤ 150 KB (palette PNG) so a bundle stays well under the 1 MB proxy limit
 
 | Game | Question | Image | Licence |
 |---|---|---|---|
-| Classroom | "Tap Cairo." ACCURACY, 20 s. Target `x = 0.5868, y = 0.3331` (Cairo 30.04° N, 31.24° E), inner 0.02, outer 0.05, partial 0.5, `aspectRatio` 2.0. | `world_map.png`, 1200 × 600, **unlabelled** country outlines rendered by Arjun from **Natural Earth** 1:110m Admin 0 data in plain equirectangular projection covering exactly −180..180° longitude and −90..90° latitude. | Natural Earth data is **public domain** (naturalearthdata.com terms of use). The rendered PNG is released CC0. |
-| Party | "Tap the penalty spot in front of the left goal." ACCURACY, 15 s. Target `x = 0.1048, y = 0.5` (11 m from the goal line on a 105 × 68 m pitch), inner 0.02, outer 0.05, partial 0.5, `aspectRatio` ≈ 1.5441. | `soccer_pitch.png`, 1050 × 680, a plain pitch diagram (lines, boxes, arcs; **no penalty-spot dot**) drawn by Arjun. | **Self-made**, released CC0. |
+| Classroom (*World Geography Challenge*) | "Tap Cairo." ACCURACY, 20 s, 1 point (the game's scale). Target `x = 0.5868, y = 0.3331` (Cairo 30.04° N, 31.24° E), inner 0.02, outer 0.05, partial 0.5, `aspectRatio` 2.0; authored in the host editor as `x = 0.5863, y = 0.3310` (within one canvas pixel). | `world_map.png`, 1200 × 600 (59 KB palette PNG), **unlabelled** country outlines rendered by Arjun from **Natural Earth** 1:110m Admin 0 data in plain equirectangular projection covering exactly −180..180° longitude and −90..90° latitude, no margins (`sample_games/images/render_images.py`). | Natural Earth data is **public domain** (naturalearthdata.com terms of use). The rendered PNG is released CC0. |
+| Party (*Wild Kingdom Party*) | "Tap the giraffe." ACCURACY, 15 s, 100 points (the game's usual value). Target `x = 0.545, y = 0.52` (the giraffe's neck base, placed there by the drawing), inner 0.07, outer 0.17, partial 0.5, `aspectRatio` 2.0: the inner ring covers the body and neck base, the outer ring the whole giraffe and nothing else in the scene. Authored in the host editor as `x = 0.5449, y = 0.5177`. | `savanna.png`, 1200 × 600 (17 KB palette PNG), a simple savanna scene (elephant, giraffe, zebra, acacias) drawn by Arjun with Pillow (`sample_games/images/render_images.py`). | **Self-made**, released CC0. |
+
+The party row first specified a soccer pitch ("Tap the penalty spot in front of the left goal.", `soccer_pitch.png`). That row predates the game itself: *Wild Kingdom Party* turned out to be animal-themed, so stage E (2026-10-06) replaced it with the savanna image and "Tap the giraffe." The classroom row is unchanged apart from the facts recorded as built.
 
 Target derivation for the map (record it in the images README): for an equirectangular image of
 the full globe, `x = (lon + 180) / 360`, `y = (90 − lat) / 180`. The image must have no margins,
@@ -520,11 +522,11 @@ undesigned). Order of work:
 
 | Stage | Can start | Contents |
 |---|---|---|
-| **A — builds now** | Immediately, on a branch from `main` | §7.1 schema branch; §7.2 `hotspot_band`, scoring, distribution, summaries; §7.4 gateway reveal, answer check, results `taps`; §7.5 report renderer (image part stubbed to "image unavailable"); §7.6–7.8 player/host canvases and types; §7.10 simulator and engine scoring. Front-end canvases can be developed against any locally served test image. |
-| **B — waits on T4 phase 2** | After T4 phase 2's `content_service` and host editor exist (same owner; may be done in the same branch series) | §7.3 image-existence checks in create/update; §7.9 HotspotEditor in the host editor. |
-| **C — waits on T8** | After T8 merges with C1–C8 satisfied | **Superseded by `docs/plans/t8-image-support.md` §3 and §6.1**: Vincent's T8 work does C4 in §7.3 (the real existence check), C6 into import and §6 v2 export/import (T8 V3, V7); Arjun does C5 into the report, removing the dev-image stand-ins, and every integration test that needs a real hotspot question (§10, marked **T8**) (T8 A4, A6, A7). C3 in `images.ts` is already done. Sample games stay version 1 (§8). |
-| **D — T4 phase 3 (Vincent)** | After stage B | Copy HotspotEditor into the admin editor; admin router delegating to `content_service` gives admins the hotspot existence check, update re-validation, and version 2 import/export. |
-| **E — sample games** | After **both** C and D | §8: add the hotspot question to Arjun's two games and convert them to version 2; §10 test 14's second half. |
+| **A — builds now** | Immediately, on a branch from `main` | §7.1 schema branch; §7.2 `hotspot_band`, scoring, distribution, summaries; §7.4 gateway reveal, answer check, results `taps`; §7.5 report renderer (image part stubbed to "image unavailable"); §7.6–7.8 player/host canvases and types; §7.10 simulator and engine scoring. Front-end canvases can be developed against any locally served test image. **Done:** MR !13 (2026-10-02). |
+| **B — waits on T4 phase 2** | After T4 phase 2's `content_service` and host editor exist (same owner; may be done in the same branch series) | §7.3 image-existence checks in create/update; §7.9 HotspotEditor in the host editor. **Done:** MR !16 (2026-10-02); §13.2. |
+| **C — waits on T8** | After T8 merges with C1–C8 satisfied | **Superseded by `docs/plans/t8-image-support.md` §3 and §6.1**: Vincent's T8 work does C4 in §7.3 (the real existence check), C6 into import and §6 v2 export/import (T8 V3, V7); Arjun does C5 into the report, removing the dev-image stand-ins, and every integration test that needs a real hotspot question (§10, marked **T8**) (T8 A4, A6, A7). C3 in `images.ts` is already done. Sample games stay version 1 (§8). **Implemented (2026-10-06):** Vincent's half in T8 (MR !20, merged); Arjun's in MR !21 (T8 A1–A7, under review); §13.3. |
+| **D — T4 phase 3 (Vincent)** | After stage B | Copy HotspotEditor into the admin editor; admin router delegating to `content_service` gives admins the hotspot existence check, update re-validation, and version 2 import/export. **Done:** MR !19 (2026-10-05). |
+| **E — sample games** | After **both** C and D | §8: add the hotspot question to Arjun's two games and convert them to version 2; §10 test 14's second half. **Implemented (2026-10-06):** MR !21 (T8 A8, under review); §8, §13.3. |
 
 Gaps until stage D, both from the admin `create_question` / `update_question` handlers
 (pre-phase-3) skipping hotspot checks:
@@ -568,6 +570,33 @@ Endpoints under `/api/host/` exist from T4 phase 2.
 | 19 | `GET` a real image → 200 with `Cache-Control: private, max-age=31536000, immutable`; unknown ID → 404 without that header (C3). | `GET /api/images/{id}` | **T8** |
 
 Existing tests are not modified or weakened.
+
+**Where each test lives (after stage C, 2026-10-06).** Files are under `tests/integration/` unless
+named otherwise. Where a T8 test (`test_images.py`, Vincent's) already covered a case, it is
+listed rather than duplicated.
+
+| # | Test function(s) |
+|---|---|
+| 1 | `test_hotspot.py`: `test_create_rejects_each_violation`, `test_create_rejects_nan_aspect_ratio`, `test_completeness_checks_config_but_not_answer_data` |
+| 2 | `test_hotspot.py::test_host_create_unknown_image_is_422` |
+| 3 | `test_hotspot.py::test_host_create_with_image` (host route); `test_create_valid_hotspot` (admin route) |
+| 4 | `test_hotspot.py::test_host_update_revalidates_hotspot` |
+| 5 | `test_hotspot.py`: `test_host_update_to_unknown_image_is_422`, `test_host_update_checks_image_even_when_patch_omits_it` |
+| 6 | `test_hotspot.py::test_scoring_bands_with_aspect_correction` |
+| 7 | `test_hotspot.py::test_completeness_any_tap_scores_full` |
+| 8 | `test_hotspot.py::test_malformed_tap_is_rejected_and_not_recorded` |
+| 9 | `test_hotspot.py::test_results_payloads` |
+| 10 | `test_hotspot.py::test_new_question_payload_has_no_target` |
+| 11 | `test_hotspot.py::test_hotspot_round_trip_into_another_course_scores` (host route, hotspot-only game, one image); `test_images.py`: `test_export_with_images_is_version_2`, `test_export_without_images_stays_version_1` |
+| 12 | `test_hotspot.py::test_hotspot_round_trip_into_another_course_scores` (identical bytes, remapped id, the imported question played and scored); `test_images.py::test_version_2_round_trip_into_another_course` |
+| 13a | `test_hotspot.py::test_v2_hotspot_bad_image_field_creates_nothing` (unknown `imageRef`, raw `imageId`); `test_images.py`: `test_broken_bundles_create_nothing`, `test_a_late_question_error_rolls_back_created_images` |
+| 13b | `test_hotspot.py::test_v1_bundle_with_hotspot_question_is_rejected` |
+| 14 | `test_hotspot.py`: `test_sample_game_imports_through_host_route`, `test_stage_e_sample_game_is_v2_with_its_hotspot_image`; `test_course_games.py::test_import_unmodified_sample_game_into_course` (admin route) |
+| 15 | `test_image_display.py::test_report_embeds_images_and_labels_image_only_options` (with T8 test 17) |
+| 16 | `test_images.py::test_delete_refused_while_used[hotspot]` |
+| 17 | `test_game_flow.py::test_game_scenario[hotspot_bands]` (scenario in `scenarios/all_question_types.py`) |
+| 18 | `tests/unit/test_hotspot.py` |
+| 19 | `test_images.py`: `test_guest_can_fetch_with_cache_headers`, `test_unknown_image_is_404_without_cache_header` |
 
 ## 11. Alternatives considered and rejected
 
@@ -690,3 +719,24 @@ in stage B, so a game containing a hotspot question still exports as a version 1
 `imageId`; G2 makes import reject exactly that ("Question N: hotspot questions require a version 2
 bundle"). Export → import round trips therefore fail for hotspot games until stage C adds the
 version 2 bundle (§6). Image-free games are unaffected.
+
+### 13.3 Stages C and E as implemented (2026-10-06)
+
+T8 (`docs/plans/t8-image-support.md` §3) split stage C: Vincent built the image store, the real
+existence and course check (C4) and the version 2 bundle (§6); Arjun built T8 A1–A8 on
+`feat/t8-arjun` (MR !21). This section records what that implementation settled. Each item was
+decided by the owner, and **overrides the section it names**.
+
+| # | Point | What was done |
+|---|---|---|
+| a | **Known Issue (§13.2): a hotspot game's export did not re-import.** | **Closed.** Vincent's version 2 export/import (T8 V7) carries `imageRef` and the image bytes; test 12 now also *plays* the imported question and checks its scores (§10). |
+| b | **G1's dev-image stand-in (§13.2).** | **Retired.** The backend half went with T8 V3 (Vincent); the frontend half (`devImages` Vite plugins, `server.fs.allow`, `frontend/dev-images/`) in T8 A6. |
+| c | The stage-B versions of tests 3–5 used the dev image. | Vincent's T8 V3 moved them to images uploaded into the game's course. |
+| d | Tests 6–10 created their questions through the admin route (§13.1 f). | They now use the host route, as §10 specifies; the assertions are unchanged, so nothing was weakened. |
+| e | The report's hotspot image was a stub (§7.5). | `report_service` embeds every image its questions use as a `data:` URI via C5: the hotspot SVG background, the prompt image, and option thumbnails in the bar labels ("(image)" for an image-only option). Multi-select has no chart in the report (existing gap), so its option images don't appear there. |
+| f | **D8 readings, for Vincent to confirm** (T8 D8 left them open). | (1) The host question screen shows option tiles only for a question with option images; text-only questions still show no options there. (2) The player's results show a "Correct:" thumbnail only for a question with option images that the player got wrong. (3) No separate `QuestionImage` component: Vincent's `ImageThumb` already does the job, so the host uses it and the player has a copy. |
+| g | A dev server kept serving the removed plugin. | `npm run build` (`tsc -b`) leaves a gitignored `vite.config.js` beside each `vite.config.ts`, and Vite loads it first. Recorded as a `frontend/README.md` gotcha. |
+| h | Stage E images. | §8's party row is replaced (see the note under the §8 table). Both images are rendered by `sample_games/images/render_images.py`, with source, licence and target derivation in `sample_games/images/README.md`. |
+| i | Stage E bundles. | Each question was authored in the host editor and exported with **Export JSON**. The committed files keep their hand-written formatting and add only the version, the `images` block and the new question; each parses to exactly the app's export. Authored targets are within one canvas pixel of §8's (both recorded in the images README). |
+| j | Screenshots. | The hotspot editor with the image picker and the play flow with real uploaded images, in `docs/ui/` (`docs/ui/README.md`). |
+

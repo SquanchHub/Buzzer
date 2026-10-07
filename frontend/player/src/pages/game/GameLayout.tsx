@@ -98,6 +98,11 @@ export default function GameLayout() {
     // keeps the image already loaded.
     function prefetchImage(data: QuestionPayload) {
       if (imageRef.current?.questionId !== data.questionId) {
+        // T8 D8: warm the browser cache for option images now (C3's immutable header lets
+        // the tiles' own fetches read it), so loading overlaps reading the question.
+        for (const id of data.config.optionImageIds ?? []) {
+          if (typeof id === 'number') loadImageUrl(id).then(URL.revokeObjectURL, () => {});
+        }
         releaseImage();
         setQuestionImage(null);
         const imageId = data.config.imageId;

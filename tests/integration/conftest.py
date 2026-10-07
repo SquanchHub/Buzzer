@@ -227,7 +227,37 @@ def game_setup(docker_stack, base_url: str, admin_token: str, fast_mode: bool):
         headers=headers,
         timeout=10.0,
     )
+    # Then the course's images (hotspot scenarios upload one), now that nothing uses them.
+    page = httpx.get(
+        f"{base_url}/api/images",
+        params={"course_id": course_id},
+        headers=headers,
+        timeout=10.0,
+    )
+    for image in page.json().get("items", []) if page.status_code == 200 else []:
+        httpx.delete(
+            f"{base_url}/api/images/{image['id']}", headers=headers, timeout=10.0
+        )
     # Courses have no cascade and no DELETE endpoint; leave them as inert records.
+
+
+def _upload_scenario_image(base_url: str, headers: dict, game_id: int) -> int:
+    """Upload an 800x400 PNG into the game's course → image id (2:1, as hotspot scenarios
+    assume via their aspectRatio)."""
+    from .image_helpers import png
+
+    course_id = httpx.get(
+        f"{base_url}/api/admin/games/{game_id}", headers=headers, timeout=10.0
+    ).json()["course_id"]
+    r = httpx.post(
+        f"{base_url}/api/images",
+        headers=headers,
+        files={"file": ("scenario.png", png((800, 400)), "image/png")},
+        data={"course_id": str(course_id)},
+        timeout=10.0,
+    )
+    assert r.status_code in (200, 201), f"Upload scenario image failed: {r.text}"
+    return r.json()["id"]
 
 
 def create_questions(
@@ -240,15 +270,25 @@ def create_questions(
     """
     POST each QuestionSpec to the admin API and return the assigned question IDs.
     When fast_mode is True, time_limit_seconds is overridden to 2.
+
+    A hotspot spec whose config has no imageId gets a real image (T8): one 800x400 PNG is
+    uploaded into the game's course and used for every such spec, so scenarios stay static.
+    game_setup deletes the course's images on teardown.
     """
     headers = _admin_headers(admin_token)
     ids = []
+    hotspot_image: int | None = None
     for q in scenario.questions:
+        config = q.config
+        if q.type == "hotspot" and "imageId" not in config:
+            if hotspot_image is None:
+                hotspot_image = _upload_scenario_image(base_url, headers, game_id)
+            config = {"imageId": hotspot_image, **config}
         body = {
             "type": q.type,
             "grading_type": q.grading_type,
             "prompt": q.prompt,
-            "config": q.config,
+            "config": config,
             "answer_data": q.answer_data,
             "points_value": q.points_value,
             "time_limit_seconds": 2 if fast_mode else q.time_limit_seconds,

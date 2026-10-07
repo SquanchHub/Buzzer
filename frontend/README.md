@@ -43,13 +43,11 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
 
 ## Gotchas collected from the app READMEs
 
-- **DEV ONLY until T7 stage C: `/api/images/{id}` is faked by Vite.** `host/vite.config.ts` and
-  `player/vite.config.ts` contain a `devImages` plugin (`apply: 'serve'`) that serves
-  `frontend/dev-images/{id}.png` for that route, plus a `server.fs.allow` entry for the folder.
-  It exists only on the Vite dev servers (not nginx, not builds) so hotspot questions can be
-  authored and played before T8. The backend no longer uses the folder (T8 V3 checks real
-  uploaded images), so under `npm run dev` the apps show these files instead of the real images;
-  use the nginx build until the plugins are removed (T8 step A6) — see `dev-images/README.md`.
+- **`npm run build` leaves a compiled `vite.config.js` that shadows `vite.config.ts`.** `tsc -b`
+  emits `vite.config.js` / `.d.ts` next to each app's `vite.config.ts` (the composite
+  `tsconfig.node.json`; both are gitignored), and Vite loads `vite.config.js` first. So a dev
+  server runs whatever config the last build compiled: after changing `vite.config.ts`, rebuild
+  (or delete the `.js`) before restarting `npm run dev`.
 
 - **No shared code:** primitives and API clients are copied three times and have already drifted
   (player button sizing, `TimerBar` props, API client methods). Fixes and theming (T9) must be

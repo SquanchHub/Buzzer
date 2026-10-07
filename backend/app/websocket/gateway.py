@@ -106,6 +106,9 @@ def _question_payload(q: Question, number: int, total: int) -> dict:
         "type": q.type,
         "gradingType": q.grading_type,
         "prompt": q.prompt,
+        # T8: the prompt image (null if none); option images travel in
+        # config.optionImageIds and hotspot's image in config.imageId.
+        "promptImageId": q.prompt_image_id,
         "config": q.config,
         "timeLimitSeconds": q.time_limit_seconds,
         "pointsValue": q.points_value,

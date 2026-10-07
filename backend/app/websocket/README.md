@@ -37,6 +37,10 @@ FastAPI app with `socketio.ASGIApp(sio, other_asgi_app=app)`, so `/socket.io/*` 
   Results and game-over payloads are sent per player to `user:{id}` so players never see others' scores.
 - **Payload safety** — `_question_payload` never includes `answer_data`; `_answer_reveal`
   derives only the facts clients need (correct indices/value, accepted answers).
+  `_question_payload` builds every question emit (`new_question`, the host's `sync_state`,
+  rejoin), and it carries T8's images: `promptImageId` (null if none), plus
+  `config.optionImageIds` and hotspot's `config.imageId` inside `config`
+  (`docs/plans/t8-image-support.md` §5).
   **Adding a question type** means updating both, plus the `multi_select`-style shape check in `on_submit_answer`.
 - **Hotspot** (`docs/plans/t7-hotspot.md` §7.4) — `_answer_reveal` returns
   `game_service.hotspot_reveal` (target point and both radii; no `partialFraction`).

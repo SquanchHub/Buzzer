@@ -3,6 +3,8 @@ import { useGame } from './GameLayout';
 import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
 import { OrderingView } from '../../components/OrderingView';
+import { ImageThumb } from '../../components/ImageThumb';
+import { optionImageId, optionText } from '../../lib/options';
 import type { AnswerReveal, HostQuestionSummaryItem } from '../../types/game';
 
 const TARGET_BUCKETS = 8;
@@ -79,7 +81,7 @@ function AnswerBar({ label, count, total, correct, colorClass }: {
 }
 
 function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: number }) {
-  const { type, gradingType, prompt, config, answerReveal, answerDistribution, totalAnswered, totalPlayers, correctCount, avgAnswerTimeMs, pointsValue } = item;
+  const { type, gradingType, prompt, promptImageId, config, answerReveal, answerDistribution, totalAnswered, totalPlayers, correctCount, avgAnswerTimeMs, pointsValue } = item;
 
   const typeLabel: Record<string, string> = {
     multiple_choice: 'Multiple Choice',
@@ -138,7 +140,13 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
       </div>
 
       {/* Prompt */}
-      <p className="text-slate-100 text-lg font-semibold leading-snug">{prompt}</p>
+      <div className="flex items-center gap-3">
+        {/* T8 D8: the prompt image, small, beside the prompt. */}
+        {typeof promptImageId === 'number' && (
+          <ImageThumb imageId={promptImageId} alt={prompt} className="h-14 w-20 shrink-0" />
+        )}
+        <p className="text-slate-100 text-lg font-semibold leading-snug">{prompt}</p>
+      </div>
 
       {/* Distribution */}
       <div className="space-y-2">
@@ -164,14 +172,20 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
             compact
           />
         )}
-        {(type === 'multiple_choice' || type === 'multi_select') && (config.options ?? []).map((opt, i) => {
+        {(type === 'multiple_choice' || type === 'multi_select') && (config.options ?? []).map((_, i) => {
           const count = answerDistribution[String(i)] ?? 0;
           const correct = isCorrectIndex(i);
+          const imageId = optionImageId(config.optionImageIds, i);
           return (
             <div key={i} className="space-y-0.5">
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span className={`font-bold ${correct ? 'text-green-400' : ''}`}>{optionLabel(i)}.</span>
-                <span className={correct ? 'text-green-300' : ''}>{opt}</span>
+                {imageId !== null && (
+                  <ImageThumb imageId={imageId} alt={`Option ${optionLabel(i)}`} className="h-8 w-12 shrink-0" />
+                )}
+                <span className={correct ? 'text-green-300' : ''}>
+                  {optionText(config.options, config.optionImageIds, i)}
+                </span>
               </div>
               <AnswerBar
                 label={optionLabel(i)}

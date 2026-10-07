@@ -19,7 +19,7 @@ network, sockets, or global state; both hotspot components fetch their image via
 | `HotspotEditor.tsx` | `HotspotEditor` — hotspot authoring panel (§7.9, §13.2): Image ID field (or T8 picker slot), canvas preview with live rings, click to place the centre, sliders for the radii and partial fraction. Exports `HOTSPOT_DEFAULT_TARGET`, `HOTSPOT_ASPECT_MIN`/`MAX` and its prop types. |
 | `OrderingView.tsx` | `OrderingItems({items})` — the items in display order while a question is open (`data-testid="ordering-host-items"`); `OrderingView({items, correctOrder?, distribution?, meanPositions?, accuracy, invalidKey?, compact?})` — results: correct order, one bar per "k out of place" bucket, and the room's order sorted by mean position (`docs/plans/t7-ordering.md` §6.8). Colours from `--ordering-correct` / `--ordering-bar` (fallbacks until T9). |
 | `OrderingEditor.tsx` | `OrderingEditor({state, grading, onChange})` — ordering authoring (§6.9): item rows typed in the **correct** order (move up/down, remove, add; 3–6), partial-credit checkbox and a "Players see" preview of the stored shuffle with **Shuffle again**. Pure helpers the page uses: `orderingFromQuestion`, `orderingToPayload`, `orderingProblems`, `shuffleDisplay` (never the identity; "submit as shown" worth ≤ half), `longestRunLength`. Moves keep each item's display slot unless that breaks the shuffle rule. Admin copy: `frontend/admin/src/components/OrderingEditor.tsx`. |
-| `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin and host — keep in sync. |
+| `ImageThumb.tsx` | `ImageThumb` — shows a stored image (T8) letterboxed in a box: loads it through `lib/images.ts` into a blob URL (revoked on unmount), with Loading… and Image unavailable states. Copied between admin, host and player (the player copy shows option images, T8 D8) — keep the three in sync. |
 | `ImagePicker.tsx` | `ImagePicker({courseId, value, onChange, label?})` — choose a question image (T8 §3 contract): the chosen thumbnail with Choose / Change / Remove, and a dialog listing the course's images 24 per page (`listImages`) with **Upload new** (`uploadImage`, selected straight away). Returns only the id; `null` = no image. Escape or a backdrop click closes it. Copied between admin and host — keep in sync. |
 
 ## Key entry points
@@ -69,10 +69,10 @@ network, sockets, or global state; both hotspot components fetch their image via
 - `frontend/host/src/pages/`:
   - `LoginPage.tsx`, `CoursePage.tsx`, `RosterPage.tsx` — `Button`, `Input`, `Card*`
   - `HomePage.tsx`, `SessionsPage.tsx` — `Button`, `Card*`
-  - `QuestionEditorPage.tsx` — `HotspotEditor`, `OrderingEditor` (+ helpers), `Button`, `Input`, `Card*`
+  - `QuestionEditorPage.tsx` — `HotspotEditor`, `OrderingEditor` (+ helpers), `ImagePicker` (prompt, option and hotspot images), `Button`, `Input`, `Card*`
   - `game/LobbyPage.tsx` — `Button`
-  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `OrderingItems`
-  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`, `OrderingView`
+  - `game/QuestionPage.tsx` — `Button`, `TimerBar`, `HotspotView`, `OrderingItems`, `ImageThumb` (prompt image, option tiles)
+  - `game/ResultsPage.tsx`, `game/GameOverPage.tsx` — `Button`, `HotspotView`, `ringsFromReveal`, `OrderingView`, `ImageThumb` (prompt and option thumbnails)
 - Nothing outside the host app imports these; the player and admin apps have their own copies.
 
 ## Gotchas found while reading

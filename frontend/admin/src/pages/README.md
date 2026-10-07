@@ -21,7 +21,7 @@ pagination.
 | `UserDetailPage.tsx` | `/users/:userId` | Edit a user (username, display name, email, password, role USER/ADMIN), delete, grant/revoke course access (HOST or PLAYER) and game access. The game picker groups games by course and disables courses the user doesn't HOST (and unassigned games), since a grant there would be refused (409) or dead (D1); granted games whose course they no longer host are marked inactive. Game grants are posted one at a time and failures are listed per game. |
 | `GuestsPage.tsx` | `/guests` | List guest accounts, merge a guest into a netid, delete guests. |
 | `GamesPage.tsx` | `/games` | List, create, edit and delete games; import a game JSON file. Create requires a course; Import needs a target course picked first (sent as the `course_id` form field). A filter shows all games, one course's, or Unassigned ones; each row links its course (unassigned games are highlighted). The edit form has a course picker (sends `course_id` only when it changes; the live-session 409 shows inside the form). |
-| `QuestionEditorPage.tsx` | `/games/:gameId/questions` | Add, edit, delete and reorder a game's questions, including hotspot questions via `components/HotspotEditor` (T7 stage D, ported from the host editor's stage B branches) and ordering questions via `components/OrderingEditor` (same branches as the host editor, `docs/plans/t7-ordering.md` §6.9); export the game as JSON. |
+| `QuestionEditorPage.tsx` | `/games/:gameId/questions` | Add, edit, delete and reorder a game's questions, including hotspot questions via `components/HotspotEditor` (T7 stage D, ported from the host editor's stage B branches) and ordering questions via `components/OrderingEditor` (same branches as the host editor, `docs/plans/t7-ordering.md` §6.9); export the game as JSON. T8 A5 (kept in sync with the host editor): `ImagePicker`s for the prompt image, each MC / multi-select option and the hotspot image, from the game's course; for a game with no course every picker is replaced by "Assign this game to a course to add images". |
 | `SessionsPage.tsx` | `/sessions` | All sessions with a status filter; per-session HTML report, CSV export (Canvas or raw options), delete. |
 
 Unknown routes redirect to `/users`.
@@ -30,8 +30,9 @@ Unknown routes redirect to `/users`.
 
 - **`QuestionEditorPage`** — the only place questions are authored. Internally:
   `FormState` holds fields for every type at once; `questionToForm(q)` loads a saved question;
-  `formToPayload(form)` builds `{type, grading_type, prompt, config, answer_data,
-  time_limit_seconds, points_value}` via per-type `build*Payload` helpers. For ACCURACY it
+  `formToPayload(form)` builds `{type, grading_type, prompt, prompt_image_id, config, answer_data,
+  time_limit_seconds, points_value}` via per-type `build*Payload` helpers (MC / multi-select add
+  `config.optionImageIds` only when some option has an image). For ACCURACY it
   **derives `points_value`** (MC/FITB: max option points; TF: max of true/false; multi-select: sum of
   positive points); for COMPLETENESS the user types it. Reorder swaps neighbours and posts the full
   ID list to `/questions/reorder`.
