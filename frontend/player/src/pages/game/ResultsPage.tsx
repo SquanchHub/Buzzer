@@ -222,7 +222,7 @@ export default function ResultsPage() {
 
       {/* Points for this question */}
       <p className="font-mono text-5xl font-extrabold tracking-tight text-ink">
-        +{yourPoints.toLocaleString()}<span className="ml-1 text-xl text-ink-soft">pts</span>
+        +{yourPoints.toLocaleString()} <span className="text-xl text-ink-soft">pts</span>
       </p>
 
       {/* Running total and rank */}
