@@ -10,6 +10,7 @@ Socket.io connection is opened in `frontend/player/src/pages/game/GameLayout.tsx
 |---|---|
 | `api.ts` | `api.get` / `api.post` — `fetch` wrappers that prefix `/api`, send JSON, attach the bearer token, and throw on non-2xx. |
 | `utils.ts` | `cn(...classes)` (`clsx` + `tailwind-merge`) and `isTokenExpired(token)`, which decodes the JWT payload and compares `exp` to now. |
+| `theme.ts` | T9 theme runtime (identical in all three apps): `useTheme()` (`useSyncExternalStore`; follows the OS preference until the user picks, then `localStorage['buzzer-theme']`, synced across tabs), `setTheme`, `effectiveTheme`, and `cssColor('--token', alpha?)` for canvas code. First paint is set by the inline script in `index.html`. |
 | `images.ts` | `loadImageUrl(imageId)` — fetches `/api/images/{id}` with the bearer token and returns an object URL (caller revokes it); throws `ImageUnavailableError` on network error, non-2xx, or a non-image body. Copied in the host app. |
 | `options.ts` | `optionLetter(i)`, `optionImageId(imageIds, i)`, `optionText(options, imageIds, i)` ("(image)" for an image-only option, T8 D5/D8), `hasOptionImages(imageIds)`. Identical copy in the other app. |
 

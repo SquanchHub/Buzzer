@@ -35,7 +35,7 @@ interface Game {
 }
 
 const selectClass =
-  'rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  'rounded-lg border border-line bg-surface px-2 py-1.5 text-sm text-ink focus:outline-none focus:ring-[3px] focus:ring-focus';
 
 function label(u: { display_name: string | null; username: string | null; netid: string | null }) {
   return u.display_name || u.username || u.netid || 'Unnamed user';
@@ -139,12 +139,12 @@ export default function CourseDetailPage() {
     }, 'Failed to add member');
   }
 
-  if (loading) return <p className="p-8 text-slate-400">Loading…</p>;
+  if (loading) return <p className="p-8 text-ink-muted">Loading…</p>;
   if (!course) {
     return (
       <div className="p-8">
-        <p className="text-red-400 text-sm">{error || 'Course not found'}</p>
-        <Link to="/courses" className="text-indigo-400 text-sm hover:underline">Back to courses</Link>
+        <p className="text-danger-ink text-sm">{error || 'Course not found'}</p>
+        <Link to="/courses" className="text-accent-ink text-sm hover:underline">Back to courses</Link>
       </div>
     );
   }
@@ -156,12 +156,12 @@ export default function CourseDetailPage() {
   return (
     <div className="p-8 max-w-4xl space-y-6">
       <div>
-        <Link to="/courses" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200">
+        <Link to="/courses" className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
           <ArrowLeft size={14} /> Courses
         </Link>
         <div className="mt-2 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-slate-100">
-            {course.name} <span className="text-slate-400 font-normal">({course.semester})</span>
+          <h2 className="font-display text-3xl font-extrabold tracking-tight text-ink">
+            {course.name} <span className="text-ink-muted font-normal">({course.semester})</span>
           </h2>
           <div className="flex gap-2">
             <Link to={`/courses/${course.id}/images`}>
@@ -174,18 +174,18 @@ export default function CourseDetailPage() {
         </div>
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="text-danger-ink text-sm">{error}</p>}
 
       <Card>
-        <CardHeader><h3 className="text-lg font-semibold text-slate-100">Details</h3></CardHeader>
+        <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Details</h3></CardHeader>
         <CardContent>
           <form onSubmit={rename} className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-48">
-              <label htmlFor="course-name" className="block text-xs text-slate-400 mb-1">Name</label>
+              <label htmlFor="course-name" className="block text-xs text-ink-muted mb-1">Name</label>
               <Input id="course-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
             <div className="w-40">
-              <label htmlFor="course-semester" className="block text-xs text-slate-400 mb-1">Semester</label>
+              <label htmlFor="course-semester" className="block text-xs text-ink-muted mb-1">Semester</label>
               <Input id="course-semester" value={semester} onChange={(e) => setSemester(e.target.value)} required />
             </div>
             <Button type="submit" disabled={saving || (name === course.name && semester === course.semester)}>
@@ -197,23 +197,23 @@ export default function CourseDetailPage() {
 
       <Card>
         <CardHeader>
-          <h3 className="text-lg font-semibold text-slate-100">Members</h3>
-          <p className="text-xs text-slate-400 mt-1">
+          <h3 className="font-display text-lg font-extrabold text-ink">Members</h3>
+          <p className="text-xs text-ink-muted mt-1">
             HOSTs can run this course's games they've been granted, and manage its roster and games
             in the Host app. Students on the roster can join without a role here.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {members.length === 0 ? (
-            <p className="text-slate-400 text-sm">No hosts or players yet.</p>
+            <p className="text-ink-muted text-sm">No hosts or players yet.</p>
           ) : (
-            <ul className="divide-y divide-slate-700">
+            <ul className="divide-y divide-line-soft">
               {members.map((m) => (
                 <li key={m.user_id} className="flex items-center justify-between py-2 gap-3">
-                  <Link to={`/users/${m.user_id}`} className="text-slate-100 hover:underline">
+                  <Link to={`/users/${m.user_id}`} className="text-ink hover:underline">
                     {label(m)}
                     {m.username && m.display_name && (
-                      <span className="text-slate-500 text-xs ml-2">@{m.username}</span>
+                      <span className="text-ink-soft text-xs ml-2">@{m.username}</span>
                     )}
                   </Link>
                   <div className="flex items-center gap-2">
@@ -242,7 +242,7 @@ export default function CourseDetailPage() {
             </ul>
           )}
 
-          <form onSubmit={addMember} className="flex flex-wrap gap-2 items-center pt-2 border-t border-slate-700">
+          <form onSubmit={addMember} className="flex flex-wrap gap-2 items-center pt-2 border-t border-line-soft">
             <select
               aria-label="User to add"
               value={newUserId}
@@ -271,18 +271,18 @@ export default function CourseDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader><h3 className="text-lg font-semibold text-slate-100">Games</h3></CardHeader>
+        <CardHeader><h3 className="font-display text-lg font-extrabold text-ink">Games</h3></CardHeader>
         <CardContent>
           {games.length === 0 ? (
-            <p className="text-slate-400 text-sm">
-              No games in this course yet. Create or import one on the <Link to="/games" className="text-indigo-400 hover:underline">Games</Link> page.
+            <p className="text-ink-muted text-sm">
+              No games in this course yet. Create or import one on the <Link to="/games" className="text-accent-ink hover:underline">Games</Link> page.
             </p>
           ) : (
             <ul className="space-y-1">
               {games.map((g) => (
                 <li key={g.id}>
-                  <Link to={`/games/${g.id}/questions`} className="inline-flex items-center gap-2 text-slate-100 hover:underline">
-                    <Gamepad2 size={14} className="text-slate-400" /> {g.title}
+                  <Link to={`/games/${g.id}/questions`} className="inline-flex items-center gap-2 text-ink hover:underline">
+                    <Gamepad2 size={14} className="text-ink-muted" /> {g.title}
                   </Link>
                 </li>
               ))}

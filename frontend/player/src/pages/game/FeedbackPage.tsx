@@ -1,12 +1,16 @@
+import { Stamp } from '../../components/ui/Stamp';
+
 export default function FeedbackPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-6 text-center">
-      <div className="text-6xl">🔒</div>
-      <p className="text-slate-100 text-2xl font-bold">Answer locked in!</p>
-      <div className="flex justify-center mt-2">
-        <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    <div className="min-h-[calc(100dvh-3rem)] flex flex-col items-center justify-center p-6 gap-6 text-center">
+      <Stamp tone="accent" className="text-3xl">Locked in</Stamp>
+      <p className="font-display text-ink text-2xl font-extrabold">Answer locked in!</p>
+      <div className="flex gap-2" aria-hidden>
+        <span className="h-3 w-3 rounded-full bg-accent animate-bounce [animation-delay:-0.3s]" />
+        <span className="h-3 w-3 rounded-full bg-accent animate-bounce [animation-delay:-0.15s]" />
+        <span className="h-3 w-3 rounded-full bg-accent animate-bounce" />
       </div>
-      <p className="text-slate-400 text-sm">Waiting for host to reveal results…</p>
+      <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Waiting for the host to reveal results…</p>
     </div>
   );
 }

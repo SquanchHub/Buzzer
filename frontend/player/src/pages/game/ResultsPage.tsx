@@ -1,14 +1,29 @@
 import { useGame } from './GameLayout';
+import { Stamp, type StampTone } from '../../components/ui/Stamp';
 import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
 import { OptionThumbs } from '../../components/OptionThumbs';
 import { OrderingList } from '../../components/OrderingPicker';
 import { hasOptionImages, optionText } from '../../lib/options';
 import type { HotspotBand, OrderingOutcome, PlayerAnswerReveal } from '../../types/game';
 
-const HOTSPOT_LABELS: Record<HotspotBand, { text: string; className: string }> = {
-  inner: { text: 'Bullseye!', className: 'text-green-400' },
-  outer: { text: 'Close!', className: 'text-amber-400' },
-  miss: { text: 'Miss', className: 'text-red-400' },
+/** A verdict word and its stamp tone; `null` tone = no verdict (plain muted text). */
+type Verdict = { text: string; tone: StampTone | null };
+
+function VerdictStamp({ verdict, testId }: { verdict: Verdict; testId?: string }) {
+  if (!verdict.tone) {
+    return <p data-testid={testId} className="font-display text-3xl font-extrabold text-ink-muted">{verdict.text}</p>;
+  }
+  return (
+    <Stamp data-testid={testId} tone={verdict.tone} className="text-3xl">
+      {verdict.text}
+    </Stamp>
+  );
+}
+
+const HOTSPOT_LABELS: Record<HotspotBand, Verdict> = {
+  inner: { text: 'Bullseye!', tone: 'success' },
+  outer: { text: 'Close!', tone: 'warning' },
+  miss: { text: 'Miss', tone: 'danger' },
 };
 
 /** Rings to draw from a hotspot reveal, or null (COMPLETENESS / invalid target, §5.4). */
@@ -53,16 +68,16 @@ function orderingLabel(
   reveal: PlayerAnswerReveal,
   answered: boolean,
   outcome: OrderingOutcome | null | undefined,
-): { text: string; className: string } {
-  if (reveal.type === 'completeness') return { text: 'Answer recorded!', className: 'text-indigo-400' };
-  if (!answered) return { text: 'No answer', className: 'text-slate-400' };
+): Verdict {
+  if (reveal.type === 'completeness') return { text: 'Answer recorded!', tone: 'accent' };
+  if (!answered) return { text: 'No answer', tone: null };
   if (reveal.type !== 'ordering' || !reveal.correctOrder) {
-    return { text: 'Not scored', className: 'text-slate-400' };
+    return { text: 'Not scored', tone: null };
   }
-  if (!outcome) return { text: 'Answer recorded', className: 'text-indigo-400' }; // don't guess
+  if (!outcome) return { text: 'Answer recorded', tone: 'accent' }; // don't guess
   const k = outcome.outOfPlace.length;
-  if (k === 0) return { text: 'Perfect order!', className: 'text-green-400' };
-  return { text: `${k} item${k === 1 ? '' : 's'} out of place`, className: 'text-amber-400' };
+  if (k === 0) return { text: 'Perfect order!', tone: 'success' };
+  return { text: `${k} item${k === 1 ? '' : 's'} out of place`, tone: 'warning' };
 }
 
 export default function ResultsPage() {
@@ -70,8 +85,8 @@ export default function ResultsPage() {
 
   if (!questionResults) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Loading results…</p>
+      <div className="min-h-[70dvh] flex items-center justify-center">
+        <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-muted">Loading results…</p>
       </div>
     );
   }
@@ -88,13 +103,13 @@ export default function ResultsPage() {
   const isCorrect = !isCompleteness && yourPoints > 0;
   const isHotspot = currentQuestion?.type === 'hotspot';
   // Hotspot label comes from the server's yourBand, never from points (H12, §13.1 c).
-  const hotspotLabel = isCompleteness
+  const hotspotLabel: Verdict | null = isCompleteness
     ? null
     : !lastAnswerData
-      ? { text: 'No answer', className: 'text-slate-400' }
+      ? { text: 'No answer', tone: null }
       : questionResults.yourBand
         ? HOTSPOT_LABELS[questionResults.yourBand]
-        : { text: 'Answer recorded', className: 'text-indigo-400' }; // band unknown: don't guess
+        : { text: 'Answer recorded', tone: 'accent' }; // band unknown: don't guess
   const hotspotImage: HotspotImage =
     questionImage && currentQuestion && questionImage.questionId === currentQuestion.questionId
       ? questionImage
@@ -135,28 +150,28 @@ export default function ResultsPage() {
   const fitbAccepted: string[] =
     isFitb && 'acceptedAnswers' in answerReveal ? answerReveal.acceptedAnswers : [];
 
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 gap-5 text-center">
+  const verdict: Verdict = ordLabel
+    ? ordLabel
+    : isHotspot && hotspotLabel
+      ? hotspotLabel
+      : isCompleteness
+        ? { text: 'Answer recorded!', tone: 'accent' }
+        : isCorrect
+          ? { text: 'Correct!', tone: 'success' }
+          : { text: 'Incorrect', tone: 'danger' };
 
-      {/* Correct / Wrong / Recorded */}
-      {ordLabel ? (
-        <p data-testid="ordering-result-label" className={`${ordLabel.className} text-4xl font-black`}>
-          {ordLabel.text}
-        </p>
-      ) : isHotspot && hotspotLabel ? (
-        <p className={`${hotspotLabel.className} text-4xl font-black`}>{hotspotLabel.text}</p>
-      ) : isCompleteness ? (
-        <p className="text-indigo-400 text-4xl font-black">Answer recorded!</p>
-      ) : isCorrect ? (
-        <p className="text-green-400 text-4xl font-black">Correct!</p>
-      ) : (
-        <p className="text-red-400 text-4xl font-black">Incorrect</p>
-      )}
+  return (
+    <div className="min-h-[calc(100dvh-3rem)] flex flex-col items-center justify-center px-5 py-8 gap-5 text-center">
+
+      {/* Correct / Wrong / Recorded, as a rubber stamp (T9 S3) */}
+      <div className="py-2">
+        <VerdictStamp verdict={verdict} testId={ordLabel ? 'ordering-result-label' : undefined} />
+      </div>
 
       {/* What the player answered */}
       {answeredLabel && (
-        <p className="text-slate-400 text-base">
-          You answered: <span className="text-slate-200 font-semibold">{answeredLabel}</span>
+        <p className="text-ink-muted text-base">
+          You answered: <span className="text-ink font-bold">{answeredLabel}</span>
         </p>
       )}
 
@@ -165,7 +180,7 @@ export default function ResultsPage() {
       )}
       {withImages && !isCompleteness && !isCorrect && correctIndices.length > 0 && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-slate-400 text-base">Correct:</p>
+          <p className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-ink-muted">Correct</p>
           <OptionThumbs indices={correctIndices} imageIds={imageIds} size="h-20 w-28" />
         </div>
       )}
@@ -200,27 +215,31 @@ export default function ResultsPage() {
 
       {/* Correct answer for FITB ACCURACY */}
       {isFitb && fitbAccepted.length > 0 && (
-        <p className="text-slate-400 text-base">
-          Correct: <span className="text-green-400 font-semibold">{fitbAccepted.join(' / ')}</span>
+        <p className="text-ink-muted text-base">
+          Correct: <span className="text-success-ink font-bold">{fitbAccepted.join(' / ')}</span>
         </p>
       )}
 
       {/* Points for this question */}
-      <p className="text-slate-100 text-3xl font-bold">
-        +{yourPoints.toLocaleString()} pts
+      <p className="font-mono text-5xl font-extrabold tracking-tight text-ink">
+        +{yourPoints.toLocaleString()}<span className="text-xl text-ink-soft"> pts</span>
       </p>
 
       {/* Running total and rank */}
-      <div className="mt-2 space-y-1">
-        <p className="text-slate-300 text-lg">
-          Total: <span className="font-bold text-white">{yourScore.toLocaleString()}</span> pts
-        </p>
-        <p className="text-slate-400 text-base">
-          Rank <span className="font-bold text-white">#{yourRank}</span> of {playerCount}
-        </p>
+      <div className="grid w-full max-w-xs grid-cols-2 gap-3">
+        <div className="rounded-2xl border-2 border-line bg-surface px-3 py-2 shadow-hard-sm">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-soft">Total</p>
+          <p className="font-mono text-2xl font-extrabold text-ink">{yourScore.toLocaleString()}</p>
+        </div>
+        <div className="rounded-2xl border-2 border-line bg-surface px-3 py-2 shadow-hard-sm">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-ink-soft">Rank</p>
+          <p className="font-mono text-2xl font-extrabold text-ink">
+            #{yourRank}<span className="text-sm text-ink-soft"> / {playerCount}</span>
+          </p>
+        </div>
       </div>
 
-      <p className="text-slate-500 text-sm mt-4">Waiting for next question…</p>
+      <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-soft">Waiting for next question…</p>
     </div>
   );
 }

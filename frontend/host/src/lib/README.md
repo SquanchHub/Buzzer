@@ -10,6 +10,7 @@ directly in `frontend/host/src/pages/game/GameLayout.tsx`, not here.
 |---|---|
 | `api.ts` | `api.get` / `api.post` / `api.delete` — `fetch` wrappers that prefix `/api`, send JSON, attach the bearer token, and throw on non-2xx. |
 | `utils.ts` | `cn(...classes)` — combines `clsx` (conditional classes) with `tailwind-merge` (later Tailwind classes override earlier conflicting ones). |
+| `theme.ts` | T9 theme runtime (identical in all three apps): `useTheme()` (`useSyncExternalStore`; follows the OS preference until the user picks, then `localStorage['buzzer-theme']`, synced across tabs), `setTheme`, `effectiveTheme`, and `cssColor('--token', alpha?)` for canvas code. First paint is set by the inline script in `index.html`. |
 | `images.ts` | `loadImageUrl(imageId)` — fetches `/api/images/{id}` with the bearer token into an object URL (caller revokes it); throws `ImageUnavailableError` on network error, non-2xx or a non-image body. Copy of the player's `lib/images.ts`. |
 | `options.ts` | `optionLetter(i)`, `optionImageId(imageIds, i)`, `optionText(options, imageIds, i)` ("(image)" for an image-only option, T8 D5/D8), `hasOptionImages(imageIds)`. Identical copy in the other app. |
 | `api.ts` (T8 part) | Typed image calls: `listImages(courseId, page, unusedOnly)`, `uploadImage(courseId, file)`, `replaceImage(id, file)`, `deleteImage(id)`, the `ImageItem` / `ImagePage` / `ReplaceResult` types and `IMAGE_ACCEPT`. Identical in admin and host. |

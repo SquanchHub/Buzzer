@@ -80,5 +80,5 @@ Unknown routes redirect to `/users`.
   emits per-question columns.
 - **T4 overlap:** roster, game and question management and session downloads are exactly the host
   capabilities T4 asks for; today they exist only here behind `require_admin`.
-- **Hardcoded palette everywhere** — status badges (`STATUS_COLORS`), selects, textareas, toggles and
-  tables use raw `slate`/`indigo`/`green`/`red` utilities (T9).
+- **Tokens only (T9)** — status badges (`STATUS_COLORS`) are `success`/`accent`/`danger` tints with
+  `-ink` text; raw selects and textareas carry `border-line` and the 3px `focus` ring by hand.

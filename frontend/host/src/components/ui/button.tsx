@@ -5,17 +5,20 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg';
 }
 
+/** Riso Press button (docs/plans/t9-theming.md §7.1): ink outline and a hard shadow that the
+ * button presses down into. Focus uses the global :focus-visible outline. */
 export function Button({ className, variant = 'default', size = 'md', ...props }: ButtonProps) {
+  const pressable = variant !== 'ghost';
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center rounded-lg font-semibold transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900',
-        'disabled:opacity-50 disabled:pointer-events-none',
-        variant === 'default' && 'bg-indigo-600 text-white hover:bg-indigo-500 focus:ring-indigo-500',
-        variant === 'outline' && 'border border-slate-600 text-slate-200 hover:bg-slate-700 focus:ring-slate-500',
-        variant === 'ghost' && 'text-slate-300 hover:bg-slate-700 hover:text-slate-100',
-        variant === 'destructive' && 'bg-red-600 text-white hover:bg-red-500 focus:ring-red-500',
+        'inline-flex items-center justify-center gap-2 rounded-xl font-bold transition-[transform,box-shadow,background-color] duration-75',
+        'disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none',
+        pressable && 'border-2 border-line shadow-hard active:translate-x-1 active:translate-y-1 active:shadow-none',
+        variant === 'default' && 'bg-accent text-on-fill',
+        variant === 'outline' && 'bg-surface text-ink hover:bg-sunken',
+        variant === 'ghost' && 'bg-transparent text-ink-muted hover:bg-sunken hover:text-ink',
+        variant === 'destructive' && 'bg-danger text-on-fill',
         size === 'sm' && 'px-3 py-1.5 text-sm',
         size === 'md' && 'px-4 py-2 text-base',
         size === 'lg' && 'px-6 py-3 text-lg',

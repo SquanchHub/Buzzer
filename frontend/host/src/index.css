@@ -2,12 +2,155 @@
 @tailwind components;
 @tailwind utilities;
 
+/* tokens:start */
+/* Riso Press design tokens (docs/plans/t9-theming.md §6). Identical in host, player and
+   admin; tests/unit/test_theme_tokens.py enforces that and checks WCAG contrast.
+   Values are bare R G B channels so Tailwind opacity modifiers work. */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --grain: 0.05;
+  --canvas: 243 237 226;
+  --surface: 255 251 244;
+  --sunken: 231 222 205;
+  --ink: 23 20 31;
+  --ink-muted: 74 67 82;
+  --ink-soft: 95 88 104;
+  --line: 23 20 31;
+  --line-soft: 207 196 176;
+  --shadow: 23 20 31;
+  --accent: 255 62 165;
+  --accent-ink: 176 16 94;
+  --success: 31 199 122;
+  --success-ink: 10 110 62;
+  --danger: 255 90 54;
+  --danger-ink: 180 42 12;
+  --warning: 255 197 48;
+  --warning-ink: 122 80 0;
+  --focus: 36 72 224;
+  --on-fill: 23 20 31;
+  --qr: 255 255 255;
+  --scrim: 23 20 31;
+  --opt-1: 255 90 54;
+  --opt-2: 61 123 255;
+  --opt-3: 255 197 48;
+  --opt-4: 31 199 122;
+  --opt-5: 168 121 255;
+  --opt-6: 255 154 31;
+  --opt-7: 255 111 192;
+  --opt-8: 34 195 195;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --grain: 0.04;
+  --canvas: 19 17 26;
+  --surface: 29 26 38;
+  --sunken: 11 10 16;
+  --ink: 246 240 230;
+  --ink-muted: 203 195 211;
+  --ink-soft: 167 159 178;
+  --line: 233 225 212;
+  --line-soft: 58 52 71;
+  --shadow: 75 63 107;
+  --accent: 255 92 180;
+  --accent-ink: 255 143 203;
+  --success: 59 224 142;
+  --success-ink: 91 232 160;
+  --danger: 255 116 82;
+  --danger-ink: 255 148 121;
+  --warning: 255 212 92;
+  --warning-ink: 255 212 92;
+  --focus: 127 162 255;
+  --on-fill: 23 20 31;
+  --qr: 255 255 255;
+  --scrim: 0 0 0;
+  --opt-1: 255 90 54;
+  --opt-2: 61 123 255;
+  --opt-3: 255 197 48;
+  --opt-4: 31 199 122;
+  --opt-5: 168 121 255;
+  --opt-6: 255 154 31;
+  --opt-7: 255 111 192;
+  --opt-8: 34 195 195;
+}
+/* tokens:end */
+
+/* Paper grain (S6): alpha-only SVG noise, dark specks on Paper and light specks on Night. */
+:root {
+  --grain-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.4 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+[data-theme="dark"] {
+  --grain-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -0.3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  background-color: rgb(var(--canvas));
+}
+
 body {
   margin: 0;
-  background: #0f172a;
-  color: #f8fafc;
+  background-color: rgb(var(--canvas));
+  color: rgb(var(--ink));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--grain-noise);
+  opacity: var(--grain);
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* One focus rule for every element (D6); the outline sits on the backdrop, not the fill. */
+:focus-visible {
+  outline: 3px solid rgb(var(--focus));
+  outline-offset: 2px;
+}
+.slab :focus-visible {
+  outline-color: rgb(var(--canvas));
+}
+
+/* Riso halftone dots on saturated fills (S2). */
+.halftone {
+  background-image: radial-gradient(rgb(var(--on-fill) / 0.12) 1px, transparent 1.3px);
+  background-size: 8px 8px;
+}
+
+/* Ticket stub (S4): notches cut with a mask; the outline and hard shadow follow the cut
+   because they are drop-shadows on the wrapper, not borders on the masked box. */
+.ticket-frame {
+  filter: drop-shadow(2px 0 0 rgb(var(--line))) drop-shadow(-2px 0 0 rgb(var(--line)))
+    drop-shadow(0 2px 0 rgb(var(--line))) drop-shadow(0 -2px 0 rgb(var(--line)))
+    drop-shadow(4px 4px 0 rgb(var(--shadow)));
+}
+.ticket {
+  --notch: 14px;
+  -webkit-mask: radial-gradient(circle var(--notch) at 0 50%, transparent 98%, black) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, transparent 98%, black) right / 51% 100% no-repeat;
+  mask: radial-gradient(circle var(--notch) at 0 50%, transparent 98%, black) left / 51% 100% no-repeat,
+    radial-gradient(circle var(--notch) at 100% 50%, transparent 98%, black) right / 51% 100% no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

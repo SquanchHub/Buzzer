@@ -45,30 +45,30 @@ export default function SessionsPage() {
     }
   }
 
-  if (loading) return <p className="text-center text-slate-400">Loading sessions…</p>;
+  if (loading) return <p className="text-center text-ink-muted">Loading sessions…</p>;
 
   return (
     <div className="mx-auto max-w-3xl">
       <Card>
         <CardHeader>
-          <h1 className="text-2xl font-bold text-slate-100">Completed sessions</h1>
-          <p className="text-slate-400 text-sm mt-1">Games you hosted that have finished, newest first.</p>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-ink">Completed sessions</h1>
+          <p className="text-ink-muted text-sm mt-1">Games you hosted that have finished, newest first.</p>
         </CardHeader>
         <CardContent className="space-y-2">
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p className="text-sm text-danger-ink">{error}</p>}
           {!error && sessions.length === 0 && (
-            <p className="text-slate-400 text-sm">No completed sessions yet. They appear here once a game you host reaches the final results.</p>
+            <p className="text-ink-muted text-sm">No completed sessions yet. They appear here once a game you host reaches the final results.</p>
           )}
           {sessions.map((s) => (
-            <div key={s.session_id} className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+            <div key={s.session_id} className="rounded-lg border border-line bg-surface px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-slate-100">{s.game_title}</p>
-                  <p className="text-sm text-slate-400">{s.course_name} · {s.course_semester}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="font-medium text-ink">{s.game_title}</p>
+                  <p className="text-sm text-ink-muted">{s.course_name} · {s.course_semester}</p>
+                  <p className="text-xs text-ink-soft mt-0.5">
                     {s.completed_at ? new Date(s.completed_at).toLocaleString() : 'Completed'}
                     {' · '}{s.player_count} player{s.player_count === 1 ? '' : 's'}
-                    {' · '}Room <span className="font-mono text-slate-300">{s.room_code}</span>
+                    {' · '}Room <span className="font-mono text-ink-muted">{s.room_code}</span>
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -82,7 +82,7 @@ export default function SessionsPage() {
                   </Button>
                 </div>
               </div>
-              {rowError?.id === s.session_id && <p className="mt-2 text-sm text-red-300">{rowError.message}</p>}
+              {rowError?.id === s.session_id && <p className="mt-2 text-sm text-danger-ink">{rowError.message}</p>}
             </div>
           ))}
         </CardContent>

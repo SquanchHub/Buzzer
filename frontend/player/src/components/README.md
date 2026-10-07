@@ -10,14 +10,17 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
 
 | File | Purpose |
 |---|---|
-| `ui/button.tsx` | `Button` — a styled `<button>` with `variant` (`default`, `outline`, `ghost`, `destructive`) and `size` (`sm`, `md`, `lg`); larger touch targets and an `active:scale-95` press effect. |
-| `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — rounded, padded panel wrappers around `<div>`. |
-| `ui/input.tsx` | `Input` — a styled `<input>` with phone-sized padding and `text-base`. |
-| `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (green → yellow → red) that can be paused. |
+| `ui/button.tsx` | `Button` — Riso Press `<button>` (T9): ink outline and a hard shadow it presses into; `variant` (`default` accent, `outline`, `ghost`, `destructive`) and `size` (`sm`, `md`, `lg`) with phone-sized touch targets. |
+| `ui/card.tsx` | `Card`, `CardHeader`, `CardContent` — `surface` panel with an ink outline and `shadow-hard`. |
+| `ui/input.tsx` | `Input` — `<input>` with phone-sized padding, `text-base` and a 3px `focus` ring. |
+| `ui/TimerBar.tsx` | `TimerBar` — a self-running countdown bar (`success` → `warning` → `danger`) with mono seconds, that can be paused. |
+| `ui/Stamp.tsx`, `ui/Ticket.tsx` | T9 rubber-stamp verdict and room-code ticket stub (copies of the host's). |
+| `ThemeToggle.tsx` | `ThemeToggle({compact?})` — the Paper/Night switch (≥ 44×44 when compact), identical in all three apps. |
+| `PageShell.tsx` | `PageShell({hero?})` — pre-game page frame: wordmark + `ThemeToggle` header. |
 | `ImageThumb.tsx` | `ImageThumb({ imageId, alt, className? })` — a stored image (T8) letterboxed in a box: loaded through `lib/images.ts` into a blob URL (revoked on unmount or id change), "Loading…" / "Image unavailable" otherwise. Copied from the host's `ImageThumb` (keep in sync). |
 | `OptionThumbs.tsx` | `OptionThumbs({ indices, imageIds, size? })` — lettered thumbnails of the options at `indices` that have an image (T8 D8: the player's choice and the correct choice); renders nothing when none has one. |
 | `HotspotCanvas.tsx` | `HotspotCanvas` — the hotspot question's `<canvas>` (`docs/plans/t7-hotspot.md` §7.6–7.7), interactive (tap to place a point) or display (rings + own tap); `useImageUrl(imageId)` for display canvases that load their own image. |
-| `OrderingPicker.tsx` | `OrderingPicker({items, sequence, onTap, disabled})` — ordering answer UI (`docs/plans/t7-ordering.md` §6.7, O2): full-width buttons in display order that never move; a tapped item shows its position badge (`data-testid` `ordering-item-{d}` / `ordering-badge-{d}`). `OrderingList({items, order, marked?, title, testId})` — read-only numbered list for results, marking out-of-place items. Colours from `--ordering-selected` / `--ordering-misplaced` (fallbacks until T9). |
+| `OrderingPicker.tsx` | `OrderingPicker({items, sequence, onTap, disabled})` — ordering answer UI (`docs/plans/t7-ordering.md` §6.7, O2): full-width buttons in display order that never move; a tapped item shows its position badge (`data-testid` `ordering-item-{d}` / `ordering-badge-{d}`). `OrderingList({items, order, marked?, title, testId})` — read-only numbered list for results, marking out-of-place items. Placed items are `bg-accent text-on-fill`; out-of-place rows get a `warning` border and chip (T9 tokens). |
 
 ## Key entry points
 
@@ -38,7 +41,7 @@ and the recap rows are written inline in `frontend/player/src/pages/game/*.tsx`.
     image's **longer side**, drawn as true circles — what the server scores.
   - `image` is `{status: 'loading' | 'ready' (url) | 'error'}`; `'error'` draws
     "Image unavailable" (rings and marker still draw). `interactive` sets `touch-action: none`.
-  - Colours come from CSS variables `--hotspot-inner|outer|miss|neutral` (fallbacks until T9).
+  - Colours are T9 tokens read with `cssColor()` at draw time (inner `success`, outer `warning`, miss `danger`, neutral `ink-soft`); the draw effect depends on `useTheme()` so a theme toggle repaints. The frame is a `ring` (box-shadow), never a border — a border would shrink the bitmap and offset `getBoundingClientRect()` clicks.
 
 ## Depends on
 

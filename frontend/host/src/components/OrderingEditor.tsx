@@ -177,18 +177,18 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
   return (
     <div className="space-y-3">
       {state.keyInvalid && accuracy && (
-        <p className="rounded-lg border border-red-700 bg-red-900/30 px-3 py-2 text-sm text-red-300">
+        <p className="rounded-lg border border-danger bg-danger/15 px-3 py-2 text-sm text-danger-ink">
           The stored answer key is invalid. Re-enter the items in the correct order.
         </p>
       )}
       <div>
-        <label className="block text-xs text-slate-400 mb-1">
+        <label className="block text-xs text-ink-muted mb-1">
           {accuracy ? 'Items in the correct order (first → last)' : 'Items (players see them in this order)'}
         </label>
         <div className="space-y-2">
           {items.map((item, i) => (
             <div key={i} className="flex items-center gap-2">
-              <span className="w-5 text-right text-xs font-mono text-slate-500">{i + 1}</span>
+              <span className="w-5 text-right text-xs font-mono text-ink-soft">{i + 1}</span>
               <Input
                 data-testid={`ordering-editor-item-${i}`}
                 aria-label={`Item ${i + 1}`}
@@ -203,7 +203,7 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
                 aria-label={`Move item ${i + 1} up`}
                 disabled={i === 0}
                 onClick={() => move(i, -1)}
-                className="p-1 text-slate-400 hover:text-slate-100 disabled:opacity-20"
+                className="p-1 text-ink-muted hover:text-ink disabled:opacity-20"
               >
                 <ArrowUp size={14} />
               </button>
@@ -212,7 +212,7 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
                 aria-label={`Move item ${i + 1} down`}
                 disabled={i === n - 1}
                 onClick={() => move(i, 1)}
-                className="p-1 text-slate-400 hover:text-slate-100 disabled:opacity-20"
+                className="p-1 text-ink-muted hover:text-ink disabled:opacity-20"
               >
                 <ArrowDown size={14} />
               </button>
@@ -221,7 +221,7 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
                 aria-label={`Remove item ${i + 1}`}
                 disabled={n <= ORDERING_MIN_ITEMS}
                 onClick={() => remove(i)}
-                className="p-1 text-slate-400 hover:text-red-400 disabled:opacity-20"
+                className="p-1 text-ink-muted hover:text-danger-ink disabled:opacity-20"
               >
                 <Trash2 size={14} />
               </button>
@@ -239,14 +239,14 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
         >
           <Plus size={12} className="mr-1" /> Add item
         </Button>
-        <p className="text-slate-500 text-xs mt-1">
+        <p className="text-ink-soft text-xs mt-1">
           Say which end comes first in the prompt, e.g. &ldquo;earliest first&rdquo;.
         </p>
       </div>
 
       {accuracy && (
         <>
-          <label className="flex items-start gap-2 text-sm text-slate-200">
+          <label className="flex items-start gap-2 text-sm text-ink">
             <input
               type="checkbox"
               data-testid="ordering-editor-partial"
@@ -256,7 +256,7 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
             />
             <span>
               Partial credit for nearly-right orders
-              <span className="block text-xs text-slate-500">
+              <span className="block text-xs text-ink-soft">
                 {partialCredit
                   ? `Each item out of place costs 1/${Math.max(n - 1, 1)} of the points.`
                   : 'Only the exact order earns points.'}
@@ -265,7 +265,7 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
           </label>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-slate-400">Players see:</span>
+              <span className="text-xs text-ink-muted">Players see:</span>
               <Button
                 type="button"
                 variant="ghost"
@@ -281,8 +281,8 @@ export function OrderingEditor({ state, grading, onChange }: OrderingEditorProps
                 <li
                   key={k}
                   className={cn(
-                    'rounded-md bg-slate-800 px-3 py-1.5 text-sm',
-                    items[idx]?.trim() ? 'text-slate-200' : 'text-slate-500 italic',
+                    'rounded-md bg-surface px-3 py-1.5 text-sm',
+                    items[idx]?.trim() ? 'text-ink' : 'text-ink-soft italic',
                   )}
                 >
                   {items[idx]?.trim() || `(item ${idx + 1})`}

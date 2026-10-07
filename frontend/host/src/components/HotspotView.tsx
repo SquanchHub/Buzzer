@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadImageUrl } from '../lib/images';
+import { cssColor, useTheme } from '../lib/theme';
 import { HOTSPOT_TAP_CAP, type HotspotBand, type HotspotTap } from '../types/game';
 
 /*
@@ -51,18 +52,21 @@ function useImageUrl(imageId: number | undefined): ImageState {
   return image;
 }
 
-// Colours come from CSS variables so theming (T9) reaches the canvas; fallbacks until then.
-const FALLBACK_COLOURS = {
-  inner: '#4ade80',
-  outer: '#fbbf24',
-  miss: '#f87171',
-  neutral: '#94a3b8',
+// Canvas colours are read from the theme tokens at draw time (docs/plans/t9-theming.md §6);
+// the draw effect depends on the theme so a toggle repaints.
+const BAND_TOKEN = {
+  inner: 'success',
+  outer: 'warning',
+  miss: 'danger',
+  neutral: 'ink-soft',
 } as const;
 
-function colour(name: keyof typeof FALLBACK_COLOURS): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(`--hotspot-${name}`).trim();
-  return v || FALLBACK_COLOURS[name];
+function colour(name: keyof typeof BAND_TOKEN): string {
+  return cssColor(`--${BAND_TOKEN[name]}`);
 }
+
+// Legend swatches: the same tokens as classes (static so Tailwind sees them; D10a).
+const BAND_SWATCH: Record<HotspotBand, string> = { inner: 'bg-success', outer: 'bg-warning', miss: 'bg-danger' };
 
 const BAND_LABELS: Record<HotspotBand, string> = { inner: 'Bullseye', outer: 'Close', miss: 'Miss' };
 
@@ -95,6 +99,7 @@ export function HotspotView({
   maxHeightVh = 55,
 }: HotspotViewProps) {
   const image = useImageUrl(imageId);
+  const [theme] = useTheme();
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -146,13 +151,13 @@ export function HotspotView({
     const imgY = (size.h - imgH) / 2;
 
     ctx.clearRect(0, 0, size.w, size.h);
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = cssColor('--sunken');
     ctx.fillRect(imgX, imgY, imgW, imgH);
     if (imgEl) {
       ctx.drawImage(imgEl, imgX, imgY, imgW, imgH);
     } else {
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '600 20px system-ui, sans-serif';
+      ctx.fillStyle = cssColor('--ink-soft');
+      ctx.font = "600 20px 'Bricolage Grotesque Variable', system-ui, sans-serif";
       ctx.textAlign = 'center';
       if (image.status === 'error') {
         // Bottom edge, so rings and taps drawn over the blank box don't cover it.
@@ -188,18 +193,19 @@ export function HotspotView({
       ctx.fillStyle = colour(t.band ?? 'neutral');
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = '#0f172a';
+      ctx.strokeStyle = cssColor('--on-fill');
       ctx.stroke();
     }
-  }, [size, imgEl, image.status, aspect, rings, taps]);
+  }, [size, imgEl, image.status, aspect, rings, taps, theme]);
 
   let legendText: React.ReactNode = null;
   if (legend) {
     if (legend.accuracy) {
       legendText = (Object.keys(BAND_LABELS) as HotspotBand[]).map((band, i) => (
-        <span key={band}>
-          {i > 0 && <span className="text-slate-600"> · </span>}
-          <span style={{ color: colour(band) }}>●</span> {BAND_LABELS[band]} {legend.distribution[band] ?? 0}
+        <span key={band} className="inline-flex items-center gap-2">
+          {i > 0 && <span className="text-ink-soft px-2">·</span>}
+          <span className={`inline-block h-4 w-4 rounded-full border-2 border-line ${BAND_SWATCH[band]}`} aria-hidden />
+          {BAND_LABELS[band]} <span className="font-mono font-extrabold text-ink">{legend.distribution[band] ?? 0}</span>
         </span>
       ));
     } else {
@@ -216,9 +222,9 @@ export function HotspotView({
         role="img"
         aria-label={label}
         style={{ width: size ? `${size.w}px` : '100%', height: size ? `${size.h}px` : undefined }}
-        className="block rounded-xl bg-slate-900"
+        className="block rounded-2xl ring-2 ring-line bg-canvas"
       />
-      {legendText && <p className="mt-3 text-center text-slate-300 text-lg">{legendText}</p>}
+      {legendText && <p className="mt-3 text-center text-ink-muted text-xl font-semibold">{legendText}</p>}
     </div>
   );
 }

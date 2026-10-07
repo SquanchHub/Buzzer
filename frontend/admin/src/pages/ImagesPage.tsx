@@ -38,11 +38,11 @@ export default function ImagesPage() {
       <div>
         <Link
           to={`/courses/${course}`}
-          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200"
+          className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink"
         >
           <ArrowLeft size={14} /> Course
         </Link>
-        <h2 className="mt-2 text-2xl font-bold text-slate-100">Images</h2>
+        <h2 className="mt-2 text-2xl font-bold text-ink">Images</h2>
       </div>
       <ImageLibrary courseId={course} />
     </div>
@@ -113,12 +113,12 @@ function ImageLibrary({ courseId }: { courseId: number }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ink-muted">
           PNG, JPEG or WebP, up to 2 MB and 4096 px per side. Replacing an image updates every
           question you can edit that uses it.
         </p>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+          <label className="flex items-center gap-2 text-sm text-ink-muted">
             <input
               type="checkbox"
               checked={unusedOnly}
@@ -126,7 +126,7 @@ function ImageLibrary({ courseId }: { courseId: number }) {
                 setUnusedOnly(e.target.checked);
                 setPage(1);
               }}
-              className="h-4 w-4 accent-indigo-500"
+              className="h-4 w-4 accent-accent"
             />
             Unused only
           </label>
@@ -147,15 +147,15 @@ function ImageLibrary({ courseId }: { courseId: number }) {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
-      {notice && <p className="text-sm text-emerald-400" role="status">{notice}</p>}
+      {error && <p className="text-sm text-danger-ink" role="alert">{error}</p>}
+      {notice && <p className="text-sm text-success-ink" role="status">{notice}</p>}
 
       {!data ? (
-        <p className="text-slate-400">Loading images…</p>
+        <p className="text-ink-muted">Loading images…</p>
       ) : data.items.length === 0 ? (
         <Card>
           <CardContent>
-            <p className="text-slate-400">
+            <p className="text-ink-muted">
               {unusedOnly ? 'No unused images.' : 'No images in this course yet.'}
             </p>
           </CardContent>
@@ -175,7 +175,7 @@ function ImageLibrary({ courseId }: { courseId: number }) {
       )}
 
       {pages > 1 && (
-        <div className="flex items-center justify-end gap-2 text-sm text-slate-300">
+        <div className="flex items-center justify-end gap-2 text-sm text-ink-muted">
           <Button
             variant="outline"
             size="sm"
@@ -212,15 +212,15 @@ function ImageCard({ image, busy, onReplace, onDelete }: ImageCardProps) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const used = image.reference_count > 0;
   return (
-    <li className="rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+    <li className="rounded-xl border border-line-soft bg-surface p-3">
       <ImageThumb imageId={image.id} alt={`Image ${image.id}`} className="aspect-[4/3] w-full" />
       <div className="mt-2 space-y-0.5 text-sm">
-        <p className="font-medium text-slate-100">#{image.id}</p>
-        <p className="text-slate-400">
+        <p className="font-medium text-ink">#{image.id}</p>
+        <p className="text-ink-muted">
           {image.width}×{image.height} · {kb(image.byte_size)} · {image.content_type.replace('image/', '').toUpperCase()}
         </p>
-        <p className="text-slate-400">Uploaded by {image.uploaded_by_name ?? 'a deleted user'}</p>
-        <p className={used ? 'text-slate-200' : 'text-amber-300'}>{usedBy(image.reference_count)}</p>
+        <p className="text-ink-muted">Uploaded by {image.uploaded_by_name ?? 'a deleted user'}</p>
+        <p className={used ? 'text-ink' : 'text-warning-ink'}>{usedBy(image.reference_count)}</p>
       </div>
       <div className="mt-3 flex gap-2">
         <input
@@ -248,7 +248,7 @@ function ImageCard({ image, busy, onReplace, onDelete }: ImageCardProps) {
         </Button>
       </div>
       {used && (
-        <p className="mt-2 text-xs text-slate-500">Remove it from every question to delete it.</p>
+        <p className="mt-2 text-xs text-ink-soft">Remove it from every question to delete it.</p>
       )}
     </li>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { PageShell } from '../components/PageShell';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
@@ -40,11 +41,10 @@ export default function JoinPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <PageShell hero>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <h1 className="text-2xl font-bold text-slate-100 text-center">Buzzer</h1>
-          <p className="text-slate-400 text-sm text-center mt-1">Enter your room code to join</p>
+          <p className="text-ink-muted text-center font-semibold">Enter your room code to join</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleJoin} className="space-y-4">
@@ -52,20 +52,21 @@ export default function JoinPage() {
               type="text"
               value={roomCode}
               onChange={e => setRoomCode(e.target.value.toUpperCase())}
-              placeholder="XXXXXX"
+              placeholder="ABC123"
               maxLength={6}
-              className="text-center text-3xl font-mono tracking-widest uppercase"
+              aria-label="Room code"
+              className="h-20 text-center text-4xl font-mono font-extrabold tracking-[0.3em] uppercase placeholder:text-line-soft"
               autoCapitalize="characters"
               autoComplete="off"
               autoFocus
             />
-            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+            {error && <p className="text-danger-ink text-sm text-center font-semibold">{error}</p>}
             <Button type="submit" className="w-full" size="lg" disabled={loading || roomCode.length < 6}>
               {loading ? 'Checking…' : 'Join Game'}
             </Button>
           </form>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

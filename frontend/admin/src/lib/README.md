@@ -10,6 +10,7 @@ a Tailwind class-name helper. The admin app has no Socket.io connection at all.
 |---|---|
 | `api.ts` | `api.get/post/put/patch/delete` JSON wrappers, `api.postForm` for multipart uploads, `api.download` for file downloads; all prefix `/api`, attach the bearer token, and throw readable errors. |
 | `utils.ts` | `cn(...classes)` — `clsx` + `tailwind-merge`, as in the host app; plus `tokenRole(token)`, the JWT's `role` claim (null if missing, malformed or expired), decoded unverified for `RequireAdmin` / `LoginPage`. |
+| `theme.ts` | T9 theme runtime (identical in all three apps): `useTheme()` (`useSyncExternalStore`; follows the OS preference until the user picks, then `localStorage['buzzer-theme']`, synced across tabs), `setTheme`, `effectiveTheme`, and `cssColor('--token', alpha?)` for canvas code. First paint is set by the inline script in `index.html`. |
 | `images.ts` | `loadImageUrl(id)` → blob URL for `GET /api/images/{id}` with the bearer token, for `HotspotEditor`. Copy of the host/player `lib/images.ts` — keep all three in sync. |
 | `api.ts` (T8 part) | Typed image calls: `listImages(courseId, page, unusedOnly)`, `uploadImage(courseId, file)`, `replaceImage(id, file)`, `deleteImage(id)`, the `ImageItem` / `ImagePage` / `ReplaceResult` types and `IMAGE_ACCEPT`. Identical in admin and host. |
 

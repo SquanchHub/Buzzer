@@ -4,10 +4,15 @@ import { Button } from '../../components/ui/button';
 import { HotspotView, ringsFromReveal } from '../../components/HotspotView';
 import { OrderingView } from '../../components/OrderingView';
 import { ImageThumb } from '../../components/ImageThumb';
+import { Card } from '../../components/ui/card';
+import { Stamp } from '../../components/ui/Stamp';
 import { optionImageId, optionText } from '../../lib/options';
 import type { AnswerReveal, HostQuestionSummaryItem } from '../../types/game';
 
 const TARGET_BUCKETS = 8;
+
+// Option inks, matching the phones' tiles (static so Tailwind sees them; D10a).
+const OPT_BG = ['bg-opt-1', 'bg-opt-2', 'bg-opt-3', 'bg-opt-4', 'bg-opt-5', 'bg-opt-6', 'bg-opt-7', 'bg-opt-8'];
 
 interface Bucket {
   label: string;
@@ -62,19 +67,19 @@ function AnswerBar({ label, count, total, correct, colorClass }: {
   const pct = total > 0 ? (count / total) * 100 : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className={`w-6 text-center font-bold text-sm shrink-0 ${correct ? 'text-green-400' : 'text-slate-400'}`}>
+      <span className={`w-6 text-center font-mono font-bold text-sm shrink-0 ${correct ? 'text-success-ink' : 'text-ink-muted'}`}>
         {label}
       </span>
-      <div className="flex-1 h-6 bg-slate-800 rounded overflow-hidden">
+      <div className="flex-1 h-6 rounded-md border-2 border-line bg-sunken overflow-hidden">
         <div
-          className={`h-full rounded transition-all duration-500 ${colorClass}`}
+          className={`h-full halftone transition-all duration-500 ${count > 0 ? 'border-r-2 border-line' : ''} ${colorClass}`}
           style={{ width: `${Math.max(pct, count > 0 ? 2 : 0)}%` }}
         />
       </div>
-      <span className={`w-8 text-right text-sm font-semibold shrink-0 ${correct ? 'text-green-400' : 'text-slate-400'}`}>
+      <span className={`w-8 text-right font-mono text-sm font-bold shrink-0 ${correct ? 'text-success-ink' : 'text-ink-muted'}`}>
         {count}
       </span>
-      {correct && <span className="text-green-500 text-xs font-bold shrink-0">✓</span>}
+      {correct && <span className="w-4 text-success-ink text-sm font-black shrink-0" aria-label="correct">✓</span>}
       {!correct && <span className="w-4 shrink-0" />}
     </div>
   );
@@ -113,28 +118,21 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
   }
 
   return (
-    <div className="w-full bg-slate-800/60 border border-slate-700 rounded-2xl p-5 space-y-4">
+    <Card className="w-full p-5 space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-slate-500 text-xs uppercase tracking-widest font-semibold">
-            Q{index + 1}
-          </span>
-          <span className="text-slate-600">·</span>
-          <span className="text-slate-400 text-xs uppercase tracking-widest">
-            {typeLabel[type] ?? type}
-          </span>
-          <span className="text-slate-600">·</span>
-          <span className={`text-xs uppercase tracking-widest font-semibold ${gradingType === 'COMPLETENESS' ? 'text-amber-400' : 'text-indigo-400'}`}>
+        <div className="flex items-center gap-1.5 flex-wrap font-mono text-[11px] font-bold uppercase tracking-[0.15em]">
+          <span className="rounded-full bg-ink px-2 py-0.5 text-canvas">Q{index + 1}</span>
+          <span className="rounded-full border-2 border-line px-2 py-0.5 text-ink-muted">{typeLabel[type] ?? type}</span>
+          <span className={`rounded-full px-2 py-0.5 ${gradingType === 'COMPLETENESS' ? 'bg-warning/20 text-warning-ink' : 'bg-accent/15 text-accent-ink'}`}>
             {gradingType === 'COMPLETENESS' ? 'Participation' : 'Accuracy'}
           </span>
-          <span className="text-slate-600">·</span>
-          <span className="text-slate-400 text-xs">{pointsValue} {pointsValue === 1 ? 'pt' : 'pts'}</span>
+          <span className="px-1 text-ink-muted normal-case tracking-normal">{pointsValue} {pointsValue === 1 ? 'pt' : 'pts'}</span>
         </div>
-        <div className="text-right text-xs text-slate-500 shrink-0">
-          <span className="text-slate-300 font-semibold">{totalAnswered}</span>/{totalPlayers} answered
+        <div className="text-right font-mono text-xs text-ink-soft shrink-0">
+          <span className="text-ink-muted font-semibold">{totalAnswered}</span>/{totalPlayers} answered
           {avgAnswerTimeMs !== null && (
-            <span className="ml-2 text-slate-500">· avg {(avgAnswerTimeMs / 1000).toFixed(1)}s</span>
+            <span className="ml-2 text-ink-soft">· avg {(avgAnswerTimeMs / 1000).toFixed(1)}s</span>
           )}
         </div>
       </div>
@@ -145,7 +143,7 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
         {typeof promptImageId === 'number' && (
           <ImageThumb imageId={promptImageId} alt={prompt} className="h-14 w-20 shrink-0" />
         )}
-        <p className="text-slate-100 text-lg font-semibold leading-snug">{prompt}</p>
+        <p className="font-display text-ink text-xl font-bold leading-snug">{prompt}</p>
       </div>
 
       {/* Distribution */}
@@ -178,12 +176,12 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
           const imageId = optionImageId(config.optionImageIds, i);
           return (
             <div key={i} className="space-y-0.5">
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span className={`font-bold ${correct ? 'text-green-400' : ''}`}>{optionLabel(i)}.</span>
+              <div className="flex items-center gap-2 text-sm text-ink-muted">
+                <span className={`font-bold ${correct ? 'text-success-ink' : ''}`}>{optionLabel(i)}.</span>
                 {imageId !== null && (
                   <ImageThumb imageId={imageId} alt={`Option ${optionLabel(i)}`} className="h-8 w-12 shrink-0" />
                 )}
-                <span className={correct ? 'text-green-300' : ''}>
+                <span className={correct ? 'text-success-ink' : ''}>
                   {optionText(config.options, config.optionImageIds, i)}
                 </span>
               </div>
@@ -192,7 +190,7 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
                 count={count}
                 total={totalPlayers}
                 correct={correct}
-                colorClass={correct ? 'bg-green-500' : 'bg-slate-600'}
+                colorClass={OPT_BG[i % 8]}
               />
             </div>
           );
@@ -208,7 +206,7 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
               count={count}
               total={totalPlayers}
               correct={correct}
-              colorClass={correct ? 'bg-green-500' : 'bg-red-700'}
+              colorClass={val === 'true' ? 'bg-opt-4' : 'bg-opt-1'}
             />
           );
         })}
@@ -216,16 +214,16 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
         {type === 'fill_in_the_blank' && (
           <div className="space-y-2">
             {reveal.type === 'fill_in_the_blank' && (
-              <p className="text-slate-400 text-sm">
+              <p className="text-ink-muted text-sm">
                 Accepted:{' '}
                 {(reveal as { type: 'fill_in_the_blank'; acceptedAnswers: string[]; editDistance: number }).acceptedAnswers.map((a, i, arr) => (
                   <span key={i}>
-                    <span className="text-green-300 font-mono">"{a}"</span>
-                    {i < arr.length - 1 && <span className="text-slate-500">, </span>}
+                    <span className="text-success-ink font-mono">"{a}"</span>
+                    {i < arr.length - 1 && <span className="text-ink-soft">, </span>}
                   </span>
                 ))}
                 {(reveal as { type: 'fill_in_the_blank'; acceptedAnswers: string[]; editDistance: number }).editDistance > 0 && (
-                  <span className="text-slate-500 ml-1">
+                  <span className="text-ink-soft ml-1">
                     (±{(reveal as { type: 'fill_in_the_blank'; acceptedAnswers: string[]; editDistance: number }).editDistance} typo)
                   </span>
                 )}
@@ -236,24 +234,24 @@ function QuestionCard({ item, index }: { item: HostQuestionSummaryItem; index: n
       </div>
 
       {/* Footer stats */}
-      <div className="flex items-center gap-4 pt-1 border-t border-slate-700 text-sm">
+      <div className="flex flex-wrap items-center gap-4 pt-3 border-t-2 border-dashed border-line-soft text-sm">
         {gradingType === 'ACCURACY' ? (
           <>
-            <span className="text-green-400 font-semibold">{correctCount} correct</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">{correctPct}% accuracy</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">{answeredPct}% responded</span>
+            <span className="text-success-ink font-semibold">{correctCount} correct</span>
+            <span className="text-ink-soft">·</span>
+            <span className="text-ink-muted">{correctPct}% accuracy</span>
+            <span className="text-ink-soft">·</span>
+            <span className="text-ink-muted">{answeredPct}% responded</span>
           </>
         ) : (
           <>
-            <span className="text-amber-400 font-semibold">{totalAnswered} completed</span>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-400">{answeredPct}% response rate</span>
+            <span className="text-warning-ink font-semibold">{totalAnswered} completed</span>
+            <span className="text-ink-soft">·</span>
+            <span className="text-ink-muted">{answeredPct}% response rate</span>
           </>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -268,7 +266,7 @@ export default function GameOverPage() {
   if (!gameOver) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-slate-400">Loading final results…</p>
+        <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-soft">Loading final results…</p>
       </div>
     );
   }
@@ -284,60 +282,55 @@ export default function GameOverPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-8 gap-8">
-      <div className="text-center">
-        <h1 className="text-5xl font-black text-slate-100">Game Over!</h1>
-        <p className="text-slate-400 mt-2">{playerCount} players · Max possible: {maxPossibleScore.toLocaleString()} pts</p>
+      <div className="text-center flex flex-col items-center gap-3">
+        <Stamp tone="accent" className="text-2xl">Final</Stamp>
+        <h1 className="font-display text-7xl font-extrabold tracking-tight text-ink">Game over!</h1>
+        <p className="font-mono text-base font-bold uppercase tracking-[0.15em] text-ink-muted">
+          {playerCount} players · Max possible {maxPossibleScore.toLocaleString()} pts
+        </p>
       </div>
 
       {/* Histogram */}
       <div className="w-full max-w-3xl">
-        <p className="text-slate-400 text-sm uppercase tracking-widest text-center mb-4">Score Distribution</p>
-        <div className="flex items-end gap-2 h-48">
+        <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-soft text-center mb-4">Score distribution</p>
+        <div className="flex items-start gap-2">
           {buckets.map((bucket, i) => {
             const heightPct = (bucket.count / maxCount) * 100;
             return (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-slate-300 text-sm font-semibold">
+                <span className="h-6 font-mono text-ink text-base font-extrabold">
                   {bucket.count > 0 ? bucket.count : ''}
                 </span>
-                <div className="w-full bg-slate-800 rounded-t-lg relative" style={{ height: '160px' }}>
+                <div className="w-full border-b-2 border-line relative" style={{ height: '160px' }}>
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-indigo-500 rounded-t-lg transition-all duration-700"
+                    className="absolute bottom-0 left-0 right-0 bg-accent halftone border-2 border-b-0 border-line rounded-t-lg transition-all duration-700"
                     style={{ height: `${Math.max(heightPct, bucket.count > 0 ? 4 : 0)}%` }}
                   />
                 </div>
-                <span className="text-slate-500 text-xs">{bucket.label}</span>
+                <span className="font-mono text-ink-soft text-[11px] text-center leading-tight">{bucket.label}</span>
               </div>
             );
           })}
         </div>
-        <p className="text-slate-600 text-xs text-center mt-1">Score (points) →</p>
+        <p className="font-mono text-ink-soft text-xs text-center mt-2">Score (points) →</p>
       </div>
 
       {/* Summary stats */}
-      <div className="flex gap-12 text-center">
-        <div>
-          <p className="text-slate-400 text-xs uppercase tracking-widest">Average</p>
-          <p className="text-white text-2xl font-bold">{avg.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-slate-400 text-xs uppercase tracking-widest">High Score</p>
-          <p className="text-white text-2xl font-bold">{high.toLocaleString()}</p>
-        </div>
-        <div>
-          <p className="text-slate-400 text-xs uppercase tracking-widest">Players</p>
-          <p className="text-white text-2xl font-bold">{playerCount}</p>
-        </div>
+      <div className="grid grid-cols-3 gap-6 text-center">
+        {([['Average', avg.toLocaleString()], ['High score', high.toLocaleString()], ['Players', String(playerCount)]] as const).map(([k, v]) => (
+          <Card key={k} className="px-8 py-4">
+            <p className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-ink-soft">{k}</p>
+            <p className="font-mono text-4xl font-extrabold text-ink">{v}</p>
+          </Card>
+        ))}
       </div>
 
-      <Button onClick={() => navigate('/home')}>New Game</Button>
+      <Button size="lg" onClick={() => navigate('/home')} className="px-10">New Game</Button>
 
       {/* Per-question breakdown */}
       {questionSummary.length > 0 && (
         <div className="w-full max-w-3xl space-y-4 pb-8">
-          <p className="text-slate-400 text-sm uppercase tracking-widest text-center">
-            Question Breakdown
-          </p>
+          <p className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-soft text-center">Question breakdown</p>
           {questionSummary.map((item, i) => (
             <QuestionCard key={item.questionId} item={item} index={i} />
           ))}

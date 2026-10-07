@@ -10,7 +10,7 @@ has its own README; this file covers how they fit and the top-level files.
 | Directory | Role | README highlights |
 |---|---|---|
 | `pages/` | One component per screen (login, courses, roster, users, user detail, guests, games, question editor, sessions). | Question editor is the only authoring UI; roster import is a client-side CSV mapping wizard. |
-| `components/` | `ui/` primitives: `Button`, `Card`, `Input`. | Identical copies of the host app's; hardcoded slate/indigo palette. |
+| `components/` | `ui/` primitives: `Button`, `Card`, `Input` (denser than host/player: 1px borders, `shadow-hard-sm`), `ThemeToggle`, plus the hotspot/ordering editors and image picker. | Token classes only (T9); the hotspot editor is a copy of the host's. |
 | `lib/` | `api` client (JSON, multipart upload, file download, error parsing) and `cn`. | Most complete of the three apps' clients; no 401/refresh handling. |
 
 ## Top-level files
@@ -18,8 +18,8 @@ has its own README; this file covers how they fit and the top-level files.
 | File | Purpose |
 |---|---|
 | `main.tsx` | Mounts `<App />` in `StrictMode` into `#root` and imports `index.css`. |
-| `App.tsx` | `BrowserRouter` (basename `/admin/` in production builds). `RequireAdmin` redirects to `/login` when no token is stored or its `role` claim isn't ADMIN; `AdminLayout` renders the admin-first sidebar (Administration: Users, Courses, Guests; Content & hosting: Games, Sessions; footer: Open Host app, Open Player app, Logout) around an `<Outlet />`. Defines every route; `*` → `/users`. |
-| `index.css` | Tailwind directives plus a hardcoded dark `body` background (`#0f172a`) and text color. |
+| `App.tsx` | `BrowserRouter` (basename `/admin/` in production builds). `RequireAdmin` redirects to `/login` when no token is stored or its `role` claim isn't ADMIN; `AdminLayout` renders the admin-first sidebar — an ink `.slab` with the `ThemeToggle` (`onSlab`) in its footer — (Administration: Users, Courses, Guests; Content & hosting: Games, Sessions; footer: Open Host app, Open Player app, Logout) around an `<Outlet />`. Defines every route; `*` → `/users`. |
+| `index.css` | Tailwind directives, the shared T9 token block (Paper/Night), paper grain, the global `:focus-visible` rule, `.slab` (sidebar: focus in `canvas`; in Night `ink`/`canvas` remap to `surface`/`line`), `.halftone`, `.ticket`, reduced motion. |
 
 ## How it fits together
 
@@ -34,7 +34,7 @@ has its own README; this file covers how they fit and the top-level files.
 ## Depends on
 
 - Build config one level up in `frontend/admin/`: `vite.config.ts` (dev port 5175, proxies `/api`
-  only, `base: '/admin/'` in production), `tailwind.config.ts` (no theme colors — just a font stack),
+  only, `base: '/admin/'` in production), `tailwind.config.ts` (T9 token colours, `hard` shadows, Bricolage Grotesque / JetBrains Mono),
   `tsconfig.json`, `package.json` (react, react-router-dom, lucide-react, clsx, tailwind-merge).
 - Backend routes in `backend/app/routers/admin.py`, `POST /api/auth/login`, and
   `DELETE /api/game/sessions/{id}`.
@@ -49,8 +49,8 @@ has its own README; this file covers how they fit and the top-level files.
 
 - `RequireAdmin` checks the token's `role` claim client-side only (UX); the server enforces admin access.
 - Tokens are shared with the host and player apps via the same `localStorage` key on the nginx origin.
-- Several pages render literal `…` / `·` / `±` text (JS escapes inside JSX text).
-- All colors are raw Tailwind palette utilities in components, pages and `index.css`; there is no
-  token layer yet (T9).
+- Write `…` / `·` / `±` as characters in JSX text: `\u2026` escapes only work inside JS strings
+  (T9 fixed the pages that rendered them literally).
+- Colours are T9 tokens only; `tests/unit/test_theme_tokens.py` rejects raw palette utilities.
 - Roster, game and question management and the hotspot editor are copied into the host app
   (T4 phase 2, T7); fixes must be repeated in both copies.

@@ -41,21 +41,22 @@ export function TimerBar({ totalSeconds, initialSeconds, paused = false }: Timer
   const fraction = Math.max(0, Math.min(1, timeLeft / totalSeconds));
   const displaySeconds = Math.ceil(timeLeft);
 
+  // success → warning at 30% → danger at 10% (docs/plans/t9-theming.md §7.1)
   const barColor =
-    fraction > 0.6 ? 'bg-green-500' :
-    fraction > 0.3 ? 'bg-yellow-400' :
-    'bg-red-500';
+    fraction > 0.3 ? 'bg-success' :
+    fraction > 0.1 ? 'bg-warning' :
+    'bg-danger';
 
   return (
     <div className="w-full flex items-center gap-4">
-      <div className="flex-1 h-6 bg-slate-700 rounded-full overflow-hidden">
+      <div className="flex-1 h-6 rounded-full border-2 border-line bg-sunken overflow-hidden">
         <div
-          className={`h-full rounded-full transition-[width] duration-100 ease-linear ${barColor}`}
+          className={`h-full border-r-2 border-line transition-[width] duration-100 ease-linear ${barColor}`}
           style={{ width: `${fraction * 100}%` }}
         />
       </div>
-      <span className="text-slate-300 font-mono text-lg font-semibold w-12 text-right tabular-nums shrink-0">
-        {displaySeconds}s
+      <span className="text-ink font-mono text-5xl w-28 font-extrabold text-right tabular-nums shrink-0">
+        {displaySeconds}<span className="text-ink-soft text-[0.6em]">s</span>
       </span>
     </div>
   );

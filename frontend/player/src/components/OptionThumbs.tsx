@@ -21,7 +21,7 @@ export function OptionThumbs({
     <span className="inline-flex flex-wrap items-center gap-2">
       {shown.map((i) => (
         <span key={i} className="inline-flex items-center gap-1">
-          <span className="text-xs font-bold text-slate-300">{optionLetter(i)}</span>
+          <span className="text-xs font-bold text-ink-muted">{optionLetter(i)}</span>
           <ImageThumb imageId={optionImageId(imageIds, i)!} alt={`Option ${optionLetter(i)}`} className={size} />
         </span>
       ))}

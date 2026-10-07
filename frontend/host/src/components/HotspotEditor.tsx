@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { loadImageUrl } from '../lib/images';
+import { cssColor, useTheme } from '../lib/theme';
 import { cn } from '../lib/utils';
 import { Input } from './ui/input';
 
@@ -8,7 +9,7 @@ import { Input } from './ui/input';
  * image, click the preview to place the target centre, and set the inner/outer radii and the
  * partial-credit fraction. Rings are drawn live with the same layout rule scoring uses (§7.6).
  *
- * Self-contained on purpose: it imports only lib/images.ts, lib/utils.ts and components/ui/*,
+ * Self-contained on purpose: it imports only lib/images.ts, lib/theme.ts, lib/utils.ts and components/ui/*,
  * so T4 phase 3 copies it into frontend/admin/src/components/ with import-path changes only
  * (H9) — keep the two copies in sync. The image loading and letterbox maths repeat
  * HotspotView's (the editor may not import it) — keep those in step too.
@@ -65,13 +66,12 @@ type ImageState =
 /** Click coordinates and slider values are stored to 4 decimal places (under a pixel). */
 const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
 
-// Colours come from CSS variables so theming (T9) reaches the canvas; fallbacks until then.
-const FALLBACK_COLOURS = { inner: '#4ade80', outer: '#fbbf24' } as const;
-const MARKER_COLOUR = '#f8fafc';
+// Canvas colours are read from the theme tokens at draw time (docs/plans/t9-theming.md §6);
+// the draw effect depends on the theme so a toggle repaints.
+const RING_TOKEN = { inner: '--success', outer: '--warning' } as const;
 
-function colour(name: keyof typeof FALLBACK_COLOURS): string {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(`--hotspot-${name}`).trim();
-  return v || FALLBACK_COLOURS[name];
+function colour(name: keyof typeof RING_TOKEN): string {
+  return cssColor(RING_TOKEN[name]);
 }
 
 function isValidAspect(a: number | undefined): a is number {
@@ -174,6 +174,8 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
 
   const { x, y, innerRadius, outerRadius, partialFraction } = answerData;
 
+  const [theme] = useTheme();
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !size || size.w === 0) return;
@@ -186,13 +188,13 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
     const { imgX, imgY, imgW, imgH } = imageBox(size);
 
     ctx.clearRect(0, 0, size.w, size.h);
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = cssColor('--sunken');
     ctx.fillRect(imgX, imgY, imgW, imgH);
     if (image.status === 'ready') {
       ctx.drawImage(image.img, imgX, imgY, imgW, imgH);
     } else {
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '600 16px system-ui, sans-serif';
+      ctx.fillStyle = cssColor('--ink-soft');
+      ctx.font = "600 16px 'Bricolage Grotesque Variable', system-ui, sans-serif";
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const text =
@@ -218,7 +220,7 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
     ctx.arc(cx, cy, innerRadius * longer, 0, Math.PI * 2);
     ctx.stroke();
     // Centre crosshair, outlined so it shows on light and dark images.
-    for (const [width, stroke] of [[4, '#0f172a'], [2, MARKER_COLOUR]] as const) {
+    for (const [width, stroke] of [[4, cssColor('--on-fill')], [2, cssColor('--canvas')]] as const) {
       ctx.lineWidth = width;
       ctx.strokeStyle = stroke;
       ctx.beginPath();
@@ -228,7 +230,7 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
       ctx.lineTo(cx, cy + 8);
       ctx.stroke();
     }
-  }, [size, image, aspect, x, y, innerRadius, outerRadius]);
+  }, [size, image, aspect, x, y, innerRadius, outerRadius, theme]);
 
   function placeCentre(e: React.MouseEvent<HTMLCanvasElement>) {
     if (image.status !== 'ready' || !size) return;
@@ -252,7 +254,7 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
         {renderImagePicker ? (
           renderImagePicker(imageId, setImageId)
         ) : (
-          <label className="block text-xs text-slate-400">
+          <label className="block text-xs text-ink-muted">
             Image ID
             <Input
               type="number"
@@ -269,10 +271,10 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
           </label>
         )}
         {image.status === 'error' && (
-          <p className="mt-1 text-xs text-red-400">Image {imageId} is unavailable; choose another image.</p>
+          <p className="mt-1 text-xs text-danger-ink">Image {imageId} is unavailable; choose another image.</p>
         )}
         {outOfRangeAspect !== null && (
-          <p className="mt-1 text-xs text-red-400">
+          <p className="mt-1 text-xs text-danger-ink">
             This image's aspect ratio ({outOfRangeAspect.toFixed(2)}) is outside {HOTSPOT_ASPECT_MIN}–{HOTSPOT_ASPECT_MAX};
             choose another image.
           </p>
@@ -286,9 +288,9 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
           aria-label="Hotspot preview: click the image to place the target centre"
           onClick={placeCentre}
           style={{ width: size ? `${size.w}px` : '100%', height: size ? `${size.h}px` : undefined }}
-          className={cn('block rounded-lg bg-slate-900', image.status === 'ready' && 'cursor-crosshair')}
+          className={cn('block rounded-lg ring-2 ring-line bg-canvas', image.status === 'ready' && 'cursor-crosshair')}
         />
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-ink-soft">
           {image.status === 'ready'
             ? `Click the image to place the target centre — currently (${x.toFixed(4)}, ${y.toFixed(4)}).`
             : 'The target can be placed once the image has loaded.'}
@@ -296,8 +298,8 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <label className="block text-xs text-slate-400">
-          Inner radius (full points): <span className="text-slate-200">{pct(innerRadius)}</span>
+        <label className="block text-xs text-ink-muted">
+          Inner radius (full points): <span className="text-ink">{pct(innerRadius)}</span>
           <input
             type="range"
             min={INNER_MIN}
@@ -309,11 +311,11 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
               // Keep inner ≤ outer: raising inner past outer pushes outer up with it.
               setTarget({ innerRadius: inner, outerRadius: Math.max(outerRadius, inner) });
             }}
-            className="mt-1 w-full accent-indigo-500"
+            className="mt-1 w-full accent-accent"
           />
         </label>
-        <label className="block text-xs text-slate-400">
-          Outer radius (partial points): <span className="text-slate-200">{pct(outerRadius)}</span>
+        <label className="block text-xs text-ink-muted">
+          Outer radius (partial points): <span className="text-ink">{pct(outerRadius)}</span>
           <input
             type="range"
             min={innerRadius}
@@ -321,11 +323,11 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
             step={RADIUS_STEP}
             value={outerRadius}
             onChange={(e) => setTarget({ outerRadius: Math.max(innerRadius, round4(Number(e.target.value))) })}
-            className="mt-1 w-full accent-indigo-500"
+            className="mt-1 w-full accent-accent"
           />
         </label>
-        <label className="block text-xs text-slate-400">
-          Partial credit: <span className="text-slate-200">{Math.round(partialFraction * 100)}% of points</span>
+        <label className="block text-xs text-ink-muted">
+          Partial credit: <span className="text-ink">{Math.round(partialFraction * 100)}% of points</span>
           <input
             type="range"
             min={0}
@@ -333,7 +335,7 @@ export function HotspotEditor({ config, answerData, onChange, renderImagePicker 
             step={0.05}
             value={partialFraction}
             onChange={(e) => setTarget({ partialFraction: Math.round(Number(e.target.value) * 100) / 100 })}
-            className="mt-1 w-full accent-indigo-500"
+            className="mt-1 w-full accent-accent"
           />
         </label>
       </div>

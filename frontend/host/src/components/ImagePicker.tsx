@@ -110,18 +110,18 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/60 p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Choose ${label}`}
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-slate-700 bg-slate-800 p-5"
+        className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl border border-line-soft bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-100">Choose {label}</h2>
+          <h2 className="font-display text-xl font-extrabold text-ink">Choose {label}</h2>
           <div className="flex items-center gap-2">
             <input
               ref={fileInput}
@@ -144,16 +144,16 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
             </Button>
           </div>
         </div>
-        <p className="mb-3 text-xs text-slate-400">
+        <p className="mb-3 text-xs text-ink-muted">
           PNG, JPEG or WebP, up to 2 MB and 4096 px per side. Images belong to this course.
         </p>
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-sm text-danger-ink">{error}</p>}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {!data ? (
-            <p className="text-sm text-slate-400">Loading…</p>
+            <p className="text-sm text-ink-muted">Loading…</p>
           ) : data.items.length === 0 ? (
-            <p className="text-sm text-slate-400">No images in this course yet — upload one.</p>
+            <p className="text-sm text-ink-muted">No images in this course yet — upload one.</p>
           ) : (
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {data.items.map((image) => (
@@ -162,10 +162,10 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
                     type="button"
                     onClick={() => onPick(image.id)}
                     className={
-                      'w-full rounded-lg border p-1.5 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 ' +
+                      'w-full rounded-lg border p-1.5 text-left transition-colors focus:outline-none focus:ring-[3px] focus:ring-focus ' +
                       (image.id === current
-                        ? 'border-indigo-500 bg-indigo-500/10'
-                        : 'border-slate-700 hover:border-slate-500')
+                        ? 'border-accent bg-accent/15'
+                        : 'border-line-soft hover:border-line-soft')
                     }
                   >
                     <ImageThumb
@@ -173,7 +173,7 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
                       alt={`Image ${image.id}`}
                       className="aspect-[4/3] w-full"
                     />
-                    <span className="mt-1 block text-xs text-slate-400">
+                    <span className="mt-1 block text-xs text-ink-muted">
                       #{image.id} · {image.width}×{image.height}
                     </span>
                   </button>
@@ -184,7 +184,7 @@ function PickerDialog({ courseId, current, label, onClose, onPick }: PickerDialo
         </div>
 
         {pages > 1 && (
-          <div className="mt-4 flex items-center justify-end gap-2 text-sm text-slate-300">
+          <div className="mt-4 flex items-center justify-end gap-2 text-sm text-ink-muted">
             <Button
               type="button"
               variant="outline"
