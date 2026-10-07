@@ -20,7 +20,9 @@ its architecture and the subdirectory READMEs for detail.
 - `src/pages/` screens; `src/components/ui/` primitives (`Button`, `Card`, `Input`, plus `TimerBar`
   in host/player); `src/lib/` (`api.ts`, `utils.ts`); `src/types/game.ts` in host/player.
 - `vite.config.ts` proxies `/api` (and `/socket.io` for host/player) to `localhost:8000` in dev.
-- `tailwind.config.ts` defines only a font stack; colors are raw Tailwind utilities in components.
+- `tailwind.config.ts`: `theme.colors` is replaced by semantic tokens (`canvas`, `surface`, `ink`, `accent`, `opt-1…8`, …) read from CSS variables, plus `hard` offset shadows (T9, `docs/plans/t9-theming.md`). Each app's `index.css` holds an identical `/* tokens:start */…/* tokens:end */`
+  block with the Paper (light) and Night (dark) values; `index.html` sets `data-theme` before first
+  paint; `src/lib/theme.ts` + `components/ThemeToggle.tsx` handle the toggle (shared `localStorage['buzzer-theme']`).
 - Auth: the access token lives in `localStorage.token`; the API client sends it as a bearer header
   and the socket sends it in the connect `auth` payload.
 
@@ -39,7 +41,9 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
 - `npm run build` builds all three into `frontend/*/dist/`, which nginx (`docker compose up`) serves
   at `localhost:8080`. Some behaviour (shared origin, admin→host links, WebSocket through nginx)
   only matches production there.
-- CI runs `npm install` and `tsc --noEmit` for each app on every merge request.
+- CI runs `npm install` and `tsc --noEmit` for each app on every merge request, and
+  `frontend-theme-tokens` (`tests/unit/test_theme_tokens.py`: no raw palette utilities or colour
+  literals, identical token blocks, WCAG AA contrast for every token pair).
 
 ## Gotchas collected from the app READMEs
 
@@ -57,7 +61,10 @@ and reports are downloaded from the admin app (T4 adds them to the host app).
   original, admin copy identical apart from its header note.
 - **One token for three apps:** on the nginx origin, signing in or joining as a guest in one app
   replaces the token in the others; nothing refreshes expired tokens.
-- **Hardcoded dark palette** everywhere, including each `index.css` `body` background (T9).
+- **Tokens only (T9):** raw palette utilities (`bg-slate-800`), hex/`rgb()` literals and template
+  class names (`` `bg-opt-${n}` ``) fail CI; use static class maps. Canvas code reads colours with
+  `cssColor('--token')` and must depend on `useTheme()` so a toggle repaints. The token block must
+  stay byte-identical in all three `index.css` files.
 - **Fragile live screens** in host and player: socket `error` events replace the whole UI, and
   reloads mid-results or after game over don't recover.
 - **Payload types are hand-written** in `host/src/types/game.ts` and `player/src/types/game.ts`;

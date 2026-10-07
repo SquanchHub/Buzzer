@@ -702,3 +702,16 @@ A `mean-review` pass runs before step 8, and its fixes go into their own commits
     - concrete e2e test 6 and colour normalisation;
     - the `test_player_socket.py` location;
     - the T10 citation note.
+- **2026-10-06, during implementation.** Changes from the screenshot review and the mean-review:
+  - **Night admin sidebar.** The mandatory §7.4 brightness check failed: the cream slab
+    overpowered the content. Instead of switching to `bg-surface` in both themes, Paper keeps
+    the ink slab. In Night, `:root[data-theme='dark'] .slab` remaps `--ink` → `--surface` and
+    `--canvas` → `--line` (the `var()` references sit outside the token block), and the aside
+    gets a `border-r-2 border-line` rule. The new pairs (`line` on `surface`, `line/70` over
+    `surface`, `surface` on `line`) are added to the contrast tests.
+  - **Canvas frames are `ring-2 ring-line`, not borders.** A border on a `<canvas>` shrank the
+    drawn bitmap by 4px and shifted `HotspotEditor`'s click-to-place by the border width. A ring
+    is a box-shadow, so it leaves layout and `getBoundingClientRect()` alone.
+  - **Result bars:** a zero count renders no fill. Before, the `pr-4` padding drew a 16px sliver.
+  - **Screenshots** are saved as 256-colour PNGs. The paper grain defeats PNG compression, and
+    quantising halves the size with no visible change.

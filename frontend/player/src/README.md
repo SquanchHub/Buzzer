@@ -11,7 +11,7 @@ and the top-level files.
 | Directory | Role | README highlights |
 |---|---|---|
 | `pages/` | `JoinPage`, `NamePage`, `LoginPage` (OAuth2 return) and `game/` — `GameLayout` (socket + context) with Lobby, Question, Feedback, Results and GameOver child pages. | Per-type answer UIs live inline in `QuestionPage`; the prompt is **not** shown to players; any `error` event strands the player on an error screen. |
-| `components/` | `ui/` primitives with phone-sized touch targets: `Button`, `Card`, `Input`, `TimerBar` (no `initialSeconds`). | Mostly unused by game screens, which hand-style their buttons; differs from host/admin copies. |
+| `components/` | `ui/` primitives with phone-sized touch targets: `Button`, `Card`, `Input`, `TimerBar` (no `initialSeconds`), and T9's `Stamp` and `Ticket`; `ThemeToggle`, `PageShell` (wordmark + toggle header). | Option tiles in `QuestionPage` hand-style their riso inks via static class maps; differs from host/admin copies. |
 | `lib/` | `api` client (`get`/`post`), `cn`, and `isTokenExpired` (client-side JWT `exp` check). | No refresh flow; shared `localStorage.token` with host/admin. |
 | `types/` *(no README)* | `game.ts` — payload types the player receives (`QuestionPayload`, `AnswerResultPayload`, `PlayerResultsPayload`, `PlayerGameOverPayload`, `PlayerAnswerReveal`, …) and the `PlayerPhase` union. | Hand-maintained; `SyncStatePayload` omits fields the backend sends (`currentQuestion`, `hasAnswered`, `yourScore`). |
 
@@ -21,7 +21,7 @@ and the top-level files.
 |---|---|
 | `main.tsx` | Mounts `<App />` in `StrictMode` into `#root` and imports `index.css`. |
 | `App.tsx` | `BrowserRouter` (basename `/player/` in production). Routes: `/join`, `/login`, `/name/:code`, `/game/:code/{lobby,question,feedback,results,gameover}`; `*` → `/join`. No route guard — `GameLayout` checks token expiry itself. |
-| `index.css` | Tailwind directives, hardcoded dark `body` background (`#0f172a`), and `-webkit-tap-highlight-color: transparent` for mobile. |
+| `index.css` | Tailwind directives, the shared T9 token block (Paper/Night), paper grain, the global `:focus-visible` rule, `.halftone`, `.ticket`, reduced motion, and `-webkit-tap-highlight-color: transparent` for mobile. |
 
 ## How it fits together
 
@@ -63,5 +63,5 @@ and the top-level files.
 - **Players never see the prompt** — relevant to T8 prompt images and to new question types that
   need context on the phone (e.g. a canvas question).
 - **Late joiners' timer bar starts full** (no `initialSeconds` on the player `TimerBar`).
-- **Hardcoded palette** including the eight option colors in `QuestionPage` (T9); must stay
-  thumb-friendly in both themes.
+- **Tokens only (T9):** the eight option colours are `opt-1…8` (same in both themes, dark
+  `on-fill` text); tiles stay ≥ 72px tall; `HotspotCanvas` reads `cssColor()` and repaints on toggle.

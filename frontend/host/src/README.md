@@ -11,7 +11,7 @@ top-level files.
 | Directory | Role | README highlights |
 |---|---|---|
 | `pages/` | `LoginPage`, the management pages under `ManagementLayout` (`HomePage`: create/rejoin rooms, course cards; `CoursePage`, `RosterPage`, `QuestionEditorPage`, `SessionsPage` — T4 phase 2) and `game/` — `GameLayout` (socket + context) with Lobby, Question, Results and GameOver child pages. | URL follows server events; any `error` event replaces the whole game screen; reloads after results/game over hang on "Loading…". |
-| `components/` | `ui/` primitives: `Button`, `Card`, `Input`, and `TimerBar` (the host copy supports `initialSeconds` for reconnects). | Copies of the admin primitives; `TimerBar` reads props once and must be remounted per question. |
+| `components/` | `ui/` primitives: `Button`, `Card`, `Input`, `TimerBar` (the host copy supports `initialSeconds` for reconnects), and T9's `Stamp` and `Ticket`; `ThemeToggle`. | Copies of the admin primitives; `TimerBar` reads props once and must be remounted per question. |
 | `lib/` | `api` client (`get`/`post`/`delete`) and `cn`. | No `put`/`patch`/upload/download yet; no 401/refresh handling. |
 | `types/` *(no README)* | `game.ts` — TypeScript shapes of every socket payload the host receives (`SyncStatePayload`, `QuestionPayload`, `HostResultsPayload`, `HostGameOverPayload`, `AnswerReveal`, …) and the `HostPhase` union. | Hand-maintained mirror of `backend/app/websocket/gateway.py` payloads; not generated. |
 
@@ -21,7 +21,7 @@ top-level files.
 |---|---|
 | `main.tsx` | Mounts `<App />` in `StrictMode` into `#root` and imports `index.css`. |
 | `App.tsx` | `BrowserRouter` (basename `/host/` in production). Routes: `/login`; the `ManagementLayout` group (`/home`, `/courses/:courseId`, `/courses/:courseId/roster`, `/games/:gameId/edit`, `/sessions`) and `/game/:code/{lobby,question,results,gameover}` wrapped in `RequireAuth` (token exists — expiry not checked); `*` → `/login`. |
-| `index.css` | Tailwind directives plus a hardcoded dark `body` background (`#0f172a`) and text color. |
+| `index.css` | Tailwind directives, the shared T9 token block (Paper/Night), paper grain, the global `:focus-visible` rule, `.halftone`, `.ticket`, reduced motion. |
 
 ## How it fits together
 
@@ -38,7 +38,7 @@ top-level files.
 
 - Build config one level up in `frontend/host/`: `vite.config.ts` (dev port 5173, proxies `/api`
   and `/socket.io` with WebSocket upgrade, `base: '/host/'` in production), `tailwind.config.ts`
-  (font stack only, no theme colors), `package.json` (react, react-router-dom, socket.io-client,
+  (T9 token colours, `hard` shadows, display/mono fonts), `package.json` (react, react-router-dom, socket.io-client,
   qrcode.react, lucide-react, clsx, tailwind-merge).
 - Backend `/api/auth/*`, `/api/game/*` and the Socket.io protocol in `backend/app/websocket/`.
 
@@ -57,5 +57,6 @@ top-level files.
 - **Fragile game screens:** recoverable socket errors take over the whole screen; reloads on
   results/game over never recover; the player count never drops when players leave.
 - **Prompts render as plain text**, so the allowed `<b>/<i>/<u>/<br>` tags show literally.
-- **Hardcoded palette** across components, pages and `index.css` (T9); the host screen must also
-  stay readable from the back of a classroom in both themes.
+- **Tokens only (T9):** no raw palette utilities or colour literals; canvases (`HotspotView`,
+  `HotspotEditor`) read `cssColor()` and depend on `useTheme()`. Game screens use big display/mono
+  type so they read from the back of a classroom in both themes.
