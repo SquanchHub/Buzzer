@@ -162,7 +162,7 @@ def test_keyboard_focus_visible(browser):
 
 
 def _png(width: int, height: int) -> bytes:
-    from PIL import Image  # e2e requirements include Pillow via the backend venv
+    from PIL import Image
 
     buf = io.BytesIO()
     Image.new("RGB", (width, height), (120, 160, 200)).save(buf, "PNG")

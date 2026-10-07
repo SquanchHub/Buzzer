@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from PIL import Image
 from playwright.sync_api import Browser, Page, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,10 @@ class Shooter:
         page.wait_for_timeout(400)  # let images and transitions settle
         path = self.out / f"{self.tag}-{self.theme}-{app}-{screen}.png"
         page.screenshot(path=str(path))
+        # The paper grain defeats PNG compression; 256 colours look the same at ~half the size.
+        Image.open(path).convert("RGB").quantize(256, dither=Image.Dither.NONE).save(
+            path, optimize=True
+        )
         print(f"  {path.relative_to(ROOT)}")
 
 
