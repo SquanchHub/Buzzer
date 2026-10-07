@@ -50,11 +50,16 @@ export function useGame(): GameContextValue {
 export default function GameLayout() {
   const { code = '' } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  // navigate changes identity on every route change; the socket effect reads it through
+  // this ref so it depends only on `code` and one socket lives for the whole game.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   const socketRef = useRef<Socket | null>(null);
   // Ref mirrors phase so socket event closures (registered once) can read current value.
   const phaseRef = useRef<PlayerPhase>('lobby');
 
   const [phase, setPhase] = useState<PlayerPhase>('lobby');
+  phaseRef.current = phase;
   const [gameStatus, setGameStatus] = useState<'LOBBY' | 'IN_PROGRESS'>('LOBBY');
   const [playerCount, setPlayerCount] = useState(0);
   const [hostDisconnected, setHostDisconnected] = useState(false);
@@ -73,11 +78,11 @@ export default function GameLayout() {
     const token = localStorage.getItem('token');
     if (!token || isTokenExpired(token)) {
       localStorage.removeItem('token');
-      navigate(code ? `/name/${code}` : '/join', { replace: true });
+      navigateRef.current(code ? `/name/${code}` : '/join', { replace: true });
       return;
     }
     if (!code) {
-      navigate('/join', { replace: true });
+      navigateRef.current('/join', { replace: true });
       return;
     }
 
@@ -88,41 +93,10 @@ export default function GameLayout() {
     });
     socketRef.current = sock;
 
-    sock.on('connect', () => {
-      setError('');
-      if (phaseRef.current !== 'gameover') {
-        sock.emit('join_room', { room_code: code, role: 'PLAYER' });
-      }
-    });
-
-    sock.on('connect_error', (err) => {
-      if (phaseRef.current !== 'gameover') {
-        setError(`Connection error: ${err.message}`);
-      }
-    });
-
-    sock.on('sync_state', (data: SyncStatePayload) => {
-      setPlayerCount(data.playerCount ?? 0);
-      if (data.questionLocked) setQuestionLocked(true);
-      if (data.status === 'LOBBY') {
-        setGameStatus('LOBBY');
-        setPhase('lobby');
-        navigate(`/game/${code}/lobby`, { replace: true });
-      } else if (data.status === 'IN_PROGRESS') {
-        // Game already running — update state but don't navigate; new_question
-        // (or question_results) will drive routing to the correct page.
-        setGameStatus('IN_PROGRESS');
-      }
-    });
-
-    sock.on('player_joined', (data: PlayerJoinedPayload) => {
-      setPlayerCount(data.playerCount);
-    });
-
-    sock.on('new_question', (data: QuestionPayload) => {
-      // Hotspot image prefetch: start loading before navigating so the fetch overlaps
-      // with the player reading the prompt. A re-sent new_question for the same
-      // question (reconnect) keeps the image already loaded.
+    // Hotspot image prefetch: start loading before showing the question so the fetch
+    // overlaps with the player reading the prompt. A re-sent question (reconnect)
+    // keeps the image already loaded.
+    function prefetchImage(data: QuestionPayload) {
       if (imageRef.current?.questionId !== data.questionId) {
         // T8 D8: warm the browser cache for option images now (C3's immutable header lets
         // the tiles' own fetches read it), so loading overlaps reading the question.
@@ -152,6 +126,56 @@ export default function GameLayout() {
             });
         }
       }
+    }
+
+    sock.on('connect', () => {
+      setError('');
+      if (phaseRef.current !== 'gameover') {
+        sock.emit('join_room', { room_code: code, role: 'PLAYER' });
+      }
+    });
+
+    sock.on('connect_error', (err) => {
+      if (phaseRef.current !== 'gameover') {
+        setError(`Connection error: ${err.message}`);
+      }
+    });
+
+    sock.on('sync_state', (data: SyncStatePayload) => {
+      setPlayerCount(data.playerCount ?? 0);
+      if (data.questionLocked) setQuestionLocked(true);
+      if (data.status === 'LOBBY') {
+        setGameStatus('LOBBY');
+        setPhase('lobby');
+        navigateRef.current(`/game/${code}/lobby`, { replace: true });
+      } else if (data.status === 'IN_PROGRESS') {
+        // Game already running — update state but don't navigate; new_question
+        // (or question_results) will drive routing to the correct page.
+        setGameStatus('IN_PROGRESS');
+        // Rejoin during an open question: restore it. Answered → waiting screen; otherwise
+        // the question page (an unlocked one is also re-sent as new_question with the
+        // remaining time, which replaces this copy).
+        const q = data.currentQuestion;
+        if (q && data.questionPhase === 'QUESTION' && phaseRef.current !== 'results') {
+          prefetchImage(q);
+          setCurrentQuestion((prev) => (prev?.questionId === q.questionId ? prev : q));
+          if (data.hasAnswered) {
+            setPhase('feedback');
+            navigateRef.current(`/game/${code}/feedback`, { replace: true });
+          } else {
+            setPhase('question');
+            navigateRef.current(`/game/${code}/question`, { replace: true });
+          }
+        }
+      }
+    });
+
+    sock.on('player_joined', (data: PlayerJoinedPayload) => {
+      setPlayerCount(data.playerCount);
+    });
+
+    sock.on('new_question', (data: QuestionPayload) => {
+      prefetchImage(data);
       setCurrentQuestion(data);
       setQuestionLocked(false);
       setLastAnswerData(null);
@@ -159,7 +183,7 @@ export default function GameLayout() {
       setQuestionResults(null);
       setHostDisconnected(false);
       setPhase('question');
-      navigate(`/game/${code}/question`);
+      navigateRef.current(`/game/${code}/question`);
     });
 
     sock.on('question_locked', () => {
@@ -174,20 +198,20 @@ export default function GameLayout() {
       if (data.alreadyAnswered) return; // ignore duplicate-submit echo
       setAnswerResult(data);
       setPhase('feedback');
-      navigate(`/game/${code}/feedback`);
+      navigateRef.current(`/game/${code}/feedback`);
     });
 
     sock.on('question_results', (data: PlayerResultsPayload) => {
       setQuestionResults(data);
       setPhase('results');
-      navigate(`/game/${code}/results`);
+      navigateRef.current(`/game/${code}/results`);
     });
 
     sock.on('game_over', (data: PlayerGameOverPayload) => {
       phaseRef.current = 'gameover';
       setGameOver(data);
       setPhase('gameover');
-      navigate(`/game/${code}/gameover`);
+      navigateRef.current(`/game/${code}/gameover`);
       sock.disconnect();
     });
 
@@ -196,7 +220,7 @@ export default function GameLayout() {
     });
 
     sock.on('game_abandoned', () => {
-      navigate('/join', { replace: true });
+      navigateRef.current('/join', { replace: true });
     });
 
     sock.on('error', (data: { message: string }) => {
@@ -209,7 +233,7 @@ export default function GameLayout() {
       sock.disconnect();
       socketRef.current = null;
     };
-  }, [code, navigate]);
+  }, [code]);
 
   // Release the hotspot image only when the layout unmounts. Not in the socket
   // effect's cleanup: `navigate` changes on every route change, so that effect

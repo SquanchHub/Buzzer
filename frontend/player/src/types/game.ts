@@ -2,6 +2,9 @@ export interface SyncStatePayload {
   status: 'LOBBY' | 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED';
   playerCount: number;
   questionLocked?: boolean;
+  hasAnswered?: boolean; // PLAYER only: already answered the current question
+  currentQuestion?: QuestionPayload | null; // PLAYER only: open or just-closed question
+  questionPhase?: 'QUESTION' | 'RESULTS' | null;
 }
 
 export interface PlayerJoinedPayload {
