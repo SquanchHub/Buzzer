@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGame } from './GameLayout';
 import { TimerBar } from '../../components/ui/TimerBar';
 import { HotspotCanvas, type HotspotImage } from '../../components/HotspotCanvas';
+import { ImageThumb } from '../../components/ImageThumb';
 import { OrderingPicker } from '../../components/OrderingPicker';
 import { Button } from '../../components/ui/button';
 import type { HotspotPoint } from '../../types/game';
@@ -19,6 +20,24 @@ const OPTION_COLORS = [
 
 function optionLabel(i: number): string {
   return String.fromCharCode(65 + i); // A, B, C, … Z
+}
+
+/** T8 D8: the image and text of an option shown as a large tap tile. Text is optional
+ * (an image-only option); with no image the text fills the tile. */
+function OptionTileBody({ text, imageId, index }: { text: string; imageId: number | null; index: number }) {
+  return (
+    <>
+      {imageId !== null ? (
+        <ImageThumb imageId={imageId} alt={`Option ${optionLabel(index)}`} className="h-32 w-full bg-white/90" />
+      ) : (
+        <span className="flex h-32 w-full items-center justify-center text-center text-lg leading-tight">{text}</span>
+      )}
+      <span className="flex items-center gap-2">
+        <span className="text-xl font-black">{optionLabel(index)}</span>
+        {imageId !== null && text.trim() && <span className="text-base leading-tight">{text}</span>}
+      </span>
+    </>
+  );
 }
 
 export default function QuestionPage() {
@@ -50,6 +69,14 @@ export default function QuestionPage() {
     );
   }
 
+  // T8 option images: tiles replace the list only when some option has an image.
+  const optionImageIds = currentQuestion.config.optionImageIds ?? [];
+  const imageOf = (i: number): number | null => {
+    const id = optionImageIds[i];
+    return typeof id === 'number' ? id : null;
+  };
+  const hasOptionImages = optionImageIds.some((id) => typeof id === 'number');
+
   function submit(answerData: Record<string, unknown>) {
     if (submitted) return;
     setSubmitted(true);
@@ -76,7 +103,22 @@ export default function QuestionPage() {
           {questionLabel}
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
-        {options.map((opt, i) => (
+        {hasOptionImages ? (
+          <div className="grid grid-cols-2 gap-3">
+            {options.map((opt, i) => (
+              <button
+                key={i}
+                disabled={submitted || questionLocked}
+                onClick={() => submit({ selectedIndex: i })}
+                className={`flex flex-col gap-2 rounded-2xl p-3 text-left text-white font-semibold border-2 transition-all
+                  ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
+                  ${OPTION_COLORS[i % OPTION_COLORS.length]}`}
+              >
+                <OptionTileBody text={opt} imageId={imageOf(i)} index={i} />
+              </button>
+            ))}
+          </div>
+        ) : options.map((opt, i) => (
           <button
             key={i}
             disabled={submitted || questionLocked}
@@ -180,7 +222,31 @@ export default function QuestionPage() {
           <TimerBar key={currentQuestion.questionId} totalSeconds={currentQuestion.timeLimitSeconds} paused={questionLocked} />
         </div>
         <p className="text-center text-slate-400 text-sm">Select all that apply</p>
-        {options.map((opt, i) => {
+        {hasOptionImages && (
+          <div className="grid grid-cols-2 gap-3">
+            {options.map((opt, i) => {
+              const isSelected = selectedIndices.has(i);
+              return (
+                <button
+                  key={i}
+                  aria-pressed={isSelected}
+                  disabled={submitted || questionLocked}
+                  onClick={() => toggleIndex(i)}
+                  className={`flex flex-col gap-2 rounded-2xl p-3 text-left font-semibold border-2 transition-all
+                    ${submitted || questionLocked ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}
+                    ${isSelected
+                      ? 'bg-indigo-600 border-indigo-300 ring-2 ring-white text-white'
+                      : 'bg-slate-700 border-slate-600 text-slate-200 hover:bg-slate-600'
+                    }`}
+                >
+                  <OptionTileBody text={opt} imageId={imageOf(i)} index={i} />
+                  {isSelected && <span className="text-sm font-bold">✓ Selected</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {!hasOptionImages && options.map((opt, i) => {
           const isSelected = selectedIndices.has(i);
           return (
             <button

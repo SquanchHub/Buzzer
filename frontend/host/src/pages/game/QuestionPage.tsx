@@ -4,6 +4,9 @@ import { Button } from '../../components/ui/button';
 import { TimerBar } from '../../components/ui/TimerBar';
 import { HotspotView } from '../../components/HotspotView';
 import { OrderingItems } from '../../components/OrderingView';
+import { ImageThumb } from '../../components/ImageThumb';
+
+const optionLabel = (i: number) => String.fromCharCode(65 + i); // A, B, C, …
 
 export default function QuestionPage() {
   const { currentQuestion, answeredCount, playerCount, allAnswered, answerPhaseEnded, questionLocked, lockedTimerSeconds, autoAdvance, emitAdvance, emitLockQuestion } = useGame();
@@ -36,6 +39,8 @@ export default function QuestionPage() {
     if (d === 1) return 'Up to 1 typo allowed';
     return `Up to ${d} typos allowed`;
   }
+
+  const optionImageIds = currentQuestion.config.optionImageIds ?? [];
 
   const remainingSeconds = questionLocked && lockedTimerSeconds !== null
     ? lockedTimerSeconds
@@ -74,10 +79,42 @@ export default function QuestionPage() {
         />
       </div>
 
+      {/* T8 D8: the prompt image, large, above the prompt text. */}
+      {!questionLocked && typeof currentQuestion.promptImageId === 'number' && (
+        <ImageThumb
+          imageId={currentQuestion.promptImageId}
+          alt={currentQuestion.prompt}
+          className="h-[38vh] w-full max-w-3xl"
+        />
+      )}
+
       {!questionLocked && (
         <h2 className="text-4xl font-bold text-slate-100 text-center max-w-3xl leading-tight">
           {currentQuestion.prompt}
         </h2>
+      )}
+
+      {/* T8 D8: option tiles, only for questions with option images (text-only choices stay
+          on the phones, as before). */}
+      {!questionLocked && optionImageIds.some((id) => typeof id === 'number') && (
+        <div className="grid w-full max-w-4xl grid-cols-2 gap-4 md:grid-cols-4">
+          {(currentQuestion.config.options ?? []).map((text, i) => {
+            const id = optionImageIds[i];
+            return (
+              <div key={i} className="flex flex-col gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-3">
+                {typeof id === 'number' ? (
+                  <ImageThumb imageId={id} alt={`Option ${optionLabel(i)}`} className="h-36 w-full" />
+                ) : (
+                  <span className="flex h-36 items-center justify-center text-center text-lg text-slate-200">{text}</span>
+                )}
+                <span className="text-lg font-bold text-slate-100">
+                  {optionLabel(i)}
+                  {typeof id === 'number' && text.trim() && <span className="ml-2 font-medium text-slate-300">{text}</span>}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Hotspot: the image only — no rings, no taps while the question is open (H5). */}

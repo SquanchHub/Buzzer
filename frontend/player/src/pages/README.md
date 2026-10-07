@@ -14,10 +14,10 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 | `LoginPage.tsx` | `/login` | OAuth2 return landing: exchanges the temp token, then returns to `/name/:code` using `sessionStorage.joinRoomCode`. |
 | `game/GameLayout.tsx` | `/game/:code` | Checks token expiry, opens the socket, joins as PLAYER, handles server events, exposes state via context, routes between child pages, shows a "host disconnected" banner. |
 | `game/LobbyPage.tsx` | `…/lobby` | Room code, spinner, "N players in room". |
-| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit, hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit), ordering (prompt + `OrderingPicker`: tap items in sequence, Undo / Reset, Submit order; the sequence resets when the question changes). Timer bar. Answer time measured from mount. |
+| `game/QuestionPage.tsx` | `…/question` | Answer UI per type: MC colored buttons, True/False, fill-in-the-blank text box, multi-select checklist + Submit (when an MC or multi-select question has option images — `config.optionImageIds`, T8 D8 — both become a two-column grid of large tiles: image, letter, text if any), hotspot (prompt + interactive `HotspotCanvas`, tap to place/move, Submit), ordering (prompt + `OrderingPicker`: tap items in sequence, Undo / Reset, Submit order; the sequence resets when the question changes). Timer bar. Answer time measured from mount. |
 | `game/FeedbackPage.tsx` | `…/feedback` | Static "Answer locked in!" screen shown after `answer_received`. |
-| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings; ordering labels from the server's `yourOrdering` ("Perfect order!", "k items out of place", "Not scored", "No answer") and lists your order (out-of-place items marked) and the correct order. |
-| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings; ordering rows join the items with →, and only the exact order counts as ✓). "Play Again" clears the token. |
+| `game/ResultsPage.tsx` | `…/results` | Correct/Incorrect/Recorded (hotspot: Bullseye!/Close!/Miss from `yourBand`, "No answer"), the player's answer, points earned, running total, rank; hotspot adds a canvas with own tap + rings; ordering labels from the server's `yourOrdering` ("Perfect order!", "k items out of place", "Not scored", "No answer") and lists your order (out-of-place items marked) and the correct order. T8 D8, only for questions with option images: thumbnails of the player's choice and, after a wrong answer, of the correct choice; "(image)" names an image-only option. |
+| `game/GameOverPage.tsx` | `…/gameover` | Final rank and score plus a per-question recap (your answer vs. correct answer; hotspot rows add a small canvas with own tap + rings; ordering rows join the items with →, and only the exact order counts as ✓; rows of questions with option images add thumbnails of the player's choice and the correct one, and "(image)" names an image-only option). "Play Again" clears the token. |
 
 ## Key entry points
 
@@ -28,6 +28,8 @@ and five child pages render each phase. Routes are declared in `frontend/player/
 - `questionImage` — the current hotspot question's image (`{questionId, status, url?}`), fetched
   by `GameLayout` the moment `new_question` arrives (`docs/plans/t7-hotspot.md` H11), shared by
   `QuestionPage` and `ResultsPage`, revoked when the next question replaces it or on unmount.
+  For other questions `GameLayout` only warms the browser cache for the option images on
+  `new_question` (C3's immutable header lets the tiles' own fetches read it).
 - `answer_data` shapes sent by `QuestionPage`: `{selectedIndex}`, `{selectedValue}`, `{text}`,
   `{selectedIndices}`, `{x, y}` (hotspot), `{order}` (ordering: display indices, a full permutation). They must match `game_service.calculate_score` on the backend.
 - Socket events handled: `sync_state`, `player_joined`, `new_question`, `question_locked`,

@@ -1,12 +1,18 @@
 """
 T7 hotspot question type — stage A integration tests (docs/plans/t7-hotspot.md §10, §13.1 f).
 
-Stage A covers §10 tests 1 and 6–10 through `POST /api/admin/games/{g}/questions`. Test 18 is
-a unit test (`tests/unit/test_hotspot.py`).
+Stage A covers §10 test 1 through `POST /api/admin/games/{g}/questions`, and tests 6–10 over
+Socket.io (their questions are created through the host route, `POST /api/host/games/{g}/questions`,
+as §10 specifies — stage C). Test 18 is a unit test (`tests/unit/test_hotspot.py`).
 
 Stage B (§13.2) adds the host-route tests at the end: the image-existence check (test 2, and
 tests 3–5), the v1-bundle hotspot rejection (test 13b) and the sample-game import through the
 host route (test 14).
+
+Stage C (T8 A7) adds, at the end: the host-route export of a hotspot-only game (test 11), the
+round trip into another course with the imported question played and scored (test 12), and the
+version 2 import refusals for a hotspot's own image fields (test 13a). Tests 15 and 16 live in
+test_image_display.py and test_images.py; test 17 is the engine scenario `hotspot_bands`.
 
 Since T8 (docs/plans/t8-image-support.md V3) every question that passes validation uses a real
 image uploaded into its game's course (`image_setup`, `_host_game`); the dev-image stand-in is
@@ -20,6 +26,7 @@ always sees every acknowledged answer.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 
 import httpx
@@ -74,17 +81,22 @@ def _question_body(**overrides) -> dict:
 
 
 def _post_question(
-    base_url: str, token: str, game_id: int, body: dict | str
+    base_url: str, token: str, game_id: int, body: dict | str, route: str = "admin"
 ) -> httpx.Response:
-    """POST a question; a str body is sent verbatim (needed for a literal NaN)."""
-    url = f"{base_url}/api/admin/games/{game_id}/questions"
+    """POST a question through /api/{route}/games/…; a str body is sent verbatim (needed
+    for a literal NaN)."""
+    url = f"{base_url}/api/{route}/games/{game_id}/questions"
     headers = {**_h(token), "Content-Type": "application/json"}
     content = body if isinstance(body, str) else json.dumps(body)
     return httpx.post(url, content=content, headers=headers, timeout=_TIMEOUT)
 
 
 def _create(base_url: str, token: str, game_id: int, **overrides) -> int:
-    r = _post_question(base_url, token, game_id, _question_body(**overrides))
+    """Create a valid question for the socket tests through the host route (§10 6–10);
+    the admin token passes every host-route check."""
+    r = _post_question(
+        base_url, token, game_id, _question_body(**overrides), route="host"
+    )
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
@@ -607,3 +619,154 @@ def test_sample_game_imports_through_host_route(hapi, path):  # noqa: F811
     )
     assert r.status_code == 201, r.text
     hapi.track_game(r.json()["game_id"])
+
+
+# ---------------------------------------------------------------------------
+# Stage C (T8 A7) — export, round trip and import refusals through the host routes
+# ---------------------------------------------------------------------------
+
+
+def _b64_png() -> str:
+    return base64.b64encode(HOTSPOT_PNG).decode()
+
+
+def _import(hapi, token: str, course: int, bundle: dict) -> httpx.Response:  # noqa: F811
+    return hapi.req(
+        "POST",
+        "/host/games/import",
+        token,
+        files={"file": ("g.json", json.dumps(bundle).encode())},
+        data={"course_id": str(course)},
+    )
+
+
+async def test_hotspot_round_trip_into_another_course_scores(hapi):  # noqa: F811
+    """§10 tests 11 and 12 through the host routes. A hotspot-only game exports as version 2
+    with exactly one image (imageRef, no imageId); importing it into another course creates
+    an identical image there, and the imported question is played and scored with the
+    aspect correction intact (the outer tap only counts as outer on a 2:1 image, H3)."""
+    course_a, course_b = hapi.course(), hapi.course()
+    host_id, token = hapi.host_of(course_a)
+    hapi.grant_course(host_id, course_b)  # the importer must HOST the target course
+    image = hapi.image(course_a, HOTSPOT_PNG, token)
+    game = hapi.host_game(token, course_a, questions=0)
+    hapi.ok("POST", f"/host/games/{game}/questions", token, json=_host_body(image))
+    r = hapi.req("GET", f"/host/games/{game}/export", token)
+    assert r.status_code == 200, r.text
+    bundle = r.json()
+    assert bundle["version"] == 2 and len(bundle["images"]) == 1
+    [q] = bundle["questions"]
+    assert q["config"] == {"imageRef": bundle["images"][0]["ref"], "aspectRatio": 2.0}
+    assert "imageId" not in json.dumps(bundle)
+
+    r = _import(hapi, token, course_b, bundle)
+    assert r.status_code == 201, r.text
+    copy = hapi.track_game(r.json()["game_id"])
+    [imported] = hapi.ok("GET", f"/host/games/{copy}/questions", token)
+    new_image = imported["config"]["imageId"]
+    assert new_image != image and imported["config"]["aspectRatio"] == 2.0
+    assert imported["answer_data"] == TARGET
+    assert hapi.req("GET", f"/images/{new_image}", token).content == HOTSPOT_PNG
+
+    setup = {"course_id": course_b, "game_id": copy}
+    async with HotspotGame(hapi.base, hapi.admin, setup, 3) as g:
+        await g.next_question()
+        qid = imported["id"]
+        inner = await g.tap(0, qid, {"x": 0.5, "y": 0.5})  # d = 0
+        outer = await g.tap(1, qid, {"x": 0.5, "y": 0.85})  # d = 0.35 / 2 = 0.175
+        miss = await g.tap(2, qid, {"x": 0.9, "y": 0.1})  # d ≈ 0.447
+        assert [
+            inner["pointsAwarded"],
+            outer["pointsAwarded"],
+            miss["pointsAwarded"],
+        ] == [
+            1000.0,
+            500.0,
+            0,
+        ]
+        await g.results()
+        await g.finish()
+
+
+_BAD_V2_HOTSPOT = {
+    "unknown imageRef": (
+        {"imageRef": "nope", "aspectRatio": 2.0},
+        "Question 2: unknown image reference 'nope'",
+    ),
+    "raw imageId in version 2": (
+        {"imageId": 5, "aspectRatio": 2.0},
+        "Question 2: image IDs can't be imported; export the game again to get a "
+        "version 2 file",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "config, msg", _BAD_V2_HOTSPOT.values(), ids=_BAD_V2_HOTSPOT.keys()
+)
+def test_v2_hotspot_bad_image_field_creates_nothing(hapi, config, msg):  # noqa: F811
+    """§10 test 13a, the hotspot's own field: the 422 names the 1-based question, and
+    neither a game nor an image is created (the bundle's valid image is never stored)."""
+    token, course, _, _ = _host_game(hapi)
+    games_before = hapi.ok("GET", f"/host/courses/{course}/games", token)
+    images_before = hapi.ok("GET", f"/images?course_id={course}", token)["total"]
+    plain = {
+        "type": "multiple_choice",
+        "grading_type": "ACCURACY",
+        "prompt": "Pick A",
+        "config": {"options": ["A", "B"]},
+        "answer_data": {"answer_points": [1, 0]},
+        "time_limit_seconds": 30,
+        "points_value": 1,
+    }
+    bundle = {
+        "format": "buzzer/game",
+        "version": 2,
+        "game": {"title": "v2 with a bad hotspot image field"},
+        "images": [
+            {"ref": "img1", "content_type": "image/png", "data_base64": _b64_png()}
+        ],
+        "questions": [plain, _question_body(config=config)],
+    }
+    r = _import(hapi, token, course, bundle)
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"][0]["msg"] == msg
+    assert hapi.ok("GET", f"/host/courses/{course}/games", token) == games_before
+    assert (
+        hapi.ok("GET", f"/images?course_id={course}", token)["total"] == images_before
+    )
+
+
+# §10 test 14, second half (stage E): Arjun's two T6 games are version 2 bundles, each with one
+# hotspot question whose image is embedded. Importing them is covered for both routes by
+# test_sample_game_imports_through_host_route above and test_course_games.py (admin route),
+# which run over every sample_games/*.json.
+_STAGE_E_GAMES = ("world_geography_challenge.json", "wild_kingdom_party.json")
+
+
+@pytest.mark.parametrize("name", _STAGE_E_GAMES)
+def test_stage_e_sample_game_is_v2_with_its_hotspot_image(name):
+    bundle = json.loads((_REPO_ROOT / "sample_games" / name).read_text())
+    assert bundle["version"] == 2
+    [image] = bundle["images"]
+    [hotspot] = [q for q in bundle["questions"] if q["type"] == "hotspot"]
+    assert hotspot["config"] == {"imageRef": image["ref"], "aspectRatio": 2.0}
+    stored = (_REPO_ROOT / "sample_games" / "images").glob("*.png")
+    assert base64.b64decode(image["data_base64"]) in [p.read_bytes() for p in stored]
+
+
+def test_t6_arjuns_games_use_each_new_question_type():
+    """T6: each member's games include each of the team's new question types (T7: hotspot
+    and ordering). Both of Arjun's games carry a hotspot question (stage E); ordering came
+    later, so World Geography Challenge gained one."""
+    types = {
+        name: {
+            q["type"]
+            for q in json.loads((_REPO_ROOT / "sample_games" / name).read_text())[
+                "questions"
+            ]
+        }
+        for name in _STAGE_E_GAMES
+    }
+    assert {"hotspot", "ordering"} <= set().union(*types.values()), types
+    assert "ordering" in types["world_geography_challenge.json"], types

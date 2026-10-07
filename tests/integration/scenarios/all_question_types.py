@@ -336,6 +336,56 @@ FITB_TYPES = GameScenario(
 
 
 # ---------------------------------------------------------------------------
+# Scenario — hotspot (docs/plans/t7-hotspot.md §10 test 17)
+# ---------------------------------------------------------------------------
+
+# No imageId: create_questions uploads a real 800x400 image into the game's course (T8).
+# partialFraction 0.4, so an outer tap is worth 400 — a server that assumed half points
+# would not match.
+HS_ACCURACY = QuestionSpec(
+    type="hotspot",
+    grading_type="ACCURACY",
+    prompt="Tap the target.",
+    config={"aspectRatio": 2.0},
+    answer_data={
+        "x": 0.5,
+        "y": 0.5,
+        "innerRadius": 0.1,
+        "outerRadius": 0.2,
+        "partialFraction": 0.4,
+    },
+    points_value=1000,
+)
+
+HS_COMPLETENESS = QuestionSpec(
+    type="hotspot",
+    grading_type="COMPLETENESS",
+    prompt="Tap anywhere on the map.",
+    config={"aspectRatio": 2.0},
+    answer_data={},
+    points_value=500,
+)
+
+# Every tap is at least 0.005 from both ring boundaries (§7.10), so float rounding can't
+# flip a band: d = 0 (inner), 0.175 (outer, 0.025 inside it), ≈ 0.447 (miss).
+HOTSPOT_BANDS = GameScenario(
+    name="hotspot_bands",
+    description=(
+        "Hotspot ACCURACY on a 2:1 image (one tap per band, the outer one counting only "
+        "with aspect correction, H3) and hotspot COMPLETENESS. Four players."
+    ),
+    questions=[HS_ACCURACY, HS_COMPLETENESS],
+    player_scripts=[
+        PlayerScript(responses=[{"x": 0.5, "y": 0.5}, {"x": 0.1, "y": 0.9}]),  # inner
+        # outer: 0.35 per axis would miss, but 0.35 / 2 = 0.175 in longer-side units
+        PlayerScript(responses=[{"x": 0.5, "y": 0.85}, {"x": 0.7, "y": 0.2}]),
+        PlayerScript(responses=[{"x": 0.9, "y": 0.1}, None]),  # miss, then skip
+        PlayerScript(responses=[None, {"x": 0.5, "y": 0.5}]),  # skip, then tap
+    ],
+)
+
+
+# ---------------------------------------------------------------------------
 # Scenario — ordering (docs/plans/t7-ordering.md §9.2 test 16)
 # ---------------------------------------------------------------------------
 
@@ -367,4 +417,10 @@ ORDERING_TYPES = GameScenario(
 )
 
 
-SCENARIOS: list[GameScenario] = [ALL_TYPES, SINGLE_PLAYER, FITB_TYPES, ORDERING_TYPES]
+SCENARIOS: list[GameScenario] = [
+    ALL_TYPES,
+    SINGLE_PLAYER,
+    FITB_TYPES,
+    ORDERING_TYPES,
+    HOTSPOT_BANDS,
+]

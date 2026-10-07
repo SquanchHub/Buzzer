@@ -54,7 +54,9 @@ export interface QuestionPayload {
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot' | 'ordering';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
   prompt: string;
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
+  /** T8: the prompt image, null if none (host shows it; D8). */
+  promptImageId: number | null;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
   timeLimitSeconds: number;
   pointsValue: number;
   editDistance?: number;
@@ -110,9 +112,11 @@ export interface HostQuestionSummaryItem {
   questionId: number;
   questionNumber: number;
   prompt: string;
+  /** T8 D8: the prompt image shown on the game-over card, null if none. */
+  promptImageId: number | null;
   type: 'multiple_choice' | 'true_false' | 'fill_in_the_blank' | 'multi_select' | 'hotspot' | 'ordering';
   gradingType: 'ACCURACY' | 'COMPLETENESS';
-  config: { options?: string[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
+  config: { options?: string[]; optionImageIds?: (number | null)[]; maxLength?: number } & Partial<HotspotConfig> & Partial<OrderingConfig>;
   pointsValue: number;
   answerReveal: AnswerReveal;
   answerDistribution: Record<string, number>;
